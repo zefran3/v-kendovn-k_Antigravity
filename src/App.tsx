@@ -127,6 +127,14 @@ const getCityInLocative = (city: string) => {
 };
 
 export default function App() {
+  // POŠŤÁK (v1.4.6): Absolutní priorita pro zachycení kódu z URL
+  const currentUrlParams = new URLSearchParams(window.location.search);
+  const quickCode = currentUrlParams.get('code');
+  if (quickCode) {
+    window.location.replace('/auth/callback?code=' + quickCode);
+    return null; // Zastavíme veškeré další vykreslování
+  }
+
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
   const [showAvatarModal, setShowAvatarModal] = useState(false);
@@ -374,17 +382,8 @@ export default function App() {
   };
 
   useEffect(() => {
-    // AGRESIVNÍ DEBUG v1.4.3
+    // AGRESIVNÍ DEBUG v1.4.6
     const urlParams = new URLSearchParams(window.location.search);
-    
-    // DETEKCE KÓDU (Pošťák): Pokud nás Google vrátil na špatnou adresu s kódem
-    const codeInUrl = urlParams.get('code');
-    if (codeInUrl) {
-      // Použijeme replace, aby se tato adresa s kódem neuložila do historie
-      window.location.replace('/auth/callback?code=' + codeInUrl);
-      return;
-    }
-
     const authTokensBase64 = urlParams.get('auth_tokens');
     
     if (authTokensBase64) {
@@ -2063,7 +2062,7 @@ export default function App() {
       
       {/* Diagnostika */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.85)', color: 'white', fontSize: '9px', padding: '6px', textAlign: 'center', zIndex: 9999, pointerEvents: 'auto', borderTop: '1px solid #444' }}>
-        v1.4.5 | User: {user ? user.email?.split('@')[0] : 'ODHLÁŠEN ❌'} | Klíč: {googleTokens ? 'OK ✅' : 'CHYBÍ ❌'} | 
+        v1.4.6 | User: {user ? user.email?.split('@')[0] : 'ODHLÁŠEN ❌'} | Klíč: {googleTokens ? 'OK ✅' : 'CHYBÍ ❌'} | 
         Storage: {localStorage.getItem('googleCalendarTokens') ? 'MÁME 💾' : 'PRÁZDNO 💨'} | 
         URL: {window.location.search || 'čistá'}
         {!user && <button onClick={() => window.location.reload()} style={{ marginLeft: '10px', background: '#444', border: '1px solid #666', borderRadius: '4px', padding: '2px 5px', color: 'white' }}>RESTART</button>}
