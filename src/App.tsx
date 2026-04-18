@@ -2038,6 +2038,7 @@ export default function App() {
             </motion.div>
           </>
         )}
+      </AnimatePresence>
       <input type="file" ref={commentFileInputRef} style={{ display: 'none' }} accept="image/*" onChange={handleCommentPhotoChange} />
       
       {/* Diagnostika */}
