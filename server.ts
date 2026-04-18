@@ -6,10 +6,13 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+const baseUrl = (process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || "https://vikendovnik.onrender.com").replace(/\/$/, "");
+const redirectUri = `${baseUrl}/auth/callback`;
+
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/auth/callback` : (process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_URL}/auth/callback`)
+  redirectUri
 );
 
 async function startServer() {
@@ -31,6 +34,17 @@ async function startServer() {
       prompt: "consent",
     });
     res.json({ url });
+  });
+
+  // Debug endpoint pro kontrolu nastavení na Renderu
+  app.get("/api/debug", (req, res) => {
+    res.json({
+      baseUrl,
+      redirectUri,
+      clientIdSet: !!process.env.GOOGLE_CLIENT_ID,
+      clientSecretSet: !!process.env.GOOGLE_CLIENT_SECRET,
+      clientIdPrefix: process.env.GOOGLE_CLIENT_ID ? process.env.GOOGLE_CLIENT_ID.substring(0, 15) : "missing"
+    });
   });
 
   // Auth Callback
