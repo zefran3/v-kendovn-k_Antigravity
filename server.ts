@@ -54,22 +54,7 @@ async function startServer() {
       const { tokens } = await oauth2Client.getToken(code as string);
       const tokensStr = JSON.stringify(tokens);
       const tokensBase64 = Buffer.from(tokensStr).toString('base64');
-      const targetUrl = `/?auth_tokens=${encodeURIComponent(tokensBase64)}`;
-      
-      res.send(`
-        <html>
-          <body style="background: white; color: black; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; text-align: center;">
-            <div>
-              <h1 style="color: #059669;">Klíč úspěšně získán! ✅</h1>
-              <p style="margin: 20px 0; color: #4b5563;">Google nám právě předal povolení k vašemu kalendáři.</p>
-              <a href="${targetUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 15px 30px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 18px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                Vstoupit do Víkendovníku
-              </a>
-              <p style="margin-top: 30px; font-size: 12px; color: #9ca3af;">(Pokud tlačítko nefunguje, zkuste ho podržet a vybrat 'Otevřít')</p>
-            </div>
-          </body>
-        </html>
-      `);
+      res.redirect(`/?auth_tokens=${encodeURIComponent(tokensBase64)}`);
     } catch (error) {
       console.error("Error exchanging code for tokens:", error);
       res.redirect('/?auth_error=1');
