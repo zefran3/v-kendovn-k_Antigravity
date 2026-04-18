@@ -2063,7 +2063,7 @@ export default function App() {
       
       {/* Diagnostika */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', color: 'rgba(255,255,255,0.5)', fontSize: '10px', padding: '4px', textAlign: 'center', zIndex: 9999, pointerEvents: 'none' }}>
-        DEBUG: {googleTokens ? 'Klíč OK ✅' : 'Klíč CHYBÍ ❌'} | User: {user ? 'OK' : '??'} | v1.4.3
+        DEBUG: {googleTokens ? 'Klíč OK ✅' : 'Klíč CHYBÍ ❌'} | User: {user ? 'OK' : '??'} | v1.4.4
       </div>
 
       <AnimatePresence>
