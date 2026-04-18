@@ -38,9 +38,9 @@ async function startServer() {
     const { code } = req.query;
     try {
       const { tokens } = await oauth2Client.getToken(code as string);
-      // Převod do base64, abychom mohli bezpečně předat objekt přes URL
+      // Převod do base64 a navíc URL kódování, abychom neztratili znaky jako + a =
       const tokensBase64 = Buffer.from(JSON.stringify(tokens)).toString('base64');
-      res.redirect(`/?auth_tokens=${tokensBase64}`);
+      res.redirect(`/?auth_tokens=${encodeURIComponent(tokensBase64)}`);
     } catch (error) {
       console.error("Error exchanging code for tokens:", error);
       res.redirect('/?auth_error=1');
