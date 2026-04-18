@@ -374,27 +374,28 @@ export default function App() {
   };
 
   useEffect(() => {
+    // AGRESIVNÍ DEBUG
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokensInUrl = urlParams.get('auth_tokens');
+    if (tokensInUrl) {
+      alert("DEBUG: Našel jsem klíč v URL! Délka: " + tokensInUrl.length);
+    }
+
     // Zachycení tokenů pro Google Kalendář z URL parametrů (pro mobily/PWAs)
-    const params = new URLSearchParams(window.location.search);
-    const authTokensBase64 = params.get('auth_tokens');
+    const authTokensBase64 = urlParams.get('auth_tokens');
     
     if (authTokensBase64) {
       try {
-        // Dekódování a uložení
         const tokensStr = atob(authTokensBase64);
         const tokens = JSON.parse(tokensStr);
         setGoogleTokens(tokens);
         localStorage.setItem('googleCalendarTokens', tokensStr);
-        // Vyčištění URL
         window.history.replaceState({}, document.title, window.location.pathname);
-        console.log("DEBUG: Klíč úspěšně vybalen z URL");
       } catch (e) {
-        console.error("DEBUG: Chyba při vybalování klíče", e);
-        setError("Chyba při zpracování klíče kalendáře.");
+        alert("DEBUG CHYBA: " + e.message);
       }
-    } else if (params.get('auth_error')) {
-      setError("Propojení s Google Kalendářem se nezdařilo.");
-      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (urlParams.get('auth_error')) {
+      alert("DEBUG: Google vrátil chybu");
     }
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
