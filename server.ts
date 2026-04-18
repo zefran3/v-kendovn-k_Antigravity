@@ -38,9 +38,37 @@ async function startServer() {
     const { code } = req.query;
     try {
       const { tokens } = await oauth2Client.getToken(code as string);
-      // Převod do base64 a navíc URL kódování, abychom neztratili znaky jako + a =
-      const tokensBase64 = Buffer.from(JSON.stringify(tokens)).toString('base64');
-      res.redirect(`/?auth_tokens=${encodeURIComponent(tokensBase64)}`);
+      const tokensStr = JSON.stringify(tokens);
+      
+      res.send(`
+        <html>
+          <body style="background: #121212; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
+            <div style="text-align: center;">
+              <p>Přihlášení úspěšné!</p>
+              <p>Vracím vás do aplikace...</p>
+            </div>
+            <script>
+              const tokens = ${tokensStr};
+              try {
+                // Pokud jsme v popup okně (typicky PC)
+                if (window.opener && window.opener !== window) {
+                  window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', tokens: tokens }, '*');
+                  // Zkusíme zavřít okno (některé prohlížeče vyžadují kratičkou pauzu)
+                  setTimeout(() => window.close(), 200);
+                } else {
+                  // Pokud jsme v hlavním okně (typicky mobil/PWA)
+                  localStorage.setItem('googleCalendarTokens', JSON.stringify(tokens));
+                  window.location.href = '/';
+                }
+              } catch (e) {
+                // Fallback pro případ jakékoliv chyby (např. blokovaný cross-origin opener)
+                localStorage.setItem('googleCalendarTokens', JSON.stringify(tokens));
+                window.location.href = '/';
+              }
+            </script>
+          </body>
+        </html>
+      `);
     } catch (error) {
       console.error("Error exchanging code for tokens:", error);
       res.redirect('/?auth_error=1');
