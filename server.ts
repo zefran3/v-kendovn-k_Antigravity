@@ -45,10 +45,11 @@ async function startServer() {
           <body style="background: #121212; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
             <script>
               try {
-                localStorage.setItem('googleCalendarTokens', JSON.stringify(${tokensStr}));
-                console.log('Tokeny uloženy do localStorage');
+                const tokens = ${tokensStr};
+                localStorage.setItem('googleCalendarTokens', JSON.stringify(tokens));
+                alert('Klíč k uložení nalezen! Přesměrovávám...');
               } catch (e) {
-                alert('Chyba při ukládání: ' + e.message);
+                alert('CHYBA PŘI UKLÁDÁNÍ: ' + e.message);
               }
               window.location.href = '/';
             </script>

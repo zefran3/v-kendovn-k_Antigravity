@@ -2038,9 +2038,29 @@ export default function App() {
             </motion.div>
           </>
         )}
-      </AnimatePresence>
-
       <input type="file" ref={commentFileInputRef} style={{ display: 'none' }} accept="image/*" onChange={handleCommentPhotoChange} />
+      
+      {/* Diagnostika */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', color: 'rgba(255,255,255,0.5)', fontSize: '10px', padding: '4px', textAlign: 'center', zIndex: 9999, pointerEvents: 'none' }}>
+        DEBUG: {googleTokens ? 'Klíč OK ✅' : 'Klíč CHYBÍ ❌'} | User: {user ? 'OK' : '??'} | v1.4.0
+      </div>
+
+      <AnimatePresence>
+        {error && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-20 left-4 right-4 bg-red-500/90 text-white p-4 rounded-xl shadow-lg flex items-center gap-3 z-50 backdrop-blur-sm"
+          >
+            <AlertCircle className="w-6 h-6 shrink-0" />
+            <p className="text-sm font-medium">{error}</p>
+            <button onClick={() => setError(null)} className="ml-auto p-1">
+              <X className="w-5 h-5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
