@@ -43,29 +43,17 @@ async function startServer() {
       res.send(`
         <html>
           <body style="background: #121212; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
-            <div style="text-align: center;">
-              <p>Přihlášení úspěšné!</p>
-              <p>Vracím vás do aplikace...</p>
-            </div>
             <script>
-              const tokens = ${tokensStr};
               try {
-                // Pokud jsme v popup okně (typicky PC)
-                if (window.opener && window.opener !== window) {
-                  window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', tokens: tokens }, '*');
-                  // Zkusíme zavřít okno (některé prohlížeče vyžadují kratičkou pauzu)
-                  setTimeout(() => window.close(), 200);
-                } else {
-                  // Pokud jsme v hlavním okně (typicky mobil/PWA)
-                  localStorage.setItem('googleCalendarTokens', JSON.stringify(tokens));
-                  window.location.href = '/';
-                }
+                localStorage.setItem('googleCalendarTokens', JSON.stringify(${tokensStr}));
               } catch (e) {
-                // Fallback pro případ jakékoliv chyby (např. blokovaný cross-origin opener)
-                localStorage.setItem('googleCalendarTokens', JSON.stringify(tokens));
-                window.location.href = '/';
+                console.error('LocalStorage error', e);
               }
+              window.location.href = '/';
             </script>
+            <div style="text-align: center;">
+              <p>Přihlášení úspěšné, vracím vás do aplikace...</p>
+            </div>
           </body>
         </html>
       `);

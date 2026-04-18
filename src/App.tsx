@@ -573,13 +573,8 @@ export default function App() {
     try {
       const response = await fetch('/api/auth/google/url');
       const { url } = await response.json();
-      
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) {
-        window.location.href = url;
-      } else {
-        window.open(url, 'google_auth', 'width=600,height=700');
-      }
+      // Vždy použijeme přesměrování aktuálního okna, abychom se vyhnuli blokování popupů a izolaci oken
+      window.location.href = url;
     } catch (error) {
       console.error("Failed to get auth URL:", error);
     }
