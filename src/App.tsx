@@ -2062,8 +2062,11 @@ export default function App() {
       <input type="file" ref={commentFileInputRef} style={{ display: 'none' }} accept="image/*" onChange={handleCommentPhotoChange} />
       
       {/* Diagnostika */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', color: 'rgba(255,255,255,0.5)', fontSize: '10px', padding: '4px', textAlign: 'center', zIndex: 9999, pointerEvents: 'none' }}>
-        DEBUG: {googleTokens ? 'Klíč OK ✅' : 'Klíč CHYBÍ ❌'} | User: {user ? 'OK' : '??'} | v1.4.4
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.85)', color: 'white', fontSize: '9px', padding: '6px', textAlign: 'center', zIndex: 9999, pointerEvents: 'auto', borderTop: '1px solid #444' }}>
+        v1.4.5 | User: {user ? user.email?.split('@')[0] : 'ODHLÁŠEN ❌'} | Klíč: {googleTokens ? 'OK ✅' : 'CHYBÍ ❌'} | 
+        Storage: {localStorage.getItem('googleCalendarTokens') ? 'MÁME 💾' : 'PRÁZDNO 💨'} | 
+        URL: {window.location.search || 'čistá'}
+        {!user && <button onClick={() => window.location.reload()} style={{ marginLeft: '10px', background: '#444', border: '1px solid #666', borderRadius: '4px', padding: '2px 5px', color: 'white' }}>RESTART</button>}
       </div>
 
       <AnimatePresence>
