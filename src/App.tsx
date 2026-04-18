@@ -374,14 +374,13 @@ export default function App() {
   };
 
   useEffect(() => {
-    // AGRESIVNÍ DEBUG
+    // AGRESIVNÍ DEBUG v1.4.1
     const urlParams = new URLSearchParams(window.location.search);
-    const tokensInUrl = urlParams.get('auth_tokens');
-    if (tokensInUrl) {
-      alert("DEBUG: Našel jsem klíč v URL! Délka: " + tokensInUrl.length);
+    const allParams = Array.from(urlParams.keys());
+    if (allParams.length > 0) {
+      alert("DEBUG v1.4.1: Nalezeny parametry v URL: " + allParams.join(", "));
     }
 
-    // Zachycení tokenů pro Google Kalendář z URL parametrů (pro mobily/PWAs)
     const authTokensBase64 = urlParams.get('auth_tokens');
     
     if (authTokensBase64) {
@@ -2060,7 +2059,7 @@ export default function App() {
       
       {/* Diagnostika */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', color: 'rgba(255,255,255,0.5)', fontSize: '10px', padding: '4px', textAlign: 'center', zIndex: 9999, pointerEvents: 'none' }}>
-        DEBUG: {googleTokens ? 'Klíč OK ✅' : 'Klíč CHYBÍ ❌'} | User: {user ? 'OK' : '??'} | v1.4.0
+        DEBUG: {googleTokens ? 'Klíč OK ✅' : 'Klíč CHYBÍ ❌'} | User: {user ? 'OK' : '??'} | v1.4.1
       </div>
 
       <AnimatePresence>
