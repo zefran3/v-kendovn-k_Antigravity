@@ -131,8 +131,21 @@ export default function App() {
   const currentUrlParams = new URLSearchParams(window.location.search);
   const quickCode = currentUrlParams.get('code');
   if (quickCode) {
-    window.location.replace('/auth/callback?code=' + quickCode);
-    return null; // Zastavíme veškeré další vykreslování
+    const target = '/auth/callback?code=' + quickCode;
+    // Zkusíme automatický replace
+    setTimeout(() => { window.location.replace(target); }, 500);
+    
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'white', color: '#1f2937', fontFamily: 'sans-serif', padding: '20px', textAlign: 'center' }}>
+        <div style={{ width: '40px', height: '40px', border: '4px solid #f3f3f3', borderTop: '4px solid #3498db', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+        <h2 style={{ marginTop: '20px' }}>Doručuji klíč ke kalendáři...</h2>
+        <p style={{ fontSize: '14px', color: '#6b7280' }}>Pokud se nic nestane, klikněte na tlačítko níže:</p>
+        <a href={target} style={{ marginTop: '20px', background: '#3b82f6', color: 'white', padding: '12px 24px', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold' }}>
+          RUČNĚ DORUČIT KLÍČ
+        </a>
+        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
   }
 
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -2062,7 +2075,7 @@ export default function App() {
       
       {/* Diagnostika */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.85)', color: 'white', fontSize: '9px', padding: '6px', textAlign: 'center', zIndex: 9999, pointerEvents: 'auto', borderTop: '1px solid #444' }}>
-        v1.4.6 | User: {user ? user.email?.split('@')[0] : 'ODHLÁŠEN ❌'} | Klíč: {googleTokens ? 'OK ✅' : 'CHYBÍ ❌'} | 
+        v1.4.7 | User: {user ? user.email?.split('@')[0] : 'ODHLÁŠEN ❌'} | Klíč: {googleTokens ? 'OK ✅' : 'CHYBÍ ❌'} | 
         Storage: {localStorage.getItem('googleCalendarTokens') ? 'MÁME 💾' : 'PRÁZDNO 💨'} | 
         URL: {window.location.search || 'čistá'}
         {!user && <button onClick={() => window.location.reload()} style={{ marginLeft: '10px', background: '#444', border: '1px solid #666', borderRadius: '4px', padding: '2px 5px', color: 'white' }}>RESTART</button>}
