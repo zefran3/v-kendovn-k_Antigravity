@@ -374,11 +374,15 @@ export default function App() {
   };
 
   useEffect(() => {
-    // AGRESIVNÍ DEBUG v1.4.1
+    // AGRESIVNÍ DEBUG v1.4.2
     const urlParams = new URLSearchParams(window.location.search);
-    const allParams = Array.from(urlParams.keys());
-    if (allParams.length > 0) {
-      alert("DEBUG v1.4.1: Nalezeny parametry v URL: " + allParams.join(", "));
+    
+    // DETEKCE KÓDU (Pošťák): Pokud nás Google vrátil na špatnou adresu s kódem
+    const codeInUrl = urlParams.get('code');
+    if (codeInUrl) {
+      alert("Mám kód! Jdu ho vyměnit za klíč ke kalendáři...");
+      window.location.href = '/auth/callback?code=' + codeInUrl;
+      return;
     }
 
     const authTokensBase64 = urlParams.get('auth_tokens');
@@ -2059,7 +2063,7 @@ export default function App() {
       
       {/* Diagnostika */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', color: 'rgba(255,255,255,0.5)', fontSize: '10px', padding: '4px', textAlign: 'center', zIndex: 9999, pointerEvents: 'none' }}>
-        DEBUG: {googleTokens ? 'Klíč OK ✅' : 'Klíč CHYBÍ ❌'} | User: {user ? 'OK' : '??'} | v1.4.1
+        DEBUG: {googleTokens ? 'Klíč OK ✅' : 'Klíč CHYBÍ ❌'} | User: {user ? 'OK' : '??'} | v1.4.2
       </div>
 
       <AnimatePresence>
