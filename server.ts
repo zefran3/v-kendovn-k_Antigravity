@@ -46,8 +46,9 @@ async function startServer() {
             <script>
               try {
                 localStorage.setItem('googleCalendarTokens', JSON.stringify(${tokensStr}));
+                console.log('Tokeny uloženy do localStorage');
               } catch (e) {
-                console.error('LocalStorage error', e);
+                alert('Chyba při ukládání: ' + e.message);
               }
               window.location.href = '/';
             </script>

@@ -560,8 +560,11 @@ export default function App() {
         setCalendarEvents(data);
       } else {
         console.error("Failed to fetch calendar events:", data);
+        const errorMsg = data.error?.message || data.error || JSON.stringify(data);
+        setError(`Chyba Google kalendáře: ${errorMsg}`);
+        
         if (response.status === 401 || (data.error && data.error.includes("invalid_grant"))) {
-          setGoogleTokens(null); // Force re-login if token is actually revoked/invalid
+          // setGoogleTokens(null); // Dočasně vypnuto, abychom viděli chybu a nezmizela hned
         }
       }
     } catch (error) {
