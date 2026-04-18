@@ -566,7 +566,13 @@ export default function App() {
     try {
       const response = await fetch('/api/auth/google/url');
       const { url } = await response.json();
-      window.open(url, 'google_auth', 'width=600,height=700');
+      
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        window.location.href = url;
+      } else {
+        window.open(url, 'google_auth', 'width=600,height=700');
+      }
     } catch (error) {
       console.error("Failed to get auth URL:", error);
     }

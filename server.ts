@@ -44,10 +44,16 @@ async function startServer() {
         <html>
           <body>
             <script>
-              window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', tokens: ${JSON.stringify(tokens)} }, '*');
-              window.close();
+              const tokens = ${JSON.stringify(tokens)};
+              if (window.opener && window.opener !== window) {
+                window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', tokens: tokens }, '*');
+                window.close();
+              } else {
+                localStorage.setItem('googleCalendarTokens', JSON.stringify(tokens));
+                window.location.href = '/';
+              }
             </script>
-            <p>Přihlášení úspěšné! Toto okno se brzy zavře.</p>
+            <p>Přihlášení úspěšné! Přesměrovávám zpět do aplikace...</p>
           </body>
         </html>
       `);
