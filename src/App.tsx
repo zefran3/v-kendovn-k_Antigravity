@@ -27,6 +27,7 @@ import { cs } from "date-fns/locale";
 import { auth, db } from "./firebase";
 import { 
   signInWithPopup, 
+  signInWithRedirect,
   GoogleAuthProvider, 
   onAuthStateChanged, 
   User as FirebaseUser,
@@ -517,7 +518,9 @@ export default function App() {
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      // Použijeme přesměrování místo vyskakovacího okna, 
+      // které mobilní telefony (zvlášť PWA) často blokují
+      await signInWithRedirect(auth, provider);
     } catch (err: any) {
       console.error("Login failed:", err);
       setError(`Přihlášení se nezdařilo: ${err?.message || "Neznámá chyba"}`);
