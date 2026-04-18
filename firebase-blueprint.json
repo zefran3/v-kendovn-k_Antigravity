@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "suggestion": {
+      "title": "Activity Suggestion",
+      "description": "A suggestion from a child for a weekend activity",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Title of the activity"
+        },
+        "description": {
+          "type": "string",
+          "description": "Details about the activity"
+        },
+        "childName": {
+          "type": "string",
+          "description": "Name of the child who made the suggestion"
+        },
+        "suggestedTime": {
+          "type": "string",
+          "enum": ["sobota", "neděle"],
+          "description": "Preferred day for the activity"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"],
+          "description": "Current status of the suggestion"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the suggestion was created"
+        }
+      },
+      "required": ["title", "childName", "suggestedTime", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/suggestions": {
+      "schema": "suggestion",
+      "description": "Root collection for all activity suggestions"
+    }
+  }
+}

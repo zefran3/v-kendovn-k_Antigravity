@@ -1,0 +1,8 @@
+{
+  "name": "Víkendovník",
+  "description": "Aplikace pro plánování společných víkendů rodičů a dětí s integrací Google Kalendáře.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}

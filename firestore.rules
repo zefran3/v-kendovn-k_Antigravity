@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: suggestions
+    // Document ID: auto-generated
+    // Fields:
+    //   - title: string (required, 1-100 chars)
+    //   - description: string (optional, 0-500 chars)
+    //   - childName: string (required, 1-50 chars)
+    //   - suggestedTime: string (deprecated, optional)
+    //   - eventDate: string (optional, YYYY-MM-DD)
+    //   - eventTime: string (optional, HH:MM)
+    //   - status: string (required, choices: 'pending', 'approved', 'rejected')
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email.lower() == "zefran3@gmail.com" && request.auth.token.email_verified == true) ||
+          (request.auth.token.email == "zeFRAN3@gmail.com" && request.auth.token.email_verified == true)
+        );
+    }
+
+    function isValidSuggestion(data) {
+      return data.keys().hasAll(['title', 'childName', 'status', 'createdAt']) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 500)) &&
+             data.childName is string && data.childName.size() >= 1 && data.childName.size() <= 60 &&
+             (!('authorId' in data) || data.authorId is string) &&
+             (!('suggestedTime' in data) || data.suggestedTime in ['sobota', 'neděle']) &&
+             (!('eventDate' in data) || data.eventDate is string) &&
+             (!('eventTime' in data) || data.eventTime is string) &&
+             (!('likes' in data) || data.likes is number) &&
+             (!('calendarEventId' in data) || data.calendarEventId is string) &&
+             (!('rejectReason' in data) || (data.rejectReason is string && data.rejectReason.size() <= 300)) &&
+             (!('appealReason' in data) || (data.appealReason is string && data.appealReason.size() <= 300)) &&
+             (!('reconsiderationRequested' in data) || data.reconsiderationRequested is bool) &&
+             (!('hasAppealed' in data) || data.hasAppealed is bool) &&
+             (!('type' in data) || data.type in ['activity', 'ride']) &&
+             (!('rideFrom' in data) || (data.rideFrom is string && data.rideFrom.size() <= 100)) &&
+             (!('rideTo' in data) || (data.rideTo is string && data.rideTo.size() <= 100)) &&
+             (!('grade' in data) || (data.grade is number && data.grade >= 1 && data.grade <= 5)) &&
+             data.status in ['pending', 'approved', 'rejected', 'cancelled'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /suggestions/{suggestionId} {
+      // Boards are usually visible to all authenticated members (family)
+      allow read: if isAuthenticated();
+
+      // Anyone authenticated can suggest, but only with 'pending' status
+      allow create: if isAuthenticated() && 
+                    isValidSuggestion(request.resource.data) &&
+                    request.resource.data.status == 'pending' &&
+                    request.resource.data.createdAt == request.time;
+
+      // Admins can update anything. Users can ONLY update the likes counter OR their own reconsideration!
+      allow update: if isAuthenticated() && (isAdmin() || (
+        isValidSuggestion(request.resource.data) && (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'grade']) ||
+          (request.auth.uid == resource.data.authorId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reconsiderationRequested', 'hasAppealed', 'appealReason', 'grade']))
+        )
+      ));
+
+      // Only admins can delete/clean up
+      allow delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      // Všichni přihlášení uživatelé vidí profily všech (kvůli obrázku)
+      allow read: if isAuthenticated();
+      
+      // Admin může upravovat cokoliv, nebo si uživatel může měnit jen svá data (s pojistkou, že si z nepozornosti nezmění administrátorskou roli - to může jen opravdový Admin)
+      allow write: if isAuthenticated() && (isAdmin() || (
+      	request.auth.uid == userId && 
+        (!('role' in request.resource.data) || (exists(/databases/$(database)/documents/users/$(userId)) && request.resource.data.role == resource.data.role))
+      ));
+    }
+  }
+}
