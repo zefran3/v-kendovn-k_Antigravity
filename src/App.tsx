@@ -374,9 +374,25 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Kontrola chyby z Google Auth (pokud nastane na serveru)
+    // Zachycení tokenů pro Google Kalendář z URL parametrů (pro mobily/PWAs)
     const params = new URLSearchParams(window.location.search);
-    if (params.get('auth_error')) {
+    const authTokensBase64 = params.get('auth_tokens');
+    
+    if (authTokensBase64) {
+      try {
+        // Dekódování a uložení
+        const tokensStr = atob(authTokensBase64);
+        const tokens = JSON.parse(tokensStr);
+        setGoogleTokens(tokens);
+        localStorage.setItem('googleCalendarTokens', tokensStr);
+        // Vyčištění URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        console.log("DEBUG: Klíč úspěšně vybalen z URL");
+      } catch (e) {
+        console.error("DEBUG: Chyba při vybalování klíče", e);
+        setError("Chyba při zpracování klíče kalendáře.");
+      }
+    } else if (params.get('auth_error')) {
       setError("Propojení s Google Kalendářem se nezdařilo.");
       window.history.replaceState({}, document.title, window.location.pathname);
     }

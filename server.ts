@@ -38,27 +38,10 @@ async function startServer() {
     const { code } = req.query;
     try {
       const { tokens } = await oauth2Client.getToken(code as string);
+      // Zakódujeme tokeny do base64 a zajistíme bezpečný přenos přes URL
       const tokensStr = JSON.stringify(tokens);
-      
-      res.send(`
-        <html>
-          <body style="background: #121212; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
-            <script>
-              try {
-                const tokens = ${tokensStr};
-                localStorage.setItem('googleCalendarTokens', JSON.stringify(tokens));
-                alert('Klíč k uložení nalezen! Přesměrovávám...');
-              } catch (e) {
-                alert('CHYBA PŘI UKLÁDÁNÍ: ' + e.message);
-              }
-              window.location.href = '/';
-            </script>
-            <div style="text-align: center;">
-              <p>Přihlášení úspěšné, vracím vás do aplikace...</p>
-            </div>
-          </body>
-        </html>
-      `);
+      const tokensBase64 = Buffer.from(tokensStr).toString('base64');
+      res.redirect(`/?auth_tokens=${encodeURIComponent(tokensBase64)}`);
     } catch (error) {
       console.error("Error exchanging code for tokens:", error);
       res.redirect('/?auth_error=1');
