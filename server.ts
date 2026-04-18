@@ -38,28 +38,12 @@ async function startServer() {
     const { code } = req.query;
     try {
       const { tokens } = await oauth2Client.getToken(code as string);
-      // In a real app, store tokens in DB associated with user
-      // For now, we'll just send a success message
-      res.send(`
-        <html>
-          <body>
-            <script>
-              const tokens = ${JSON.stringify(tokens)};
-              if (window.opener && window.opener !== window) {
-                window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', tokens: tokens }, '*');
-                window.close();
-              } else {
-                localStorage.setItem('googleCalendarTokens', JSON.stringify(tokens));
-                window.location.href = '/';
-              }
-            </script>
-            <p>Přihlášení úspěšné! Přesměrovávám zpět do aplikace...</p>
-          </body>
-        </html>
-      `);
+      // Převod do base64, abychom mohli bezpečně předat objekt přes URL
+      const tokensBase64 = Buffer.from(JSON.stringify(tokens)).toString('base64');
+      res.redirect(`/?auth_tokens=${tokensBase64}`);
     } catch (error) {
       console.error("Error exchanging code for tokens:", error);
-      res.status(500).send("Authentication failed");
+      res.redirect('/?auth_error=1');
     }
   });
 

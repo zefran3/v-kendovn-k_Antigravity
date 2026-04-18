@@ -374,6 +374,24 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Zachycení tokenů pro Google Kalendář z URL po přesměrování
+    const params = new URLSearchParams(window.location.search);
+    const authTokensBase64 = params.get('auth_tokens');
+    if (authTokensBase64) {
+      try {
+        const decodedTokens = JSON.parse(atob(authTokensBase64));
+        setGoogleTokens(decodedTokens);
+        localStorage.setItem('googleCalendarTokens', JSON.stringify(decodedTokens));
+        // Vyčistíme URL, ať to vypadá hezky a nepřepíše se to
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (e) {
+        console.error("Failed to parse auth tokens from URL", e);
+      }
+    } else if (params.get('auth_error')) {
+      setError("Propojení s Google Kalendářem se nezdařilo.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
