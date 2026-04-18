@@ -27,7 +27,6 @@ import { cs } from "date-fns/locale";
 import { auth, db } from "./firebase";
 import { 
   signInWithPopup, 
-  signInWithRedirect,
   GoogleAuthProvider, 
   onAuthStateChanged, 
   User as FirebaseUser,
@@ -518,12 +517,14 @@ export default function App() {
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
     try {
-      // Použijeme přesměrování místo vyskakovacího okna, 
-      // které mobilní telefony (zvlášť PWA) často blokují
-      await signInWithRedirect(auth, provider);
+      await signInWithPopup(auth, provider);
     } catch (err: any) {
       console.error("Login failed:", err);
-      setError(`Přihlášení se nezdařilo: ${err?.message || "Neznámá chyba"}`);
+      if (err?.message?.includes("unauthorized_domain") || err?.message?.includes("unauthorized-domain")) {
+        setError("Chyba: Tato adresa (Render) ještě není povolená ve Firebase! Běžte do Firebase Console -> Authentication -> Settings -> Authorized domains a přidejte tam vikendovnik.onrender.com");
+      } else {
+        setError(`Přihlášení se nezdařilo: ${err?.message || "Neznámá chyba"}`);
+      }
     }
   };
 
