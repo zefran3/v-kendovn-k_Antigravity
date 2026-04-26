@@ -261,7 +261,7 @@ export default function App() {
     today.setHours(0, 0, 0, 0);
 
     suggestions.forEach(s => {
-      if (s.status === 'approved' && s.eventDate) {
+      if (s.status === 'approved' && s.eventDate && s.type !== 'ride') {
         const eventDateObj = new Date(s.eventDate);
         if (eventDateObj < today) {
           const childNameKey = s.childName || "Neznámý";
@@ -2052,7 +2052,7 @@ export default function App() {
 
               <div className="overflow-y-auto pr-1 flex flex-col gap-3">
                 {suggestions
-                  .filter(s => s.status === 'approved' && (s.childName === selectedLeaderboardUser || (!s.childName && selectedLeaderboardUser === "Neznámý")) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0)))
+                  .filter(s => s.status === 'approved' && s.type !== 'ride' && (s.childName === selectedLeaderboardUser || (!s.childName && selectedLeaderboardUser === "Neznámý")) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0)))
                   .sort((a, b) => new Date(b.eventDate!).getTime() - new Date(a.eventDate!).getTime())
                   .map(s => (
                     <div key={s.id} className="bg-stone-50 border border-stone-200 p-3 rounded-xl flex flex-col">
@@ -2063,7 +2063,7 @@ export default function App() {
                     </div>
                 ))}
                 
-                {suggestions.filter(s => s.status === 'approved' && (s.childName === selectedLeaderboardUser || (!s.childName && selectedLeaderboardUser === "Neznámý")) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0))).length === 0 && (
+                {suggestions.filter(s => s.status === 'approved' && s.type !== 'ride' && (s.childName === selectedLeaderboardUser || (!s.childName && selectedLeaderboardUser === "Neznámý")) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0))).length === 0 && (
                   <div className="text-center p-5 text-stone-400 text-sm italic">Žádné realizované výlety nenalezeny.</div>
                 )}
               </div>
