@@ -38,24 +38,34 @@ async function startServer() {
     const { code } = req.query;
     try {
       const { tokens } = await oauth2Client.getToken(code as string);
-      // In a real app, store tokens in DB associated with user
-      // For now, we'll just send a success message
-      res.send(`
-        <html>
-          <body>
-            <script>
-              window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', tokens: ${JSON.stringify(tokens)} }, '*');
-              window.close();
-            </script>
-            <p>Přihlášení úspěšné! Toto okno se brzy zavře.</p>
-          </body>
-        </html>
-      `);
+      // Převod na base64 a přesměrování do aplikace pro PWA kompatibilitu na mobilech
+      const tokensBase64 = Buffer.from(JSON.stringify(tokens)).toString('base64');
+      const encodedTokens = encodeURIComponent(tokensBase64);
+      res.redirect(`/?auth_tokens=${encodedTokens}`);
     } catch (error) {
       console.error("Error exchanging code for tokens:", error);
       res.status(500).send("Authentication failed");
     }
   });
+
+  // Pomocná funkce pro nalezení správného kalendáře
+  async function getTargetCalendarId(calendar: any): Promise<string> {
+    if (process.env.GOOGLE_CALENDAR_ID) {
+      return process.env.GOOGLE_CALENDAR_ID;
+    }
+    try {
+      const response = await calendar.calendarList.list();
+      const calendars = response.data.items || [];
+      const efkoCalendar = calendars.find((c: any) => c.summary && c.summary.toLowerCase() === "efko");
+      if (efkoCalendar && efkoCalendar.id) {
+        console.log("Nalezen kalendář EFko, použije se ID:", efkoCalendar.id);
+        return efkoCalendar.id;
+      }
+    } catch (error) {
+      console.error("Chyba při hledání kalendáře EFko, použije se 'primary':", error);
+    }
+    return "primary";
+  }
 
   // Get Calendar Events
   app.post("/api/calendar/events", async (req, res) => {
@@ -64,10 +74,11 @@ async function startServer() {
 
     oauth2Client.setCredentials(tokens);
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    const targetCalendarId = await getTargetCalendarId(calendar);
 
     try {
       const response = await calendar.events.list({
-        calendarId: "primary",
+        calendarId: targetCalendarId,
         timeMin: new Date().toISOString(),
         maxResults: 150, // Zvýšeno kvůli robustnějšímu filtrování
         singleEvents: true,
@@ -106,10 +117,11 @@ async function startServer() {
 
     oauth2Client.setCredentials(tokens);
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    const targetCalendarId = await getTargetCalendarId(calendar);
 
     try {
       const response = await calendar.events.insert({
-        calendarId: "primary",
+        calendarId: targetCalendarId,
         requestBody: event,
       });
       res.json(response.data);
@@ -127,10 +139,11 @@ async function startServer() {
 
     oauth2Client.setCredentials(tokens);
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    const targetCalendarId = await getTargetCalendarId(calendar);
 
     try {
       await calendar.events.delete({
-        calendarId: "primary",
+        calendarId: targetCalendarId,
         eventId: eventId,
       });
       res.json({ success: true });
