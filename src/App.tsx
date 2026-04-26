@@ -931,7 +931,7 @@ export default function App() {
         <div className="flex items-center gap-3 ml-auto z-10">
           {user ? (
             <>
-              {["zefran3@gmail.com", "eva.kubartova@gmail.com"].includes(user.email?.toLowerCase() || "") && (
+              {["zefran3@gmail.com"].includes(user.email?.toLowerCase() || "") && (
                 <button 
                   onClick={() => setView(view === "parent" ? "child" : "parent")}
                   className="flex items-center gap-2 px-3 py-2 rounded-lg text-stone-500 hover:bg-rose-50 hover:text-rose-500 transition-colors text-sm font-semibold"
