@@ -6,13 +6,10 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const baseUrl = (process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || "https://vikendovnik.onrender.com").replace(/\/$/, "");
-const redirectUri = `${baseUrl}/auth/callback`;
-
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  redirectUri
+  process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_URL}/auth/callback`
 );
 
 async function startServer() {
@@ -36,28 +33,27 @@ async function startServer() {
     res.json({ url });
   });
 
-  // Debug endpoint pro kontrolu nastavení na Renderu
-  app.get("/api/debug", (req, res) => {
-    res.json({
-      baseUrl,
-      redirectUri,
-      clientIdSet: !!process.env.GOOGLE_CLIENT_ID,
-      clientSecretSet: !!process.env.GOOGLE_CLIENT_SECRET,
-      clientIdPrefix: process.env.GOOGLE_CLIENT_ID ? process.env.GOOGLE_CLIENT_ID.substring(0, 15) : "missing"
-    });
-  });
-
   // Auth Callback
   app.get("/auth/callback", async (req, res) => {
     const { code } = req.query;
     try {
       const { tokens } = await oauth2Client.getToken(code as string);
-      const tokensStr = JSON.stringify(tokens);
-      const tokensBase64 = Buffer.from(tokensStr).toString('base64');
-      res.redirect(`/?auth_tokens=${encodeURIComponent(tokensBase64)}`);
+      // In a real app, store tokens in DB associated with user
+      // For now, we'll just send a success message
+      res.send(`
+        <html>
+          <body>
+            <script>
+              window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', tokens: ${JSON.stringify(tokens)} }, '*');
+              window.close();
+            </script>
+            <p>Přihlášení úspěšné! Toto okno se brzy zavře.</p>
+          </body>
+        </html>
+      `);
     } catch (error) {
       console.error("Error exchanging code for tokens:", error);
-      res.redirect('/?auth_error=1');
+      res.status(500).send("Authentication failed");
     }
   });
 
