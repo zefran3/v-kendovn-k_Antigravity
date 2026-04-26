@@ -15,6 +15,9 @@ export default defineConfig(({mode}) => {
         devOptions: {
           enabled: true
         },
+        workbox: {
+          navigateFallbackDenylist: [/^\/auth/, /^\/api/],
+        },
         manifest: {
           name: 'Víkendovník',
           short_name: 'Víkend',
