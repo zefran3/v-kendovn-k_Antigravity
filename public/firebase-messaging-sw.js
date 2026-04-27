@@ -18,13 +18,18 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
 
-  const notificationTitle = payload.notification?.title || 'Nová aktivita ve Víkendovníku!';
-  const notificationOptions = {
-    body: payload.notification?.body,
-    icon: '/pwa-192x192.png',
-    badge: '/logo.png', // nebo badge icon
-    data: payload.data
-  };
-
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  // Zobrazit notifikaci manuálně POUZE pokud neobsahuje objekt notification.
+  // Pokud obsahuje notification, Firebase (nebo systém) ji zobrazí automaticky,
+  // čímž předejdeme dvojitým nebo vícenásobným upozorněním!
+  if (!payload.notification) {
+    const notificationTitle = payload.data?.title || 'Nová aktivita ve Víkendovníku!';
+    const notificationOptions = {
+      body: payload.data?.body,
+      icon: '/pwa-192x192.png',
+      badge: '/logo.png',
+      data: payload.data
+    };
+    self.registration.showNotification(notificationTitle, notificationOptions);
+  }
 });
+
