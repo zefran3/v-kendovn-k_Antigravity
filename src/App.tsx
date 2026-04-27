@@ -1045,7 +1045,7 @@ export default function App() {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -10 }}
         transition={{ duration: 0.3 }}
-        className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 p-6 max-w-6xl mx-auto flex-grow box-border pb-32 md:pb-6 relative"
+        className="grid grid-cols-1 landscape:grid-cols-[260px_1fr] md:grid-cols-[320px_1fr] gap-6 landscape:p-4 md:p-6 max-w-6xl mx-auto flex-grow box-border pb-32 md:pb-6 relative"
       >
         {/* Error Notification */}
         <AnimatePresence>
@@ -1067,7 +1067,7 @@ export default function App() {
           )}
         </AnimatePresence>
         
-        <aside className="flex flex-col gap-5">
+        <aside className="flex flex-col gap-5 landscape:sticky md:sticky landscape:top-[70px] md:top-[80px] landscape:h-fit md:h-fit landscape:max-h-[calc(100vh-90px)] md:max-h-[calc(100vh-100px)] overflow-y-auto scrollbar-hide landscape:pb-4 md:pb-4 -mx-2 px-2 md:mx-0 md:px-0">
           {/* Welcome Section */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
