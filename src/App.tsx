@@ -1072,7 +1072,7 @@ export default function App() {
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-rose-50 border border-rose-200 rounded-2xl p-5 flex flex-col shadow-sm"
+            className="bg-rose-50 border border-rose-200 rounded-2xl p-5 flex flex-col shadow-[inset_0_4px_8px_rgba(255,255,255,0.9),inset_0_-3px_6px_rgba(0,0,0,0.03),0_6px_12px_-2px_rgba(0,0,0,0.06)]"
           >
             <div className="text-[13px] uppercase tracking-widest text-rose-500 mb-2 font-bold flex items-center gap-2">
               <span>💡</span> {view === "parent" ? "Administrace" : "Ahoj všichni!"}
@@ -1119,7 +1119,7 @@ export default function App() {
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-stone-50 border border-stone-200 rounded-2xl p-5 flex flex-col shadow-sm"
+            className="bg-stone-50 border border-stone-200 rounded-2xl p-5 flex flex-col shadow-[inset_0_4px_8px_rgba(255,255,255,1),inset_0_-3px_6px_rgba(0,0,0,0.03),0_6px_12px_-2px_rgba(0,0,0,0.05)]"
           >
             <div className="text-[13px] uppercase tracking-widest text-stone-500 mb-2 font-bold flex items-center gap-2">
               <span>📚</span> Historie a Archív
@@ -1140,7 +1140,7 @@ export default function App() {
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-gradient-to-b from-amber-50 to-orange-50 border text-center border-amber-200 rounded-2xl p-5 shadow-sm"
+              className="bg-gradient-to-b from-amber-50 to-orange-50 border text-center border-amber-200 rounded-2xl p-5 shadow-[inset_0_4px_8px_rgba(255,255,255,0.8),inset_0_-3px_6px_rgba(0,0,0,0.04),0_6px_12px_-2px_rgba(0,0,0,0.07)]"
             >
               <div className="text-[13px] uppercase tracking-widest text-amber-600 mb-4 font-extrabold flex items-center justify-center gap-2">
                 <span>🏆</span> Žebříček úspěchů
@@ -1248,9 +1248,15 @@ export default function App() {
                     if (a.reconsiderationRequested && !b.reconsiderationRequested) return -1;
                     if (!a.reconsiderationRequested && b.reconsiderationRequested) return 1;
 
-                    // Schválené mají přednost
-                    if (a.status === "approved" && b.status !== "approved") return -1;
-                    if (a.status !== "approved" && b.status === "approved") return 1;
+                    // Priorita stavů
+                    const getPriority = (status: string) => {
+                      if (status === "pending") return 1;
+                      if (status === "approved") return 2;
+                      return 3;
+                    };
+                    const pA = getPriority(a.status);
+                    const pB = getPriority(b.status);
+                    if (pA !== pB) return pA - pB;
 
                     // Pokud jsou obě schválené, řadit podle nejbližšího data eventDate
                     if (a.status === "approved" && b.status === "approved") {
@@ -1259,7 +1265,7 @@ export default function App() {
                       if (dateA !== dateB) return dateA - dateB;
                     }
 
-                    // Pokud nejsou schválené (nebo mají stejné eventDate), řadit podle času vytvoření (novější nahoře)
+                    // Jinak řadit podle času vytvoření (novější nahoře)
                     return b.createdAt - a.createdAt;
                   })
                   .map((suggestion) => (
@@ -1270,7 +1276,7 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     className={cn(
-                      "bg-white rounded-[20px] p-5 border-2 transition-all shadow-[0_10px_15px_-3px_rgba(0,0,0,0.04)] flex flex-col justify-between min-h-[160px]",
+                      "bg-white rounded-[20px] p-5 border-2 transition-all shadow-[inset_0_4px_8px_rgba(255,255,255,1),inset_0_-3px_6px_rgba(0,0,0,0.03),0_12px_24px_-6px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[160px]",
                       suggestion.reconsiderationRequested ? "bg-orange-50 border-orange-400 ring-4 ring-orange-200/50 shadow-orange-100" :
                       suggestion.status === "approved" ? "bg-green-50 border-green-100" :
                       suggestion.status === "rejected" ? "bg-red-50 border-red-100" :
@@ -1290,7 +1296,7 @@ export default function App() {
                           )}>
                             {suggestion.status === "approved" ? "Schváleno" :
                              suggestion.status === "rejected" ? "Zamítnuto" :
-                             suggestion.status === "cancelled" ? "Zrušeno" : "Čeká na tátu"}
+                             suggestion.status === "cancelled" ? "Zrušeno" : "Čeká na schválení"}
                           </div>
                           {suggestion.type === "ride" && (
                             <div className="text-[10px] uppercase px-2 py-1 rounded-full font-extrabold w-fit mb-2 bg-orange-100 text-orange-600 border border-orange-200">
@@ -1299,7 +1305,7 @@ export default function App() {
                           )}
                         </div>
 
-                        {view === "parent" && suggestion.status !== "cancelled" && (
+                        {view === "parent" && (
                           <button
                             onClick={() => handleDeleteSuggestion(suggestion)}
                             className="p-1 text-stone-300 hover:text-red-500 transition-colors"
@@ -1708,7 +1714,16 @@ export default function App() {
               {/* List */}
               <div className="overflow-y-auto flex-1 space-y-4 pr-1 scrollbar-hide pb-10">
                 {suggestions
-                  .filter(s => s.status === (archiveTab === "completed" ? "approved" : "cancelled") && s.type !== "ride")
+                  .filter(s => {
+                    if (s.type === "ride") return false;
+                    if (archiveTab === "completed") {
+                      if (s.status !== "approved") return false;
+                      if (!s.eventDate) return false;
+                      return new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0));
+                    } else {
+                      return s.status === "cancelled";
+                    }
+                  })
                   .sort((a, b) => {
                     if (archiveTab === "completed") {
                       // Nehodnocené úplně dole (a.grade || 99)
@@ -1721,7 +1736,7 @@ export default function App() {
                     }
                   })
                   .map(suggestion => (
-                  <div key={suggestion.id} className="bg-white rounded-[24px] p-5 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] border border-stone-100 flex flex-col gap-4">
+                  <div id={`archive-${suggestion.id}`} key={suggestion.id} className="bg-white rounded-[24px] p-5 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] border border-stone-100 flex flex-col gap-4 scroll-mt-6 transition-all duration-500">
                     <div className="flex flex-col md:flex-row gap-4 justify-between w-full">
                     <div className="flex-1">
                       <div className="flex gap-2 items-center mb-2">
@@ -2082,12 +2097,33 @@ export default function App() {
                   .filter(s => s.status === 'approved' && s.type !== 'ride' && (s.childName === selectedLeaderboardUser || (!s.childName && selectedLeaderboardUser === "Neznámý")) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0)))
                   .sort((a, b) => new Date(b.eventDate!).getTime() - new Date(a.eventDate!).getTime())
                   .map(s => (
-                    <div key={s.id} className="bg-stone-50 border border-stone-200 p-3 rounded-xl flex flex-col">
-                      <div className="font-bold text-stone-700 text-sm mb-1">{s.title}</div>
+                    <button 
+                      key={s.id} 
+                      onClick={() => {
+                        setSelectedLeaderboardUser(null);
+                        setArchiveTab("completed");
+                        setShowArchive(true);
+                        setTimeout(() => {
+                          const el = document.getElementById(`archive-${s.id}`);
+                          if (el) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            el.classList.add('ring-4', 'ring-rose-300', 'scale-[1.02]');
+                            setTimeout(() => {
+                              el.classList.remove('ring-4', 'ring-rose-300', 'scale-[1.02]');
+                            }, 1500);
+                          }
+                        }, 400);
+                      }}
+                      className="bg-white hover:bg-rose-50 border border-stone-200 p-3 rounded-xl flex flex-col text-left transition-all cursor-pointer w-full shadow-sm hover:shadow hover:-translate-y-0.5 active:scale-[0.98]"
+                    >
+                      <div className="font-bold text-stone-700 text-sm mb-1 flex justify-between w-full">
+                        <span>{s.title}</span>
+                        <span className="text-stone-300 text-xs mt-0.5">🔗 Otevřít</span>
+                      </div>
                       <div className="text-xs text-stone-500 font-medium flex items-center gap-1">
                         <span>🗓️</span> {new Date(s.eventDate!).toLocaleDateString('cs-CZ')}
                       </div>
-                    </div>
+                    </button>
                 ))}
                 
                 {suggestions.filter(s => s.status === 'approved' && s.type !== 'ride' && (s.childName === selectedLeaderboardUser || (!s.childName && selectedLeaderboardUser === "Neznámý")) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0))).length === 0 && (
