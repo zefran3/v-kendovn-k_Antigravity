@@ -1200,8 +1200,8 @@ export default function App() {
 
         {/* Suggestions List */}
         <section className="flex flex-col gap-5">
-          <div className="flex flex-col gap-3">
-            <div className="text-[13px] uppercase tracking-widest text-stone-400 font-bold flex items-center gap-2">
+          <div className="flex flex-col gap-3 sticky top-[60px] md:top-[80px] z-40 bg-white/85 backdrop-blur-xl py-4 -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl shadow-sm border-b md:border border-stone-200/50 mb-2">
+            <div className="text-[13px] uppercase tracking-widest text-stone-500 font-bold flex items-center gap-2 drop-shadow-sm">
               <span>🌟</span> Nástěnka přání a nápadů
             </div>
             
@@ -2023,7 +2023,13 @@ export default function App() {
               <div className="grid grid-cols-2 gap-4">
                 {forecast.map((day, idx) => (
                   <div key={idx} className="bg-stone-50 border border-stone-200 rounded-xl p-4 flex flex-col items-center text-center">
-                    <div className="text-sm font-bold text-stone-500 uppercase tracking-widest mb-2">{day.dayName}</div>
+                    <div className="text-sm font-bold text-stone-500 uppercase tracking-widest leading-tight">{day.dayName}</div>
+                    <div className="text-[11px] text-stone-400 font-medium mb-3 hidden md:block">
+                      {new Date(day.date).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </div>
+                    <div className="text-[11px] text-stone-400 font-medium mb-3 md:hidden">
+                      {new Date(day.date).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    </div>
                     <div className="text-5xl mb-2">{day.icon}</div>
                     <div className="text-xl font-extrabold text-stone-800 mb-4">{day.maxTemp}°C <span className="text-sm font-medium text-stone-400">/ {day.minTemp}°C</span></div>
                     
