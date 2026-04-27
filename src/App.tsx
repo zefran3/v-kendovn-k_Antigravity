@@ -24,7 +24,8 @@ import { cn } from "./lib/utils";
 import { ActivitySuggestion, WeekendEvent, UserProfile, ActivityComment } from "./types";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { cs } from "date-fns/locale";
-import { auth, db } from "./firebase";
+import { auth, db, messaging } from "./firebase";
+import { getToken } from "firebase/messaging";
 import { 
   signInWithPopup, 
   GoogleAuthProvider, 
@@ -426,6 +427,26 @@ export default function App() {
         // Sync user email for global avatar lookups
         if (currentUser.email) {
           setDoc(doc(db, "users", currentUser.uid), { email: currentUser.email }, { merge: true }).catch(console.error);
+        }
+
+        // Request Push Notification permission if supported
+        if (messaging) {
+          Notification.requestPermission().then((permission) => {
+            if (permission === 'granted') {
+              console.log('Notification permission granted.');
+              getToken(messaging, { vapidKey: 'BKgR9vuJB_M_fGqrzFANmtEA7B0i6gzV7xsN9gv05eEotLpgGD1LeyLGWbEOaE_rsCAsKL6uxRnPn46TljVIROk' }).then((currentToken) => {
+                if (currentToken) {
+                  setDoc(doc(db, "users", currentUser.uid), { fcmToken: currentToken }, { merge: true }).catch(console.error);
+                } else {
+                  console.log('No registration token available. Request permission to generate one.');
+                }
+              }).catch((err) => {
+                console.log('An error occurred while retrieving token. ', err);
+              });
+            } else {
+              console.log('Unable to get permission to notify.');
+            }
+          });
         }
       }
     });

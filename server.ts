@@ -3,6 +3,8 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { google } from "googleapis";
 import dotenv from "dotenv";
+import fs from "fs";
+import admin from "firebase-admin";
 
 dotenv.config();
 
@@ -11,6 +13,70 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_SECRET,
   process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_URL}/auth/callback`
 );
+
+// Inicializace Firebase Admin pro push notifikace
+try {
+  const serviceAccountPath = path.join(process.cwd(), 'vikendovnik-firebase-adminsdk-fbsvc-62ecb71cd3.json');
+  if (fs.existsSync(serviceAccountPath)) {
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log("Firebase Admin initialized successfully.");
+    
+    const db = admin.firestore();
+    const startTime = admin.firestore.Timestamp.now();
+    
+    db.collection('suggestions').where('createdAt', '>', startTime).onSnapshot(snapshot => {
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'added') {
+          const suggestion = change.doc.data();
+          sendPushNotification(suggestion);
+        }
+      });
+    }, (error) => {
+      console.error("Firestore listen error:", error);
+    });
+  } else {
+    console.warn("Service account key not found, push notifications won't work.");
+  }
+} catch (error) {
+  console.error("Failed to initialize Firebase Admin", error);
+}
+
+async function sendPushNotification(suggestion: any) {
+  try {
+    const db = admin.firestore();
+    const usersSnapshot = await db.collection('users').get();
+    
+    const tokens: string[] = [];
+    usersSnapshot.forEach(doc => {
+      const userData = doc.data();
+      // Odesíláme notifikace pouze pro administrátory nebo všechny?
+      // Ponecháme to zatím primárně pro účet zefran3@gmail.com (Táta) a evičku
+      if ((userData.email === 'zefran3@gmail.com' || userData.email === 'eva.kubartova@gmail.com') && userData.fcmToken) {
+         if (!tokens.includes(userData.fcmToken)) {
+             tokens.push(userData.fcmToken);
+         }
+      }
+    });
+
+    if (tokens.length > 0) {
+      const title = suggestion.type === 'ride' ? 'Nová žádost o odvoz 🚗' : 'Nový návrh aktivity 🎉';
+      const body = `${suggestion.childName}: ${suggestion.title}`;
+      
+      const message = {
+        notification: { title, body },
+        tokens: tokens
+      };
+      
+      const response = await admin.messaging().sendEachForMulticast(message);
+      console.log('Push notifications sent successfully:', response.successCount, 'failed:', response.failureCount);
+    }
+  } catch (error) {
+    console.error('Error sending push notification:', error);
+  }
+}
 
 async function startServer() {
   const app = express();
