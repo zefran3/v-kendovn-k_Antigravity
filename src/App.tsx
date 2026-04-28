@@ -26,7 +26,11 @@ import {
   Film,
   Timer,
   Baby,
-  Home
+  Home,
+  Bot,
+  MessageSquare,
+  Send,
+  Loader2
 } from "lucide-react";
 import { cn } from "./lib/utils";
 import { ActivitySuggestion, WeekendEvent, UserProfile, ActivityComment, Inspiration, CinemaListing } from "./types";
@@ -234,7 +238,56 @@ export default function App() {
       setError("Nepodařilo se aktualizovat poznámku k uživateli.");
     }
   };
-  
+  const [showChatAssistant, setShowChatAssistant] = useState(false);
+  const [chatMessage, setChatMessage] = useState("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatReply, setChatReply] = useState<string | null>(null);
+
+  const handleChatAssistant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatMessage.trim() || isChatLoading) return;
+
+    setIsChatLoading(true);
+    setChatReply(null);
+    try {
+      const res = await fetch("/api/agent/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          message: chatMessage, 
+          userLocation: weather?.city,
+          userName: userProfiles[user?.uid || '']?.displayName || user?.displayName || "Uživatel"
+        })
+      });
+
+      if (!res.ok) throw new Error("Agent neodpovídá.");
+      const result = await res.json();
+
+      setChatReply(result.reply);
+      
+      if (result.action !== "UNKNOWN") {
+        setFormType(result.action === "CREATE_RIDE" ? "ride" : "activity");
+        setNewSuggestion(prev => ({
+          ...prev,
+          ...result.data,
+          childName: getLoggedInFamilyName()
+        }));
+        // Nechat uživatele vidět odpověď a pak otevřít formulář po 2 sekundách
+        setTimeout(() => {
+          setShowForm(true);
+          setShowChatAssistant(false);
+          setChatMessage("");
+          setChatReply(null);
+        }, 2500);
+      }
+    } catch (err) {
+      console.error("Chat Error:", err);
+      setError("Asistent má momentálně volno. Zkus to prosím později.");
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
   const getAvatarForChild = (childName: string) => {
     if (!childName) return "👶";
     
@@ -1059,7 +1112,6 @@ export default function App() {
 
       setCancellingEvent(null);
       setCancelReason("");
-
     } catch (err: any) {
       console.error("Smazání selhalo", err);
       if (err instanceof Error && err.message.includes("permission")) {
@@ -1587,16 +1639,23 @@ export default function App() {
                                 // Pro cyklo trasy: sestav URL z průjezdních bodů v názvu
                                 // Pro cyklo trasy: sestav Google Maps URL s cyklo režimem a průjezdními body
                                 const getCyclingUrl = () => {
-                                  // Pokus o extrakci bodů z názvu: "Okruh krajem (Havraníky - Hnanice - Šatov)"
+                                  // 1. Přednost má odkaz přímo od AI agenta (pokud je to Mapy.cz)
+                                  if (insp.url && insp.url.includes('mapy.cz')) {
+                                    return insp.url;
+                                  }
+
+                                  // 2. Pokus o extrakci bodů z názvu a sestavení Mapy.cz odkazu
                                   const routeMatch = insp.title.match(/\(([^)]+)\)/);
                                   if (routeMatch) {
                                     const points = routeMatch[1].split(/\s*[-–→]\s*/).map(p => p.trim());
                                     if (points.length >= 2) {
-                                      const waypoints = points.map(p => encodeURIComponent(p)).join('/');
-                                      return `https://www.google.com/maps/dir/${waypoints}/?travelmode=bicycling`;
+                                      const waypoints = points.map(p => `rc=${encodeURIComponent(p)}`).join('&');
+                                      return `https://mapy.cz/turisticka?planovani-trasy&${waypoints}`;
                                     }
                                   }
-                                  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(insp.location)}&travelmode=bicycling`;
+                                  
+                                  // Fallback na Mapy.cz vyhledávání cíle
+                                  return `https://mapy.cz/turisticka?q=${encodeURIComponent(insp.location)}`;
                                 };
                                 
                                 return (
@@ -2827,7 +2886,9 @@ export default function App() {
             </motion.div>
           </>
         )}
-      </AnimatePresence>      <AnimatePresence>
+      </AnimatePresence>
+
+      <AnimatePresence>
         {error && (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -2843,6 +2904,78 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Floating Chat Assistant Button */}
+      {user && (
+        <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end gap-4">
+          <AnimatePresence>
+            {showChatAssistant && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.8, y: 20 }}
+                className="bg-white rounded-3xl shadow-2xl border border-stone-200 w-[320px] md:w-[380px] overflow-hidden flex flex-col mb-2"
+              >
+                {/* Header */}
+                <div className="bg-gradient-to-r from-rose-500 to-orange-500 p-4 text-white flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Bot size={20} className="text-white" />
+                    <span className="font-bold text-sm">Rodinný Asistent</span>
+                  </div>
+                  <button onClick={() => setShowChatAssistant(false)} className="hover:bg-white/20 p-1 rounded-full transition-colors">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Content */}
+                <div className="p-4 max-h-[400px] overflow-y-auto bg-stone-50">
+                  <div className="bg-white p-3 rounded-2xl rounded-tl-none shadow-sm border border-stone-100 text-sm text-stone-700 leading-relaxed mb-4">
+                    Ahoj! Jsem tvůj asistent. Napiš mi, co potřebuješ (např. "chci odvézt domů" nebo "v neděli půjdeme do zoo") a já ti s tím pomůžu!
+                  </div>
+
+                  {chatReply && (
+                    <motion.div 
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="bg-rose-50 p-3 rounded-2xl rounded-tl-none shadow-sm border border-rose-100 text-sm text-rose-700 leading-relaxed"
+                    >
+                      {chatReply}
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* Input */}
+                <form onSubmit={handleChatAssistant} className="p-4 bg-white border-t border-stone-100 flex gap-2">
+                  <input 
+                    type="text"
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    placeholder="Napiš zprávu..."
+                    className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-rose-200 outline-none"
+                    disabled={isChatLoading}
+                  />
+                  <button 
+                    type="submit"
+                    disabled={isChatLoading || !chatMessage.trim()}
+                    className="bg-rose-500 text-white p-2 rounded-xl hover:bg-rose-600 transition-colors disabled:opacity-50"
+                  >
+                    {isChatLoading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
+                  </button>
+                </form>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <button
+            onClick={() => setShowChatAssistant(!showChatAssistant)}
+            className={cn(
+              "w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition-all hover:scale-110 active:scale-95",
+              showChatAssistant ? "bg-stone-800 text-white" : "bg-gradient-to-br from-rose-500 to-orange-500 text-white"
+            )}
+          >
+            {showChatAssistant ? <X size={28} /> : <MessageSquare size={28} />}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

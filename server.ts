@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import fs from "fs";
 import admin from "firebase-admin";
 import cron from "node-cron";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -89,6 +90,32 @@ async function sendPushNotification(suggestion: any) {
     }
   } catch (error) {
     console.error('Error sending push notification:', error);
+  }
+}
+
+async function sendBroadcastNotification(title: string, body: string) {
+  try {
+    const db = admin.firestore();
+    const usersSnapshot = await db.collection('users').get();
+    
+    const tokens: string[] = [];
+    usersSnapshot.forEach(doc => {
+      const userData = doc.data();
+      if (userData.fcmToken && !tokens.includes(userData.fcmToken)) {
+        tokens.push(userData.fcmToken);
+      }
+    });
+
+    if (tokens.length > 0) {
+      const message = {
+        notification: { title, body },
+        tokens: tokens
+      };
+      await admin.messaging().sendEachForMulticast(message);
+      console.log(`Broadcast notification sent to ${tokens.length} users: ${title}`);
+    }
+  } catch (error) {
+    console.error('Error sending broadcast notification:', error);
   }
 }
 
@@ -238,11 +265,10 @@ async function startServer() {
       throw new Error("Missing GEMINI_API_KEY");
     }
     
-    const { GoogleGenAI } = await import('@google/genai');
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const ai = new GoogleGenAI(process.env.GEMINI_API_KEY!);
 
     const prompt = `Jsi organizátor rodinných aktivit pro aplikaci Víkendovník. 
-Vyhledej aktuální a zajímavé akce na tento nebo příští víkend v Jihomoravském kraji a okolí (Brno, Vyškov, Olomouc, do cca 1 hodiny cesty autem).
+K vyhledání informací POVINNĚ použi Google Search Grounding. Vyhledej AKTUÁLNÍ (pro tento nebo příští víkend) a reálně existující akce v Jihomoravském kraji a okolí (Brno, Vyškov, Olomouc, do cca 1 hodiny cesty autem).
 ${userLocation ? `AKTUÁLNÍ LOKALITA UŽIVATELE: ${userLocation}. Upřednostni akce v blízkosti tohoto místa.` : ""}
 Hledej primárně na portálech: gotobrno.cz, kudyznudy.cz, jizni-morava.cz, mksvyskov.cz, cinestar.cz (Olomouc), cyklo-jizni-morava.cz, mapy.cz (cykloturistická vrstva).
 
@@ -259,8 +285,8 @@ RODINNÁ PRAVIDLA (Kritické):
    - Trasa MUSÍ být OKRUH (start i cíl na stejném místě).
    - Start i cíl MUSÍ být v místě: ${userLocation || "v blízkosti bydliště (Brno/Vyškov)"}.
    - Uveď délku trasy v km a převýšení v poli "cycling_info".
-   - Do pole "url" POVINNĚ vlož odkaz na plánovač trasy na mapy.cz s kompletní trasou. Formát URL: https://mapy.cz/cykloturisticka?planovani-trasy&start=NAZEV_STARTU&finish=NAZEV_STARTU&via1=BOD1&via2=BOD2... (start i finish je STEJNÝ BOD!).
-   - Povinně vyplň pole "cycling_info": distance, elevation, duration.
+   - Do pole "url" POVINNĚ vlož odkaz na hotovou trasu na Mapy.cz. Formát URL: https://mapy.cz/turisticka?rc=lat1,lon1&rc=lat2,lon2&rc=lat3,lon3&rc=lat1 (start i cíl MUSÍ být stejný!). DŮLEŽITÉ: Jako souřadnice použij reálná čísla (např. 49.195,16.608). Mapy.cz takto trasu okamžitě vypočítají a zobrazí v mapě.
+   - Povinně vyplň pole "cycling_info": distance (např. "25 km"), elevation (např. "300 m"), duration (např. "2:30").
 
 Vyber 5–7 nejlepších akcí z internetu. POVINNĚ musí být zastoupena minimálně 1 inspirace pro dceru ("pro_dceru") a minimálně 1 pro syna ("pro_syna"). Zbytek může být "pro_vsechny".
 Některé akce zacíli speciálně bez hradů pro dceru ("pro_dceru") nebo bez vody pro syna ("pro_syna").
@@ -320,24 +346,23 @@ Vrať VÝHRADNĚ JSON pole s touto strukturou (a žádný jiný text):
   }
 ]
 
-DŮLEŽITÉ — PŘESNOST INFORMACÍ:
-- NEVYMÝŠLEJ SI CENY. Pole "price" vyplň POUZE pokud jsi cenu skutečně našel na webu dané instituce/akce. Pokud cenu nenajdeš, nastav pole na null. Špatná cena je horší než žádná.
-- NEVYMÝŠLEJ SI URL. Každý odkaz v "url" a "ticket_url" musí vést na reálně existující stránku, kterou jsi našel při vyhledávání. Pokud si nejsi jistý, použij hlavní doménu webu (např. https://www.zoobrno.cz). Raději null než vymyšlený odkaz.
+DŮLEŽITÉ — PŘESNOST INFORMACÍ (Kritické):
+- ABSOLUTNÍ ZÁKAZ ODHADOVÁNÍ URL. Nikdy nevytvářej URL adresu jen na základě názvu akce (např. nikdy nedoplňuj .cz za název). Použij VÝHRADNĚ a POUZE tu URL adresu, kterou jsi skutečně našel v Google Search Grounding výsledcích pro danou akci. 
+- Pokud v search results nenajdeš přímou a funkční URL adresu akce, nastav pole "url" na null. Raději null, než nefunkční nebo "skoro správný" odkaz. 
+- Adresy končící chybou nebo nefunkční přesměrování nepoužívej.
+- NEVYMÝŠLEJ SI CENY. Pole "price" vyplň POUZE pokud jsi cenu skutečně našel na webu dané instituce/akce. Pokud cenu nenajdeš, nastav pole na null.
 - Pole "ticket_url" = stránka kde se kupují vstupenky/vstupné. Hledej na webu dané instituce stránky jako: vstupné, vstupenky, e-shop, eshop, obchod, tickets, buy. Mnoho institucí má e-shop na vlastní doméně nebo používá externí prodejce (GoOut, Ticketportal, Ticketmaster). Pokud najdeš, použij. Pokud ne, nastav na null.
 - Pole "cinema_listings" vyplň POUZE u kin. U ostatních akcí ho nastav na null. U cinema_listings NEUVÁDEJ URL u jednotlivých filmů.
 - OTEVÍRACÍ DOBY: Pole "opening_hours" vyplň pouze pokud jsi otevírací dobu skutečně našel na webu. Nenajdeš-li, nastav na null.
 - Všechna pole musí být přítomna v každém objektu (i když jsou null).`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        temperature: 0.7
-      }
+    const model = ai.getGenerativeModel({ 
+      model: 'gemini-1.5-pro', // Pro je mnohem lepší v přesnosti dat
+      tools: [{ googleSearchRetrieval: {} }] 
     });
 
-    const responseText = response.text || "[]";
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
     let suggestions = [];
     try {
       const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -368,6 +393,56 @@ DŮLEŽITÉ — PŘESNOST INFORMACÍ:
     return suggestions;
   }
 
+  // Chat Assistant Route
+  app.post("/api/agent/chat", async (req, res) => {
+    const { message, userLocation, userName } = req.body;
+    try {
+      const ai = new GoogleGenAI(process.env.GEMINI_API_KEY);
+      const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+      const chatPrompt = `Jsi rodinný asistent v aplikaci Víkendovník. Pomáháš uživateli ${userName} rychle vytvořit záznam v aplikaci pomocí přirozeného jazyka.
+AKTUÁLNÍ LOKALITA UŽIVATELE: ${userLocation || "neznámá"}
+
+ÚKOL: Analyzuj zprávu uživatele a rozhodni, jakou akci chce provést.
+Možné akce:
+1. CREATE_RIDE: Uživatel potřebuje odvézt (např. "Potřebuju odvézt ze školy domů", "Vyzvedneš mě v 5 u kina?").
+2. CREATE_ACTIVITY: Uživatel navrhuje výlet nebo akci (např. "Chtěl bych jít v sobotu do ZOO", "Půjdeme v neděli na pizzu do centra?").
+3. UNKNOWN: Pokud zprávě nerozumíš nebo není o tvoření aktivit.
+
+Vrať VÝHRADNĚ JSON v tomto formátu:
+{
+  "action": "CREATE_RIDE" | "CREATE_ACTIVITY" | "UNKNOWN",
+  "data": {
+    // Pro CREATE_RIDE:
+    "rideFrom": "místo odkud (použij aktuální lokalitu ${userLocation} pokud dává smysl)",
+    "rideTo": "cíl cesty",
+    "eventTime": "HH:MM (pokud je zmíněn)",
+    // Pro CREATE_ACTIVITY:
+    "title": "krátký název",
+    "description": "popis",
+    "location": "místo konání",
+    "suggestedTime": "sobota" | "neděle" (pokud lze určit),
+    "eventDate": "YYYY-MM-DD (pokud lze určit)"
+  },
+  "reply": "Krátká, milá odpověď uživateli, co jsi pro něj připravil (česky)."
+}
+
+ZPRÁVA UŽIVATELE: "${message}"`;
+
+      console.log(`Chat Agent: Processing message from ${userName}: "${message}"`);
+      const result = await model.generateContent(chatPrompt);
+      const responseText = result.response.text();
+      console.log("Chat Agent AI Response:", responseText);
+
+      const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const actionData = JSON.parse(cleanJson);
+      res.json(actionData);
+    } catch (error: any) {
+      console.error("Chat Agent Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // AI Agent Route pro generování inspirace
   app.post("/api/agent/generate", async (req, res) => {
     const { location } = req.body;
@@ -384,7 +459,13 @@ DŮLEŽITÉ — PŘESNOST INFORMACÍ:
   cron.schedule("0 3 * * 3", () => {
     console.log("CRON: Spouštím automatické generování víkendové inspirace...");
     generateInspirations()
-      .then(suggestions => console.log(`CRON: Úspěšně vygenerováno ${suggestions.length} tipů.`))
+      .then(suggestions => {
+        console.log(`CRON: Úspěšně vygenerováno ${suggestions.length} tipů.`);
+        sendBroadcastNotification(
+          "✨ Nové tipy na víkend!", 
+          "AI agent právě našel čerstvé nápady na výlety. Podívej se do aplikace!"
+        );
+      })
       .catch(error => console.error("CRON Error:", error));
   });
 
