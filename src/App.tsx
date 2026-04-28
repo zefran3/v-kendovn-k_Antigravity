@@ -203,10 +203,14 @@ export default function App() {
     admin: { canSuggest: true, canComment: true, canApprove: true, canManageUsers: true },
     parent: { canSuggest: true, canComment: true, canApprove: true, canManageUsers: false },
     child: { canSuggest: true, canComment: true, canApprove: false, canManageUsers: false },
-    viewer: { canSuggest: false, canComment: false, canApprove: false, canManageUsers: false },
+    viewer: { canSuggest: true, canComment: false, canApprove: false, canManageUsers: false },
   };
 
   const updateUserRole = async (userId: string, role: UserRole) => {
+    if (userId === user?.uid && role !== 'admin') {
+      setError("Nemůžete si odebrat vlastní administrátorská práva.");
+      return;
+    }
     try {
       await updateDoc(doc(db, "users", userId), { 
         role, 
@@ -216,6 +220,18 @@ export default function App() {
     } catch (err) {
       console.error(err);
       setError("Nepodařilo se aktualizovat práva uživatele.");
+    }
+  };
+
+  const updateUserAdminAlias = async (userId: string, adminAlias: string) => {
+    try {
+      await updateDoc(doc(db, "users", userId), { 
+        adminAlias, 
+        updatedAt: serverTimestamp() 
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Nepodařilo se aktualizovat poznámku k uživateli.");
     }
   };
   
@@ -1221,16 +1237,18 @@ export default function App() {
                 >
                   <User size={16} /> Správa uživatelů
                 </button>
-                <button
-                  onClick={() => { 
-                    if (showInspirationsView) { setExpandedInspiration(null); } 
-                    else { setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100); }
-                    setShowInspirationsView(!showInspirationsView); 
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
-                >
-                  {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
-                </button>
+                {userProfiles[user?.uid || '']?.role !== 'viewer' && (
+                  <button
+                    onClick={() => { 
+                      if (showInspirationsView) { setExpandedInspiration(null); } 
+                      else { setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100); }
+                      setShowInspirationsView(!showInspirationsView); 
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
+                  >
+                    {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
+                  </button>
+                )}
               </div>
             )}
             {view === "child" && (
@@ -1245,26 +1263,30 @@ export default function App() {
                 >
                   <Plus size={16} /> Přidat aktivitu
                 </button>
-                <button 
-                  onClick={() => {
-                    setFormType("ride");
-                    setNewSuggestion(prev => ({ ...prev, childName: getLoggedInFamilyName() }));
-                    setShowForm(true);
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-orange-600 transition-colors shadow-sm"
-                >
-                  🚗 Potřebuji odvézt
-                </button>
-                <button
-                  onClick={() => { 
-                    if (showInspirationsView) { setExpandedInspiration(null); } 
-                    else { setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }
-                    setShowInspirationsView(!showInspirationsView); 
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
-                >
-                  {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
-                </button>
+                {userProfiles[user?.uid || '']?.role !== 'viewer' && (
+                  <>
+                    <button 
+                      onClick={() => {
+                        setFormType("ride");
+                        setNewSuggestion(prev => ({ ...prev, childName: getLoggedInFamilyName() }));
+                        setShowForm(true);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-orange-600 transition-colors shadow-sm"
+                    >
+                      🚗 Potřebuji odvézt
+                    </button>
+                    <button
+                      onClick={() => { 
+                        if (showInspirationsView) { setExpandedInspiration(null); } 
+                        else { setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }
+                        setShowInspirationsView(!showInspirationsView); 
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
+                    >
+                      {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </motion.div>
@@ -2746,7 +2768,17 @@ export default function App() {
                               )}
                             </div>
                             <div className="flex flex-col">
-                              <span className="font-bold text-stone-700 text-sm">{profile.displayName || profile.email?.split('@')[0]}</span>
+                              <input 
+                                type="text"
+                                defaultValue={profile.adminAlias || profile.displayName || profile.email?.split('@')[0]}
+                                onBlur={(e) => {
+                                  if (e.target.value !== (profile.adminAlias || profile.displayName || profile.email?.split('@')[0])) {
+                                    updateUserAdminAlias(profile.id!, e.target.value);
+                                  }
+                                }}
+                                className="font-bold text-stone-700 text-sm bg-transparent border-b border-transparent hover:border-stone-300 focus:border-indigo-400 focus:outline-none transition-colors"
+                                title="Soukromé jméno pro admina"
+                              />
                               <span className="text-[10px] text-stone-400">{profile.email}</span>
                             </div>
                           </div>
@@ -2765,6 +2797,9 @@ export default function App() {
                         </td>
                         <td className="py-4 px-2">
                           <div className="flex flex-wrap gap-1.5">
+                            {profile.role === 'admin' && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 border border-stone-200 uppercase tracking-tighter">Administrátor</span>
+                            )}
                             {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canSuggest && (
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 border border-blue-100">Navrhuje</span>
                             )}

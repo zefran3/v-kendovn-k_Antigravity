@@ -49,6 +49,7 @@ export interface UserProfile {
   avatar: string;
   email?: string;
   displayName?: string;
+  adminAlias?: string;
   updatedAt?: number;
   role?: UserRole;
   permissions?: UserPermissions;
