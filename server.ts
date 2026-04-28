@@ -66,6 +66,9 @@ async function sendPushNotification(suggestion: any) {
       const title = suggestion.type === 'ride' ? 'Nová žádost o odvoz 🚗' : 'Nový návrh aktivity 🎉';
       const body = `${suggestion.childName}: ${suggestion.title}`;
       
+      console.log(`[PUSH DEBUG] Sending to ${tokens.length} tokens:`);
+      tokens.forEach((t, i) => console.log(`  Token ${i+1}: ${t.substring(0, 20)}...${t.substring(t.length - 10)}`));
+      
       const message = {
         notification: { title, body },
         tokens: tokens
@@ -73,6 +76,16 @@ async function sendPushNotification(suggestion: any) {
       
       const response = await admin.messaging().sendEachForMulticast(message);
       console.log('Push notifications sent successfully:', response.successCount, 'failed:', response.failureCount);
+      
+      if (response.failureCount > 0) {
+        response.responses.forEach((r, i) => {
+          if (!r.success) {
+            console.error(`  Token ${i+1} error:`, r.error?.code, r.error?.message);
+          }
+        });
+      }
+    } else {
+      console.log('[PUSH DEBUG] No FCM tokens found for target users!');
     }
   } catch (error) {
     console.error('Error sending push notification:', error);
@@ -289,16 +302,20 @@ Vrať VÝHRADNĚ JSON pole s touto strukturou (a žádný jiný text):
     "url": "https://www.cinestar.cz/olomouc",
     "indoor": true,
     "age_recommendation": "pro celou rodinu",
-    "ticket_url": null,
+    "ticket_url": "https://www.cinestar.cz/olomouc",
     "cinema_listings": [
-      { "film": "Název filmu", "time": "14:30, 17:00, 20:15", "url": "https://www.cinestar.cz/olomouc/film/..." }
+      { "film": "Název filmu", "time": "14:30, 17:00, 20:15" }
     ]
   }
 ]
 
-DŮLEŽITÉ: Pole "cinema_listings" vyplň POUZE u kin. U ostatních akcí ho nastav na null.
-Pole "ticket_url" vyplň u koncertů, divadel a akcí kde se kupují lístky online.
-Všechna pole musí být přítomna v každém objektu (i když jsou null).`;
+DŮLEŽITÉ — PŘESNOST INFORMACÍ:
+- NEVYMÝŠLEJ SI CENY. Pole "price" vyplň POUZE pokud jsi cenu skutečně našel na webu dané instituce/akce. Pokud cenu nenajdeš, nastav pole na null. Špatná cena je horší než žádná.
+- NEVYMÝŠLEJ SI URL. Každý odkaz v "url" a "ticket_url" musí vést na reálně existující stránku, kterou jsi našel při vyhledávání. Pokud si nejsi jistý, použij hlavní doménu webu (např. https://www.zoobrno.cz). Raději null než vymyšlený odkaz.
+- Pole "ticket_url" = stránka kde se kupují vstupenky/vstupné. Hledej na webu dané instituce stránky jako: vstupné, vstupenky, e-shop, eshop, obchod, tickets, buy. Mnoho institucí má e-shop na vlastní doméně nebo používá externí prodejce (GoOut, Ticketportal, Ticketmaster). Pokud najdeš, použij. Pokud ne, nastav na null.
+- Pole "cinema_listings" vyplň POUZE u kin. U ostatních akcí ho nastav na null. U cinema_listings NEUVÁDEJ URL u jednotlivých filmů.
+- OTEVÍRACÍ DOBY: Pole "opening_hours" vyplň pouze pokud jsi otevírací dobu skutečně našel na webu. Nenajdeš-li, nastav na null.
+- Všechna pole musí být přítomna v každém objektu (i když jsou null).`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',

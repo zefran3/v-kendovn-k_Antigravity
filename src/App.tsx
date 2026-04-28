@@ -190,6 +190,7 @@ export default function App() {
   const [commentText, setCommentText] = useState("");
   const [commentPhoto, setCommentPhoto] = useState<string | null>(null);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
+  const inspirationsRef = useRef<HTMLDivElement>(null);
   const [forecast, setForecast] = useState<any[]>([]);
   const [inspirations, setInspirations] = useState<Inspiration[]>([]);
   const [isGeneratingInspiration, setIsGeneratingInspiration] = useState(false);
@@ -221,6 +222,14 @@ export default function App() {
     return AVATAR_OPTIONS[Math.abs(hash) % AVATAR_OPTIONS.length];
   };
 
+  const getLoggedInFamilyName = (): string => {
+    const email = user?.email?.toLowerCase();
+    if (email === "zefran3@gmail.com") return "Táta";
+    if (email === "eva.kubartova@gmail.com") return "Eva";
+    if (email === "emasterba@gmail.com") return "Emma";
+    if (email === "frantisek.sterba2010@gmail.com") return "František";
+    return "";
+  };
   useEffect(() => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(async (position) => {
@@ -1130,7 +1139,11 @@ export default function App() {
             )}
             {view === "parent" && (
               <button
-                onClick={() => setShowInspirationsView(!showInspirationsView)}
+                onClick={() => { 
+                  if (showInspirationsView) { setExpandedInspiration(null); } 
+                  else { setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }
+                  setShowInspirationsView(!showInspirationsView); 
+                }}
                 className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
               >
                 {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
@@ -1141,6 +1154,7 @@ export default function App() {
                 <button 
                   onClick={() => {
                     setFormType("activity");
+                    setNewSuggestion(prev => ({ ...prev, childName: getLoggedInFamilyName() }));
                     setShowForm(true);
                   }}
                   className="px-4 py-2.5 rounded-xl bg-rose-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-rose-600 transition-colors shadow-sm"
@@ -1150,6 +1164,7 @@ export default function App() {
                 <button 
                   onClick={() => {
                     setFormType("ride");
+                    setNewSuggestion(prev => ({ ...prev, childName: getLoggedInFamilyName() }));
                     setShowForm(true);
                   }}
                   className="px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-orange-600 transition-colors shadow-sm"
@@ -1157,7 +1172,11 @@ export default function App() {
                   🚗 Potřebuji odvézt
                 </button>
                 <button
-                  onClick={() => setShowInspirationsView(!showInspirationsView)}
+                  onClick={() => { 
+                    if (showInspirationsView) { setExpandedInspiration(null); } 
+                    else { setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }
+                    setShowInspirationsView(!showInspirationsView); 
+                  }}
                   className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
                 >
                   {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
@@ -1252,7 +1271,7 @@ export default function App() {
         {/* Suggestions List */}
         <section className="flex flex-col gap-5">
           {showInspirationsView ? (
-            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-[24px] p-5 md:p-8 border border-indigo-100 shadow-[inset_0_4px_8px_rgba(255,255,255,0.8),inset_0_-3px_6px_rgba(0,0,0,0.02),0_6px_12px_-2px_rgba(0,0,0,0.05)] flex flex-col gap-6 min-h-[400px]">
+            <div ref={inspirationsRef} className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-[24px] p-5 md:p-8 border border-indigo-100 shadow-[inset_0_4px_8px_rgba(255,255,255,0.8),inset_0_-3px_6px_rgba(0,0,0,0.02),0_6px_12px_-2px_rgba(0,0,0,0.05)] flex flex-col gap-6 min-h-[400px]">
               <div className="flex flex-wrap justify-between items-center gap-3">
                 <div className="text-lg md:text-xl uppercase tracking-widest text-indigo-500 font-extrabold flex items-center gap-2 drop-shadow-sm">
                   <span>✨</span> Inspirace na víkend z AI
@@ -1412,21 +1431,11 @@ export default function App() {
                                   </div>
                                   <div className="space-y-2">
                                     {insp.cinema_listings.map((listing: CinemaListing, idx: number) => (
-                                      <div key={idx} className="flex items-center justify-between bg-white rounded-lg p-3 border border-indigo-100/50 shadow-sm">
+                                      <div key={idx} className="flex items-center bg-white rounded-lg p-3 border border-indigo-100/50 shadow-sm">
                                         <div>
                                           <div className="font-bold text-stone-800 text-sm">{listing.film}</div>
                                           <div className="text-xs text-stone-500 mt-0.5">🕐 {listing.time}</div>
                                         </div>
-                                        {listing.url && (
-                                          <a
-                                            href={listing.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex items-center gap-1 px-3 py-1.5 bg-indigo-500 text-white rounded-lg text-[10px] font-bold hover:bg-indigo-600 transition-colors shadow-sm flex-shrink-0"
-                                          >
-                                            <ExternalLink size={10} /> Lístky
-                                          </a>
-                                        )}
                                       </div>
                                     ))}
                                   </div>
@@ -1491,7 +1500,8 @@ export default function App() {
                               description: insp.description,
                               eventDate: insp.date || "",
                               eventTime: insp.time || "",
-                              location: insp.location || ""
+                              location: insp.location || "",
+                              childName: getLoggedInFamilyName()
                             }));
                             setFormType("activity");
                             setShowForm(true);
@@ -1517,11 +1527,11 @@ export default function App() {
           ) : (
             <>
               <div className="flex flex-col gap-3 sticky top-[60px] md:top-[80px] z-40 bg-white/85 backdrop-blur-xl py-4 -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl shadow-sm border-b md:border border-stone-200/50 mb-2">
-                <div className="text-[13px] uppercase tracking-widest text-stone-500 font-bold flex items-center gap-2 drop-shadow-sm">
+                <div className="text-[13px] uppercase tracking-widest text-stone-500 font-bold flex items-center justify-center md:justify-start gap-2 drop-shadow-sm">
                   <span>🌟</span> Nástěnka přání a nápadů
                 </div>
                 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 justify-center md:justify-start">
                   {[
                     { id: "all", label: "Vše" },
                     { id: "pending", label: "Čekající" },
@@ -1776,6 +1786,7 @@ export default function App() {
                 <motion.div
                   onClick={() => {
                     setFormType("activity");
+                    setNewSuggestion(prev => ({ ...prev, childName: getLoggedInFamilyName() }));
                     setShowForm(true);
                   }}
                   className="rounded-[20px] p-5 border-2 border-dashed border-stone-200 flex flex-col justify-center items-center min-h-[160px] cursor-pointer hover:bg-stone-50 transition-colors"
