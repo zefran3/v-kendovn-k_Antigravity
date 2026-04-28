@@ -18,10 +18,18 @@ import {
   LogIn,
   AlertCircle,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  MapPin,
+  Navigation,
+  Map,
+  ExternalLink,
+  Film,
+  Timer,
+  Baby,
+  Home
 } from "lucide-react";
 import { cn } from "./lib/utils";
-import { ActivitySuggestion, WeekendEvent, UserProfile, ActivityComment } from "./types";
+import { ActivitySuggestion, WeekendEvent, UserProfile, ActivityComment, Inspiration, CinemaListing } from "./types";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { cs } from "date-fns/locale";
 import { auth, db, messaging } from "./firebase";
@@ -65,7 +73,7 @@ interface FirestoreErrorInfo {
   authInfo: any;
 }
 
-const FAMILY_MEMBERS = ["František", "Emma", "Eva", "Táta", "Ostatní"];
+const FAMILY_MEMBERS = ["Emma", "František", "Eva", "Táta", "Ostatní"];
 const AVATAR_OPTIONS = ["🐶", "🐱", "🦊", "🐻", "🐼", "🦁", "🐰", "🐯", "🐨", "🐸", "🐵", "🦄", "⚽", "🎮", "🎨", "🎵", "🚗", "🚀", "👑", "🌟"];
 
 
@@ -183,6 +191,11 @@ export default function App() {
   const [commentPhoto, setCommentPhoto] = useState<string | null>(null);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
   const [forecast, setForecast] = useState<any[]>([]);
+  const [inspirations, setInspirations] = useState<Inspiration[]>([]);
+  const [isGeneratingInspiration, setIsGeneratingInspiration] = useState(false);
+  const [showInspirationsView, setShowInspirationsView] = useState(false);
+  const [expandedInspiration, setExpandedInspiration] = useState<string | null>(null);
+  
   const getAvatarForChild = (childName: string) => {
     if (!childName) return "👶";
     
@@ -198,8 +211,8 @@ export default function App() {
       return "👩";
     }
 
-    if (childName === "František") return "👦";
     if (childName === "Emma") return "👧";
+    if (childName === "František") return "👦";
     
     let hash = 0;
     for (let i = 0; i < childName.length; i++) {
@@ -291,6 +304,7 @@ export default function App() {
     customChildName: "",
     eventDate: "",
     eventTime: "",
+    location: "",
     rideFrom: "",
     rideTo: ""
   });
@@ -487,11 +501,33 @@ export default function App() {
       handleFirestoreError(err, OperationType.LIST, path);
     });
 
+    const unsubscribeInspirations = onSnapshot(query(collection(db, 'inspirations')), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Inspiration[];
+      setInspirations(data);
+    });
+
     return () => {
       unsubscribeUsers();
       unsubscribeSuggestions();
+      unsubscribeInspirations();
     };
   }, [user]);
+
+  const handleGenerateInspirations = async () => {
+    setIsGeneratingInspiration(true);
+    try {
+      const res = await fetch('/api/agent/generate', { method: 'POST' });
+      if (!res.ok) throw new Error("Chyba při generování ze serveru");
+    } catch (err) {
+      console.error(err);
+      setError("Nepodařilo se vygenerovat tipy z AI.");
+    } finally {
+      setIsGeneratingInspiration(false);
+    }
+  };
 
   const handleUpdateAvatar = async (avatarValue: string) => {
     if (!user) return;
@@ -661,6 +697,7 @@ export default function App() {
         authorId: user.uid,
         eventDate: newSuggestion.eventDate,
         eventTime: newSuggestion.eventTime,
+        location: newSuggestion.location,
         status: "pending",
         type: formType,
         ...(formType === "ride" ? { rideFrom: newSuggestion.rideFrom, rideTo: newSuggestion.rideTo } : {}),
@@ -676,7 +713,7 @@ export default function App() {
   const handleCloseForm = () => {
     setShowForm(false);
     setFormType("activity");
-    setNewSuggestion({ title: "", description: "", eventDate: "", eventTime: "", childName: "", customChildName: "", rideFrom: "", rideTo: "" });
+    setNewSuggestion({ title: "", description: "", eventDate: "", eventTime: "", location: "", childName: "", customChildName: "", rideFrom: "", rideTo: "" });
     setError(null);
   };
 
@@ -1085,10 +1122,18 @@ export default function App() {
             {view === "parent" && !googleTokens && (
               <button 
                 onClick={handleConnectGoogle}
-                className="px-4 py-2.5 rounded-xl bg-rose-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-rose-600 transition-colors"
+                className="px-4 py-2.5 rounded-xl bg-rose-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-rose-600 transition-colors mb-3"
               >
                 <img src="https://www.gstatic.com/images/branding/product/1x/calendar_2020q4_48dp.png" className="w-4 h-4" referrerPolicy="no-referrer" />
                 Propojit s Google Kalendářem
+              </button>
+            )}
+            {view === "parent" && (
+              <button
+                onClick={() => setShowInspirationsView(!showInspirationsView)}
+                className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
+              >
+                {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
               </button>
             )}
             {view === "child" && (
@@ -1110,6 +1155,12 @@ export default function App() {
                   className="px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-orange-600 transition-colors shadow-sm"
                 >
                   🚗 Potřebuji odvézt
+                </button>
+                <button
+                  onClick={() => setShowInspirationsView(!showInspirationsView)}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
+                >
+                  {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
                 </button>
               </div>
             )}
@@ -1200,34 +1251,299 @@ export default function App() {
 
         {/* Suggestions List */}
         <section className="flex flex-col gap-5">
-          <div className="flex flex-col gap-3 sticky top-[60px] md:top-[80px] z-40 bg-white/85 backdrop-blur-xl py-4 -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl shadow-sm border-b md:border border-stone-200/50 mb-2">
-            <div className="text-[13px] uppercase tracking-widest text-stone-500 font-bold flex items-center gap-2 drop-shadow-sm">
-              <span>🌟</span> Nástěnka přání a nápadů
+          {showInspirationsView ? (
+            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-[24px] p-5 md:p-8 border border-indigo-100 shadow-[inset_0_4px_8px_rgba(255,255,255,0.8),inset_0_-3px_6px_rgba(0,0,0,0.02),0_6px_12px_-2px_rgba(0,0,0,0.05)] flex flex-col gap-6 min-h-[400px]">
+              <div className="flex flex-wrap justify-between items-center gap-3">
+                <div className="text-lg md:text-xl uppercase tracking-widest text-indigo-500 font-extrabold flex items-center gap-2 drop-shadow-sm">
+                  <span>✨</span> Inspirace na víkend z AI
+                </div>
+                {view === "parent" && (
+                  <button 
+                    onClick={handleGenerateInspirations}
+                    disabled={isGeneratingInspiration}
+                    className="px-5 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-sm shadow-sm hover:bg-indigo-600 hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {isGeneratingInspiration ? "AI hledá na internetu..." : "Vyhledat nové tipy"}
+                  </button>
+                )}
+              </div>
+              
+              {inspirations.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-5 pb-4">
+                  {inspirations
+                    .filter(insp => {
+                      if (view === "parent") return true;
+                      const userEmail = user?.email?.toLowerCase();
+                      if (userEmail === "emasterba@gmail.com") return insp.target === "pro_dceru" || insp.target === "pro_vsechny";
+                      if (userEmail === "frantisek.sterba2010@gmail.com") return insp.target === "pro_syna" || insp.target === "pro_vsechny";
+                      return insp.target === "pro_vsechny";
+                    })
+                    .map(insp => (
+                    <div key={insp.id} className="bg-white p-6 rounded-2xl shadow-sm border border-indigo-50 flex flex-col justify-between hover:shadow-md transition-shadow">
+                      <div>
+                        {view === "parent" && (
+                          <div className="flex justify-between items-start mb-4">
+                            <span className={cn(
+                              "text-xs font-extrabold px-3 py-1.5 rounded-full uppercase tracking-wider",
+                              insp.target === 'pro_dceru' ? 'bg-pink-100 text-pink-600' : 
+                              insp.target === 'pro_syna' ? 'bg-blue-100 text-blue-600' : 
+                              'bg-green-100 text-green-600'
+                            )}>
+                              {insp.target === 'pro_dceru' ? '👧 Pro dceru' : insp.target === 'pro_syna' ? '👦 Pro syna' : '👨‍👩‍👧‍👦 Pro rodinu'}
+                            </span>
+                          </div>
+                        )}
+                        <h4 className="font-extrabold text-stone-800 text-lg mb-2 leading-tight">{insp.title}</h4>
+                        <div className="text-xs text-stone-400 mb-3 font-bold flex items-center justify-between">
+                          <div className="flex items-center gap-1">📍 {insp.location}</div>
+                          <a 
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(insp.location)}&travelmode=driving`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-700 transition-colors bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100"
+                          >
+                            <Navigation size={12} /> Trasa
+                          </a>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mb-4">
+                          {insp.indoor !== undefined && insp.indoor !== null && (
+                            <span className={cn(
+                              "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                              insp.indoor ? "bg-blue-50 text-blue-500 border border-blue-100" : "bg-emerald-50 text-emerald-500 border border-emerald-100"
+                            )}>
+                              {insp.indoor ? "🏠 Pod střechou" : "🌳 Venku"}
+                            </span>
+                          )}
+                          {insp.price && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
+                              💰 {insp.price}
+                            </span>
+                          )}
+                          {insp.duration && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-500 border border-purple-100">
+                              ⏱️ {insp.duration}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-stone-600 leading-relaxed mb-6">{insp.description}</p>
+                        
+                        <AnimatePresence>
+                          {expandedInspiration === insp.id && (
+                            <motion.div 
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="mb-6 p-5 bg-gradient-to-br from-indigo-50/80 to-purple-50/60 rounded-xl border border-indigo-100/50 text-sm text-indigo-900 space-y-3 overflow-hidden"
+                            >
+                              <div className="font-bold text-indigo-600 text-xs uppercase tracking-wider mb-2">📋 Podrobnosti</div>
+                              
+                              {/* Datum */}
+                              <div className="flex items-center gap-2">
+                                <Calendar size={14} className="text-indigo-400 flex-shrink-0" />
+                                <strong>Datum:</strong> {insp.date ? (() => { try { return format(parseISO(insp.date), "EEEE d. MMMM yyyy", { locale: cs }); } catch { return insp.date; } })() : "Bude upřesněno"}
+                              </div>
+                              
+                              {/* Čas — chytré zobrazení dle time_type */}
+                              {insp.time_type === 'opening_hours' && insp.opening_hours ? (
+                                <div className="flex items-center gap-2">
+                                  <Clock size={14} className="text-indigo-400 flex-shrink-0" />
+                                  <strong>Otevírací doba:</strong> {insp.opening_hours}
+                                </div>
+                              ) : insp.time_type === 'all_day' ? (
+                                <div className="flex items-center gap-2">
+                                  <Clock size={14} className="text-indigo-400 flex-shrink-0" />
+                                  <strong>Kdy:</strong> Celý den
+                                </div>
+                              ) : insp.time_type === 'flexible' ? (
+                                <div className="flex items-center gap-2">
+                                  <Clock size={14} className="text-indigo-400 flex-shrink-0" />
+                                  <strong>Kdy:</strong> Kdykoli
+                                </div>
+                              ) : insp.time ? (
+                                <div className="flex items-center gap-2">
+                                  <Clock size={14} className="text-indigo-400 flex-shrink-0" />
+                                  <strong>Začátek:</strong> {insp.time}
+                                </div>
+                              ) : null}
+                              
+                              {/* Místo */}
+                              <div className="flex items-center gap-2">
+                                <MapPin size={14} className="text-indigo-400 flex-shrink-0" />
+                                <strong>Místo:</strong> {insp.location}
+                              </div>
+
+                              {/* Cena */}
+                              {insp.price && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-indigo-400 flex-shrink-0 text-xs font-bold">💰</span>
+                                  <strong>Cena:</strong> {insp.price}
+                                </div>
+                              )}
+
+                              {/* Délka */}
+                              {insp.duration && (
+                                <div className="flex items-center gap-2">
+                                  <Timer size={14} className="text-indigo-400 flex-shrink-0" />
+                                  <strong>Délka:</strong> {insp.duration}
+                                </div>
+                              )}
+
+                              {/* Věk */}
+                              {insp.age_recommendation && (
+                                <div className="flex items-center gap-2">
+                                  <Baby size={14} className="text-indigo-400 flex-shrink-0" />
+                                  <strong>Vhodné:</strong> {insp.age_recommendation}
+                                </div>
+                              )}
+
+                              {/* Indoor/Outdoor badge */}
+                              {insp.indoor !== undefined && insp.indoor !== null && (
+                                <div className="flex items-center gap-2">
+                                  <Home size={14} className="text-indigo-400 flex-shrink-0" />
+                                  <strong>{insp.indoor ? "Pod střechou 🏠" : "Venku 🌳"}</strong>
+                                </div>
+                              )}
+
+                              {/* Cinema Listings */}
+                              {insp.cinema_listings && insp.cinema_listings.length > 0 && (
+                                <div className="mt-3 border-t border-indigo-100/50 pt-3">
+                                  <div className="font-bold text-indigo-600 text-xs uppercase tracking-wider mb-3 flex items-center gap-1">
+                                    <Film size={12} /> Program kina
+                                  </div>
+                                  <div className="space-y-2">
+                                    {insp.cinema_listings.map((listing: CinemaListing, idx: number) => (
+                                      <div key={idx} className="flex items-center justify-between bg-white rounded-lg p-3 border border-indigo-100/50 shadow-sm">
+                                        <div>
+                                          <div className="font-bold text-stone-800 text-sm">{listing.film}</div>
+                                          <div className="text-xs text-stone-500 mt-0.5">🕐 {listing.time}</div>
+                                        </div>
+                                        {listing.url && (
+                                          <a
+                                            href={listing.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1 px-3 py-1.5 bg-indigo-500 text-white rounded-lg text-[10px] font-bold hover:bg-indigo-600 transition-colors shadow-sm flex-shrink-0"
+                                          >
+                                            <ExternalLink size={10} /> Lístky
+                                          </a>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Action buttons */}
+                              <div className="flex flex-wrap gap-2 mt-3 border-t border-indigo-100/50 pt-3">
+                                <a 
+                                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(insp.location)}&travelmode=driving`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
+                                >
+                                  <Navigation size={14} />
+                                  Navigovat
+                                </a>
+                                {insp.url && (
+                                  <a 
+                                    href={insp.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
+                                  >
+                                    <ExternalLink size={14} />
+                                    Web akce
+                                  </a>
+                                )}
+                                {insp.ticket_url && (
+                                  <a 
+                                    href={insp.ticket_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-500 text-white rounded-lg font-bold text-xs hover:bg-indigo-600 transition-colors shadow-sm"
+                                  >
+                                    <ExternalLink size={14} />
+                                    Koupit lístky
+                                  </a>
+                                )}
+                              </div>
+                              
+                              <div className="text-xs text-indigo-400 mt-1 italic">
+                                * Informace jsou orientační dle vyhledávání AI agenta.
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => setExpandedInspiration(expandedInspiration === insp.id ? null : insp.id)}
+                          className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-600 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1"
+                        >
+                          {expandedInspiration === insp.id ? "Méně info" : "Více info"}
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setNewSuggestion(prev => ({
+                              ...prev,
+                              title: insp.title,
+                              description: insp.description,
+                              eventDate: insp.date || "",
+                              eventTime: insp.time || "",
+                              location: insp.location || ""
+                            }));
+                            setFormType("activity");
+                            setShowForm(true);
+                            setShowInspirationsView(false);
+                          }}
+                          className="flex-[2] py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold text-xs rounded-xl transition-colors border border-indigo-200"
+                        >
+                          Chci tohle navrhnout!
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex-grow flex flex-col items-center justify-center text-center p-8 bg-white/50 rounded-2xl border border-indigo-100/50 border-dashed">
+                  <div className="text-4xl mb-4 opacity-50">🤖</div>
+                  <p className="text-lg text-indigo-800 font-semibold opacity-80 max-w-md">
+                    Zatím tu nejsou žádné AI tipy. Administrátor je musí nejprve vygenerovat.
+                  </p>
+                </div>
+              )}
             </div>
-            
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: "all", label: "Vše" },
-                { id: "pending", label: "Čekající" },
-                { id: "approved", label: "Schválené" },
-                { id: "rejected", label: "Zamítnuté" },
-                { id: "cancelled", label: "Zrušené" }
-              ].map(f => (
-                <button
-                  key={f.id}
-                  onClick={() => setBoardFilter(f.id as any)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm",
-                    boardFilter === f.id 
-                      ? "bg-stone-700 text-white shadow-md border-transparent" 
-                      : "bg-white text-stone-500 border border-stone-200 hover:border-stone-300 hover:text-stone-700"
-                  )}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-3 sticky top-[60px] md:top-[80px] z-40 bg-white/85 backdrop-blur-xl py-4 -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl shadow-sm border-b md:border border-stone-200/50 mb-2">
+                <div className="text-[13px] uppercase tracking-widest text-stone-500 font-bold flex items-center gap-2 drop-shadow-sm">
+                  <span>🌟</span> Nástěnka přání a nápadů
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: "all", label: "Vše" },
+                    { id: "pending", label: "Čekající" },
+                    { id: "approved", label: "Schválené" },
+                    { id: "rejected", label: "Zamítnuté" },
+                    { id: "cancelled", label: "Zrušené" }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setBoardFilter(f.id as any)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm",
+                        boardFilter === f.id 
+                          ? "bg-stone-700 text-white shadow-md border-transparent" 
+                          : "bg-white text-stone-500 border border-stone-200 hover:border-stone-300 hover:text-stone-700"
+                      )}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <AnimatePresence mode="popLayout">
@@ -1318,6 +1634,24 @@ export default function App() {
 
                       <h3 className="text-lg font-extrabold my-3 text-stone-900">{suggestion.title}</h3>
                       <p className="text-[13px] text-stone-600 leading-relaxed whitespace-pre-wrap">{suggestion.description}</p>
+                      
+                      {suggestion.location && (
+                        <div className="mt-3 flex items-center justify-between bg-stone-50/50 p-2 rounded-lg border border-stone-100">
+                          <div className="flex items-center gap-2 text-xs text-stone-500 font-medium">
+                            <MapPin size={14} className="text-rose-400" />
+                            <span className="line-clamp-1">{suggestion.location}</span>
+                          </div>
+                          <a 
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(suggestion.location)}&travelmode=driving`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white text-[10px] font-bold text-rose-500 border border-rose-100 hover:bg-rose-50 transition-colors shadow-sm"
+                          >
+                            <Navigation size={12} />
+                            Trasa
+                          </a>
+                        </div>
+                      )}
                       
                       {suggestion.rejectReason && (
                         <div className="mt-3 p-3 bg-white/60 rounded-lg text-sm text-stone-700 italic border border-stone-200/50">
@@ -1454,6 +1788,8 @@ export default function App() {
               )}
             </AnimatePresence>
           </div>
+            </>
+          )}
         </section>
       </motion.main>
       )}
@@ -1536,6 +1872,17 @@ export default function App() {
                           onChange={e => setNewSuggestion({...newSuggestion, description: e.target.value})}
                           placeholder="Popiš nám to víc..."
                           className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-rose-500 outline-none transition-all h-24 resize-none text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block flex items-center gap-1">
+                          <MapPin size={12} /> Kde se to koná?
+                        </label>
+                        <input 
+                          value={newSuggestion.location}
+                          onChange={e => setNewSuggestion({...newSuggestion, location: e.target.value})}
+                          placeholder="Adresa nebo název místa"
+                          className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-rose-500 outline-none transition-all text-sm"
                         />
                       </div>
                     </>
@@ -1633,7 +1980,7 @@ export default function App() {
                 Přejete si událost <strong>{cancellingEvent.title}</strong> zrušit? Pokud uvedete důvod, zobrazí se všem jako "Zrušeno". Zároveň se událost smaže z Google Kalendáře.
               </p>
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Důvod (volitelný)</label>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Důvod</label>
                 <textarea 
                   value={cancelReason}
                   onChange={e => setCancelReason(e.target.value)}

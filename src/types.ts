@@ -30,6 +30,7 @@ export interface ActivitySuggestion {
   rideFrom?: string;
   rideTo?: string;
   grade?: number;
+  location?: string;
   createdAt: number;
   comments?: ActivityComment[];
 }
@@ -39,6 +40,32 @@ export interface UserProfile {
   avatar: string;
   email?: string;
   updatedAt?: number;
+}
+
+export interface CinemaListing {
+  film: string;
+  time: string;
+  url?: string;
+}
+
+export interface Inspiration {
+  id: string;
+  title: string;
+  description: string;
+  target: 'pro_vsechny' | 'pro_dceru' | 'pro_syna';
+  location: string;
+  date?: string;
+  time?: string;
+  time_type?: 'event' | 'opening_hours' | 'all_day' | 'flexible';
+  opening_hours?: string;
+  price?: string;
+  duration?: string;
+  url?: string;
+  indoor?: boolean;
+  age_recommendation?: string;
+  cinema_listings?: CinemaListing[];
+  ticket_url?: string;
+  createdAt?: any;
 }
 
 export interface WeekendEvent {

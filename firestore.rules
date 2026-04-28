@@ -96,5 +96,12 @@ service cloud.firestore {
         (!('role' in request.resource.data) || (exists(/databases/$(database)/documents/users/$(userId)) && request.resource.data.role == resource.data.role))
       ));
     }
+
+    match /inspirations/{docId} {
+      // Všichni přihlášení uživatelé mohou číst AI tipy
+      allow read: if isAuthenticated();
+      // Zápis dělá pouze náš backend s admin právy, takže z frontendu zakázáno
+      allow write: if false;
+    }
   }
 }

@@ -5,6 +5,7 @@ import { google } from "googleapis";
 import dotenv from "dotenv";
 import fs from "fs";
 import admin from "firebase-admin";
+import cron from "node-cron";
 
 dotenv.config();
 
@@ -217,6 +218,145 @@ async function startServer() {
       console.error("Error deleting event:", error);
       res.status(500).json({ error: "Failed to delete event" });
     }
+  });
+
+  async function generateInspirations() {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("Missing GEMINI_API_KEY");
+    }
+    
+    const { GoogleGenAI } = await import('@google/genai');
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    const prompt = `Jsi organizátor rodinných aktivit pro aplikaci Víkendovník. 
+Vyhledej aktuální a zajímavé akce na tento nebo příští víkend v Jihomoravském kraji a okolí (Brno, Vyškov, Olomouc, do cca 1 hodiny cesty autem).
+Hledej primárně na portálech: gotobrno.cz, kudyznudy.cz, jizni-morava.cz, mksvyskov.cz, cinestar.cz (Olomouc).
+
+RODINNÁ PRAVIDLA (Kritické):
+1. Dcera (Emma) NESNÁŠÍ hrady, zámky, zříceniny a nudu z historie. Tyto akce jí vůbec nenabízej!
+2. Syn (František) NERAD vodu, koupaliště a plavání. Žádné vodní aktivity pro něj!
+3. Milují kino (CineStar Olomouc), ZOO, food festivaly a hudební festivaly. Tyto akce mají absolutní přednost!
+4. Syn (František) ZBOŽŇUJE hokej a je zarytý fanoušek HC Kometa Brno. Jakékoliv akce spojené s hokejem nebo Kometou jsou pro něj jak dělané!
+5. Táta a syn (případně i ostatní) milují počítačové hry a PlayStation. Herní akce, turnaje, VR herny nebo výstavy počítačů jsou pro ně gigantické plus!
+6. POČASÍ JE KLÍČOVÉ: Zkontroluj předpověď počasí na nadcházející víkend pro Jihomoravský kraj. Pokud má pršet, být zima nebo celkově ošklivo, nabízej POUZE akce pod střechou (kino, herny, výstavy). Pokud má být teplo a slunečno, zařaď venkovní akce.
+
+Vyber 5 nejlepších akcí z internetu. Některé pro oba ("pro_vsechny"), některé speciálně zacílené bez hradů pro dceru ("pro_dceru") nebo bez vody pro syna ("pro_syna").
+
+SPECIÁLNÍ PRAVIDLA PRO KINO:
+Pokud navrhuješ návštěvu kina (např. CineStar Olomouc), NEVYPISUJ konkrétní film jako hlavní tip.
+Místo toho vypiš v poli "cinema_listings" až 5 vhodných filmů, které hrají daný víkend, s časy představení a odkazem na nákup lístků.
+Filtruj filmy vhodné pro rodinu (ne horory, ne filmy 18+).
+
+TYPY ČASOVÝCH ÚDAJŮ (time_type):
+- "event" = jednorázová akce s konkrétním začátkem (koncert, divadlo, přednáška). Uveď přesný čas v poli "time".
+- "opening_hours" = instituce s otevírací dobou (ZOO, muzeum, VIDA, aquapark). Uveď víkendovou otevírací dobu v poli "opening_hours" (např. "So 9:00–17:00, Ne 10:00–16:00").
+- "all_day" = celodenní akce/festival. Pole "time" může být prázdné nebo "celý den".
+- "flexible" = volně přístupné místo bez omezení. Pole "time" nech prázdné.
+
+POVINNÉ POLE pro každou akci:
+- "indoor": true pokud jde o akci pod střechou, false pokud venku. U kombinovaných (např. ZOO) uveď false.
+
+Vrať VÝHRADNĚ JSON pole s touto strukturou (a žádný jiný text):
+[
+  {
+    "title": "Název konkrétní reálné akce nebo místa",
+    "description": "Lákavý a krátký popis (proč tam jít). 2-3 věty.",
+    "target": "pro_vsechny",
+    "location": "Přesný název místa nebo adresa",
+    "date": "2026-05-03",
+    "time": "14:00",
+    "time_type": "event",
+    "opening_hours": null,
+    "price": "od 150 Kč / Zdarma / rodinné vstupné 450 Kč",
+    "duration": "cca 2 hodiny",
+    "url": "https://odkaz-na-web-akce-nebo-mista.cz",
+    "indoor": true,
+    "age_recommendation": "pro celou rodinu / od 6 let",
+    "ticket_url": "https://odkaz-na-nákup-vstupenek.cz (pokud existuje)",
+    "cinema_listings": null
+  },
+  {
+    "title": "CineStar Olomouc – víkendový program",
+    "description": "Vyber si z aktuálního programu kina!",
+    "target": "pro_vsechny",
+    "location": "CineStar Olomouc, Olomouc City",
+    "date": "2026-05-03",
+    "time": null,
+    "time_type": "opening_hours",
+    "opening_hours": "So-Ne 10:00–22:00",
+    "price": "od 199 Kč",
+    "duration": "dle filmu",
+    "url": "https://www.cinestar.cz/olomouc",
+    "indoor": true,
+    "age_recommendation": "pro celou rodinu",
+    "ticket_url": null,
+    "cinema_listings": [
+      { "film": "Název filmu", "time": "14:30, 17:00, 20:15", "url": "https://www.cinestar.cz/olomouc/film/..." }
+    ]
+  }
+]
+
+DŮLEŽITÉ: Pole "cinema_listings" vyplň POUZE u kin. U ostatních akcí ho nastav na null.
+Pole "ticket_url" vyplň u koncertů, divadel a akcí kde se kupují lístky online.
+Všechna pole musí být přítomna v každém objektu (i když jsou null).`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+        temperature: 0.7
+      }
+    });
+
+    const responseText = response.text || "[]";
+    let suggestions = [];
+    try {
+      const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const match = cleanJson.match(/\[[\s\S]*\]/);
+      const finalJsonString = match ? match[0] : cleanJson;
+      suggestions = JSON.parse(finalJsonString);
+    } catch (parseError) {
+      console.error("Chyba při parsování JSON:", responseText);
+      throw new Error("AI odpověď nebyla ve správném formátu.");
+    }
+
+    // Uložení do Firestore (přepíše staré tipy)
+    if (admin.apps.length > 0) {
+      const db = admin.firestore();
+      const batch = db.batch();
+      
+      const oldInspirations = await db.collection('inspirations').get();
+      oldInspirations.docs.forEach(doc => batch.delete(doc.ref));
+
+      suggestions.forEach((s: any) => {
+        const docRef = db.collection('inspirations').doc();
+        batch.set(docRef, { ...s, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+      });
+
+      await batch.commit();
+    }
+
+    return suggestions;
+  }
+
+  // AI Agent Route pro generování inspirace
+  app.post("/api/agent/generate", async (req, res) => {
+    try {
+      const suggestions = await generateInspirations();
+      res.json({ success: true, count: suggestions.length, suggestions });
+    } catch (error: any) {
+      console.error("AI Agent Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // CRON úloha - spouštění každou středu ve 3:00 ráno
+  cron.schedule("0 3 * * 3", () => {
+    console.log("CRON: Spouštím automatické generování víkendové inspirace...");
+    generateInspirations()
+      .then(suggestions => console.log(`CRON: Úspěšně vygenerováno ${suggestions.length} tipů.`))
+      .catch(error => console.error("CRON Error:", error));
   });
 
   // Vite middleware for development
