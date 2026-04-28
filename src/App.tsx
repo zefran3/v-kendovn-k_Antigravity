@@ -196,6 +196,7 @@ export default function App() {
   const [isGeneratingInspiration, setIsGeneratingInspiration] = useState(false);
   const [showInspirationsView, setShowInspirationsView] = useState(false);
   const [expandedInspiration, setExpandedInspiration] = useState<string | null>(null);
+  const [expandedSuggestion, setExpandedSuggestion] = useState<string | null>(null);
   
   const getAvatarForChild = (childName: string) => {
     if (!childName) return "👶";
@@ -800,39 +801,80 @@ export default function App() {
           let eventParams: any = {};
 
           if (suggestion.eventTime) {
-            let eventDateObj = new Date();
-            if (suggestion.eventDate) {
-              const timeParts = suggestion.eventTime.split(":");
-              eventDateObj = new Date(`${suggestion.eventDate}T${timeParts[0]}:${timeParts[1]}:00`);
-            } else {
-              const dayOffset = suggestion.suggestedTime === "sobota" ? 6 : 0; 
-              eventDateObj = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), dayOffset + 5); 
-              eventDateObj.setHours(10, 0, 0);
-            }
+            // Pokus o extrakci platného času (HH:MM) z eventTime
+            const timeMatch = suggestion.eventTime.match(/^(\d{1,2}):(\d{2})$/);
             
-            const endDateObj = new Date(eventDateObj.getTime() + (suggestion.type === "ride" ? 0.5 : 2) * 60 * 60 * 1000); // +30m for rides, +2h for normal
-            eventParams = {
-              start: { dateTime: eventDateObj.toISOString(), timeZone: 'Europe/Prague' },
-              end: { dateTime: endDateObj.toISOString(), timeZone: 'Europe/Prague' },
-            };
+            if (timeMatch && suggestion.eventDate) {
+              // Standardní čas (např. "14:00") + platné datum
+              try {
+                let eventDateObj = new Date(`${suggestion.eventDate}T${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:00`);
+                if (isNaN(eventDateObj.getTime())) throw new Error("Invalid date");
+                
+                const endDateObj = new Date(eventDateObj.getTime() + (suggestion.type === "ride" ? 0.5 : 2) * 60 * 60 * 1000);
+                eventParams = {
+                  start: { dateTime: eventDateObj.toISOString(), timeZone: 'Europe/Prague' },
+                  end: { dateTime: endDateObj.toISOString(), timeZone: 'Europe/Prague' },
+                };
+              } catch {
+                // Fallback na celodenní událost
+                eventParams = {
+                  start: { date: suggestion.eventDate },
+                  end: { date: (() => { const d = new Date(suggestion.eventDate); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })() },
+                };
+              }
+            } else {
+              // Nestandartní čas (otevírací doba, "celý den" atd.) → celodenní událost
+              let eventDateString = suggestion.eventDate;
+              if (!eventDateString) {
+                const dayOffset = suggestion.suggestedTime === "sobota" ? 6 : 0; 
+                eventDateString = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), dayOffset + 5).toISOString().split('T')[0];
+              }
+              try {
+                const startDateObj = new Date(eventDateString);
+                if (isNaN(startDateObj.getTime())) throw new Error("Invalid date");
+                const endDateObj = new Date(startDateObj);
+                endDateObj.setDate(endDateObj.getDate() + 1);
+                eventParams = {
+                  start: { date: eventDateString },
+                  end: { date: endDateObj.toISOString().split('T')[0] },
+                };
+              } catch {
+                // Úplný fallback — příští sobota
+                const nextSat = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), 5);
+                const nextSun = addDays(nextSat, 1);
+                eventParams = {
+                  start: { date: nextSat.toISOString().split('T')[0] },
+                  end: { date: nextSun.toISOString().split('T')[0] },
+                };
+              }
+            }
           } else {
-            // All-day event
+            // Žádný čas → celodenní událost
             let eventDateString = suggestion.eventDate;
             if (!eventDateString) {
               const dayOffset = suggestion.suggestedTime === "sobota" ? 6 : 0; 
               eventDateString = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), dayOffset + 5).toISOString().split('T')[0];
             }
             
-            // For all-day events, `date` is YYYY-MM-DD. End date is exclusive.
-            const startDateObj = new Date(eventDateString);
-            const endDateObj = new Date(startDateObj);
-            endDateObj.setDate(endDateObj.getDate() + 1);
-            const endDateString = endDateObj.toISOString().split('T')[0];
+            try {
+              const startDateObj = new Date(eventDateString);
+              if (isNaN(startDateObj.getTime())) throw new Error("Invalid date");
+              const endDateObj = new Date(startDateObj);
+              endDateObj.setDate(endDateObj.getDate() + 1);
+              const endDateString = endDateObj.toISOString().split('T')[0];
 
-            eventParams = {
-              start: { date: eventDateString },
-              end: { date: endDateString },
-            };
+              eventParams = {
+                start: { date: eventDateString },
+                end: { date: endDateString },
+              };
+            } catch {
+              const nextSat = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), 5);
+              const nextSun = addDays(nextSat, 1);
+              eventParams = {
+                start: { date: nextSat.toISOString().split('T')[0] },
+                end: { date: nextSun.toISOString().split('T')[0] },
+              };
+            }
           }
 
           const isRide = suggestion.type === "ride";
@@ -1629,6 +1671,14 @@ export default function App() {
                               🚗 Potřebuji odvézt
                             </div>
                           )}
+                          {suggestion.location && (
+                            <button 
+                              onClick={() => setExpandedSuggestion(expandedSuggestion === suggestion.id ? null : suggestion.id)}
+                              className="text-[10px] uppercase px-2 py-1 rounded-full font-extrabold mb-2 ml-auto bg-indigo-100 text-indigo-600 border border-indigo-200 hover:bg-indigo-200 transition-colors cursor-pointer"
+                            >
+                              {expandedSuggestion === suggestion.id ? "Skrýt detail" : "Detail"}
+                            </button>
+                          )}
                         </div>
 
                         {view === "parent" && (
@@ -1646,21 +1696,61 @@ export default function App() {
                       <p className="text-[13px] text-stone-600 leading-relaxed whitespace-pre-wrap">{suggestion.description}</p>
                       
                       {suggestion.location && (
-                        <div className="mt-3 flex items-center justify-between bg-stone-50/50 p-2 rounded-lg border border-stone-100">
-                          <div className="flex items-center gap-2 text-xs text-stone-500 font-medium">
-                            <MapPin size={14} className="text-rose-400" />
-                            <span className="line-clamp-1">{suggestion.location}</span>
-                          </div>
+                        <>
                           <a 
                             href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(suggestion.location)}&travelmode=driving`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white text-[10px] font-bold text-rose-500 border border-rose-100 hover:bg-rose-50 transition-colors shadow-sm"
+                            className="mt-3 flex items-center gap-2 text-xs text-stone-500 font-medium p-2 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition-colors active:bg-rose-100 cursor-pointer"
                           >
-                            <Navigation size={12} />
-                            Trasa
+                            <MapPin size={14} className="text-rose-400 flex-shrink-0" />
+                            <span className="underline decoration-dotted underline-offset-2">{suggestion.location}</span>
                           </a>
-                        </div>
+                          
+                          <AnimatePresence>
+                            {expandedSuggestion === suggestion.id && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="mt-2 p-4 bg-gradient-to-br from-stone-50/80 to-rose-50/40 rounded-xl border border-stone-100 text-sm text-stone-700 space-y-2.5 overflow-hidden"
+                              >
+                                <div className="font-bold text-stone-500 text-xs uppercase tracking-wider mb-2">📋 Detail aktivity</div>
+                                
+                                {suggestion.eventDate && (
+                                  <div className="flex items-center gap-2">
+                                    <Calendar size={14} className="text-rose-400 flex-shrink-0" />
+                                    <strong>Datum:</strong> {(() => { try { return format(parseISO(suggestion.eventDate), "EEEE d. MMMM yyyy", { locale: cs }); } catch { return suggestion.eventDate; } })()}
+                                  </div>
+                                )}
+                                
+                                {suggestion.eventTime && (
+                                  <div className="flex items-center gap-2">
+                                    <Clock size={14} className="text-rose-400 flex-shrink-0" />
+                                    <strong>Čas:</strong> {suggestion.eventTime}
+                                  </div>
+                                )}
+                                
+                                <div className="flex items-center gap-2">
+                                  <MapPin size={14} className="text-rose-400 flex-shrink-0" />
+                                  <strong>Místo:</strong> {suggestion.location}
+                                </div>
+
+                                <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-stone-100">
+                                  <a 
+                                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(suggestion.location)}&travelmode=driving`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-rose-200 text-rose-500 font-bold text-xs hover:bg-rose-50 transition-colors shadow-sm"
+                                  >
+                                    <Navigation size={14} />
+                                    Navigovat
+                                  </a>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </>
                       )}
                       
                       {suggestion.rejectReason && (
