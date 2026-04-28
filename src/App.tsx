@@ -197,6 +197,27 @@ export default function App() {
   const [showInspirationsView, setShowInspirationsView] = useState(false);
   const [expandedInspiration, setExpandedInspiration] = useState<string | null>(null);
   const [expandedSuggestion, setExpandedSuggestion] = useState<string | null>(null);
+  const [showUserManagement, setShowUserManagement] = useState(false);
+
+  const ROLE_DEFAULTS: Record<UserRole, UserPermissions> = {
+    admin: { canSuggest: true, canComment: true, canApprove: true, canManageUsers: true },
+    parent: { canSuggest: true, canComment: true, canApprove: true, canManageUsers: false },
+    child: { canSuggest: true, canComment: true, canApprove: false, canManageUsers: false },
+    viewer: { canSuggest: false, canComment: false, canApprove: false, canManageUsers: false },
+  };
+
+  const updateUserRole = async (userId: string, role: UserRole) => {
+    try {
+      await updateDoc(doc(db, "users", userId), { 
+        role, 
+        permissions: ROLE_DEFAULTS[role],
+        updatedAt: serverTimestamp() 
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Nepodařilo se aktualizovat práva uživatele.");
+    }
+  };
   
   const getAvatarForChild = (childName: string) => {
     if (!childName) return "👶";
@@ -439,8 +460,17 @@ export default function App() {
     }
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
       if (currentUser) {
+        setUser(currentUser);
+        // Reset navigation states to home screen on login
+        setShowInspirationsView(false);
+        setShowArchive(false);
+        setShowUserManagement(false);
+        setShowForm(false);
+        setExpandedInspiration(null);
+        setExpandedSuggestion(null);
+        setBoardFilter("all");
+        
         // Test connection
         getDocFromServer(doc(db, 'test', 'connection')).catch(err => {
           if (err instanceof Error && err.message.includes('the client is offline')) {
@@ -529,7 +559,11 @@ export default function App() {
   const handleGenerateInspirations = async () => {
     setIsGeneratingInspiration(true);
     try {
-      const res = await fetch('/api/agent/generate', { method: 'POST' });
+      const res = await fetch('/api/agent/generate', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ location: weather?.city })
+      });
       if (!res.ok) throw new Error("Chyba při generování ze serveru");
     } catch (err) {
       console.error(err);
@@ -1180,16 +1214,24 @@ export default function App() {
               </button>
             )}
             {view === "parent" && (
-              <button
-                onClick={() => { 
-                  if (showInspirationsView) { setExpandedInspiration(null); } 
-                  else { setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }
-                  setShowInspirationsView(!showInspirationsView); 
-                }}
-                className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
-              >
-                {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
-              </button>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => setShowUserManagement(true)}
+                  className="px-4 py-2.5 rounded-xl bg-stone-800 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-stone-900 transition-colors shadow-sm"
+                >
+                  <User size={16} /> Správa uživatelů
+                </button>
+                <button
+                  onClick={() => { 
+                    if (showInspirationsView) { setExpandedInspiration(null); } 
+                    else { setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100); }
+                    setShowInspirationsView(!showInspirationsView); 
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
+                >
+                  {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
+                </button>
+              </div>
             )}
             {view === "child" && (
               <div className="flex flex-col gap-3">
@@ -1330,17 +1372,17 @@ export default function App() {
               </div>
               
               {inspirations.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-5 pb-4">
+                <div className="columns-1 md:columns-2 gap-5 pb-4">
                   {inspirations
                     .filter(insp => {
                       if (view === "parent") return true;
                       const userEmail = user?.email?.toLowerCase();
                       if (userEmail === "emasterba@gmail.com") return insp.target === "pro_dceru" || insp.target === "pro_vsechny";
-                      if (userEmail === "frantisek.sterba2010@gmail.com") return insp.target === "pro_syna" || insp.target === "pro_vsechny";
+                      if (userEmail === "frantisek.sterba2010@gmail.com" || userEmail === "zefran3@gmail.com") return insp.target === "pro_syna" || insp.target === "pro_vsechny";
                       return insp.target === "pro_vsechny";
                     })
                     .map(insp => (
-                    <div key={insp.id} className="bg-white p-6 rounded-2xl shadow-sm border border-indigo-50 flex flex-col justify-between hover:shadow-md transition-shadow">
+                    <div key={insp.id} className="break-inside-avoid mb-5 bg-white p-6 rounded-2xl shadow-sm border border-indigo-50 flex flex-col justify-between hover:shadow-md transition-shadow">
                       <div>
                         {view === "parent" && (
                           <div className="flex justify-between items-start mb-4">
@@ -1358,7 +1400,7 @@ export default function App() {
                         <div className="text-xs text-stone-400 mb-3 font-bold flex items-center justify-between">
                           <div className="flex items-center gap-1">📍 {insp.location}</div>
                           <a 
-                            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(insp.location)}&travelmode=driving`}
+                            href={`https://mapy.cz/zakladni?q=${encodeURIComponent(insp.location)}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-700 transition-colors bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100"
@@ -1384,6 +1426,16 @@ export default function App() {
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-500 border border-purple-100">
                               ⏱️ {insp.duration}
                             </span>
+                          )}
+                          {insp.cycling_info && (
+                            <>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
+                                🚲 {insp.cycling_info.distance}
+                              </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
+                                📈 {insp.cycling_info.elevation}
+                              </span>
+                            </>
                           )}
                         </div>
                         <p className="text-sm text-stone-600 leading-relaxed mb-6">{insp.description}</p>
@@ -1449,6 +1501,27 @@ export default function App() {
                                 </div>
                               )}
 
+                              {/* Cyklo detaily */}
+                              {insp.cycling_info && (
+                                <div className="bg-indigo-500/5 p-3 rounded-xl border border-indigo-500/10 space-y-2 mt-2">
+                                  <div className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-500/60 mb-1">🚴 Parametry trasy</div>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <div className="flex flex-col">
+                                      <span className="text-[10px] text-stone-400 font-bold uppercase">Vzdálenost</span>
+                                      <span className="text-xs font-extrabold text-indigo-600">{insp.cycling_info.distance}</span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                      <span className="text-[10px] text-stone-400 font-bold uppercase">Převýšení</span>
+                                      <span className="text-xs font-extrabold text-indigo-600">{insp.cycling_info.elevation}</span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                      <span className="text-[10px] text-stone-400 font-bold uppercase">Čas jízdy</span>
+                                      <span className="text-xs font-extrabold text-indigo-600">{insp.cycling_info.duration}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Věk */}
                               {insp.age_recommendation && (
                                 <div className="flex items-center gap-2">
@@ -1485,27 +1558,63 @@ export default function App() {
                               )}
 
                               {/* Action buttons */}
-                              <div className="flex flex-wrap gap-2 mt-3 border-t border-indigo-100/50 pt-3">
-                                <a 
-                                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(insp.location)}&travelmode=driving`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
-                                >
-                                  <Navigation size={14} />
-                                  Navigovat
-                                </a>
-                                {insp.url && (
-                                  <a 
-                                    href={insp.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
-                                  >
-                                    <ExternalLink size={14} />
-                                    Web akce
-                                  </a>
-                                )}
+                              {(() => {
+                                const isCycling = (insp.url && insp.url.includes('mapy.cz')) || 
+                                  /cykl|kolo|bike|cycling/i.test(insp.title + ' ' + insp.description);
+                                
+                                // Pro cyklo trasy: sestav URL z průjezdních bodů v názvu
+                                // Pro cyklo trasy: sestav Google Maps URL s cyklo režimem a průjezdními body
+                                const getCyclingUrl = () => {
+                                  // Pokus o extrakci bodů z názvu: "Okruh krajem (Havraníky - Hnanice - Šatov)"
+                                  const routeMatch = insp.title.match(/\(([^)]+)\)/);
+                                  if (routeMatch) {
+                                    const points = routeMatch[1].split(/\s*[-–→]\s*/).map(p => p.trim());
+                                    if (points.length >= 2) {
+                                      const waypoints = points.map(p => encodeURIComponent(p)).join('/');
+                                      return `https://www.google.com/maps/dir/${waypoints}/?travelmode=bicycling`;
+                                    }
+                                  }
+                                  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(insp.location)}&travelmode=bicycling`;
+                                };
+                                
+                                return (
+                                  <div className="flex flex-wrap gap-2 mt-3 border-t border-indigo-100/50 pt-3">
+                                    {isCycling ? (
+                                      /* Cyklo trasa — jen tlačítko Trasa */
+                                      <a 
+                                        href={getCyclingUrl()}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
+                                      >
+                                        <Navigation size={14} />
+                                        🚴 Trasa
+                                      </a>
+                                    ) : (
+                                      /* Běžná akce — Navigovat + Web akce */
+                                      <>
+                                        <a 
+                                          href={`https://mapy.cz/zakladni?q=${encodeURIComponent(insp.location)}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
+                                        >
+                                          <Navigation size={14} />
+                                          Navigovat
+                                        </a>
+                                        {insp.url && (
+                                          <a 
+                                            href={insp.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
+                                          >
+                                            <ExternalLink size={14} />
+                                            Web akce
+                                          </a>
+                                        )}
+                                      </>
+                                    )}
                                 {insp.ticket_url && (
                                   <a 
                                     href={insp.ticket_url}
@@ -1518,6 +1627,8 @@ export default function App() {
                                   </a>
                                 )}
                               </div>
+                                );
+                              })()}
                               
                               <div className="text-xs text-indigo-400 mt-1 italic">
                                 * Informace jsou orientační dle vyhledávání AI agenta.
@@ -1579,7 +1690,8 @@ export default function App() {
                     { id: "pending", label: "Čekající" },
                     { id: "approved", label: "Schválené" },
                     { id: "rejected", label: "Zamítnuté" },
-                    { id: "cancelled", label: "Zrušené" }
+                    { id: "cancelled", label: "Zrušené" },
+                    { id: "ride", label: "🚗 Odvoz" }
                   ].map(f => (
                     <button
                       key={f.id}
@@ -1609,7 +1721,7 @@ export default function App() {
                         return false;
                       }
                     }
-                    return boardFilter === "all" ? true : suggestion.status === boardFilter;
+                    return boardFilter === "all" ? true : boardFilter === "ride" ? suggestion.type === "ride" : suggestion.status === boardFilter;
                   })
                   .sort((a, b) => {
                     // Žádosti o přehodnocení primárně nahoru
@@ -1671,25 +1783,27 @@ export default function App() {
                               🚗 Potřebuji odvézt
                             </div>
                           )}
+                        </div>
+
+                        <div className="flex items-start gap-1">
                           {suggestion.location && (
                             <button 
                               onClick={() => setExpandedSuggestion(expandedSuggestion === suggestion.id ? null : suggestion.id)}
-                              className="text-[10px] uppercase px-2 py-1 rounded-full font-extrabold mb-2 ml-auto bg-indigo-100 text-indigo-600 border border-indigo-200 hover:bg-indigo-200 transition-colors cursor-pointer"
+                              className="text-[10px] uppercase px-2 py-1 rounded-full font-extrabold bg-indigo-100 text-indigo-600 border border-indigo-200 hover:bg-indigo-200 transition-colors cursor-pointer"
                             >
-                              {expandedSuggestion === suggestion.id ? "Skrýt detail" : "Detail"}
+                              {expandedSuggestion === suggestion.id ? "Skrýt" : "Detail"}
+                            </button>
+                          )}
+                          {view === "parent" && (
+                            <button
+                              onClick={() => handleDeleteSuggestion(suggestion)}
+                              className="p-1 text-stone-300 hover:text-red-500 transition-colors"
+                              title="Smazat / zrušit nápad"
+                            >
+                              <X size={20} />
                             </button>
                           )}
                         </div>
-
-                        {view === "parent" && (
-                          <button
-                            onClick={() => handleDeleteSuggestion(suggestion)}
-                            className="p-1 text-stone-300 hover:text-red-500 transition-colors"
-                            title="Smazat / zrušit nápad"
-                          >
-                            <X size={20} />
-                          </button>
-                        )}
                       </div>
 
                       <h3 className="text-lg font-extrabold my-3 text-stone-900">{suggestion.title}</h3>
@@ -2583,10 +2697,102 @@ export default function App() {
         )}
       </AnimatePresence>
       <input type="file" ref={commentFileInputRef} style={{ display: 'none' }} accept="image/*" onChange={handleCommentPhotoChange} />
-      
 
-
+      {/* User Management Modal */}
       <AnimatePresence>
+        {showUserManagement && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowUserManagement(false)}
+              className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] transition-opacity"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-2xl bg-white rounded-[24px] p-6 shadow-2xl z-[70] flex flex-col gap-6 border-2 border-stone-100 max-h-[85vh]"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-extrabold text-stone-800 tracking-tight flex items-center gap-2">
+                  <span>👥</span> Správa uživatelů a práv
+                </h2>
+                <button onClick={() => setShowUserManagement(false)} className="text-stone-400 hover:text-stone-600 bg-stone-100 p-2 rounded-full cursor-pointer">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="overflow-y-auto pr-1">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-stone-100 text-[11px] uppercase tracking-wider text-stone-400 font-bold">
+                      <th className="pb-3 px-2">Uživatel</th>
+                      <th className="pb-3 px-2 text-center">Role</th>
+                      <th className="pb-3 px-2">Oprávnění</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.values(userProfiles).map((profile) => (
+                      <tr key={profile.id} className="border-b border-stone-50 hover:bg-stone-50 transition-colors">
+                        <td className="py-4 px-2">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full overflow-hidden bg-white border border-stone-200 flex items-center justify-center flex-shrink-0">
+                              {profile.avatar?.startsWith('http') || profile.avatar?.startsWith('data:') ? (
+                                <img src={profile.avatar} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-base leading-none">{profile.avatar || "👤"}</span>
+                              )}
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="font-bold text-stone-700 text-sm">{profile.displayName || profile.email?.split('@')[0]}</span>
+                              <span className="text-[10px] text-stone-400">{profile.email}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-2 text-center">
+                          <select 
+                            value={profile.role || 'viewer'} 
+                            onChange={(e) => updateUserRole(profile.id!, e.target.value as UserRole)}
+                            className="text-xs font-bold bg-stone-100 border-none rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-rose-200 outline-none cursor-pointer"
+                          >
+                            <option value="admin">Admin</option>
+                            <option value="parent">Rodič</option>
+                            <option value="child">Dítě</option>
+                            <option value="viewer">Divák</option>
+                          </select>
+                        </td>
+                        <td className="py-4 px-2">
+                          <div className="flex flex-wrap gap-1.5">
+                            {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canSuggest && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 border border-blue-100">Navrhuje</span>
+                            )}
+                            {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canComment && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-500 border border-emerald-100">Komentuje</span>
+                            )}
+                            {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canApprove && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-500 border border-rose-100">Schvaluje</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3 items-start">
+                <AlertCircle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-800 leading-relaxed">
+                  <strong>Tip:</strong> Role automaticky nastavují balíček oprávnění. 
+                  Admin může spravovat uživatele, Rodič schvalovat výlety, Dítě jen navrhovat a Divák pouze sledovat dění.
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>      <AnimatePresence>
         {error && (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}

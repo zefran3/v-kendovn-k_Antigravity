@@ -233,7 +233,7 @@ async function startServer() {
     }
   });
 
-  async function generateInspirations() {
+  async function generateInspirations(userLocation?: string) {
     if (!process.env.GEMINI_API_KEY) {
       throw new Error("Missing GEMINI_API_KEY");
     }
@@ -243,7 +243,8 @@ async function startServer() {
 
     const prompt = `Jsi organizátor rodinných aktivit pro aplikaci Víkendovník. 
 Vyhledej aktuální a zajímavé akce na tento nebo příští víkend v Jihomoravském kraji a okolí (Brno, Vyškov, Olomouc, do cca 1 hodiny cesty autem).
-Hledej primárně na portálech: gotobrno.cz, kudyznudy.cz, jizni-morava.cz, mksvyskov.cz, cinestar.cz (Olomouc).
+${userLocation ? `AKTUÁLNÍ LOKALITA UŽIVATELE: ${userLocation}. Upřednostni akce v blízkosti tohoto místa.` : ""}
+Hledej primárně na portálech: gotobrno.cz, kudyznudy.cz, jizni-morava.cz, mksvyskov.cz, cinestar.cz (Olomouc), cyklo-jizni-morava.cz, mapy.cz (cykloturistická vrstva).
 
 RODINNÁ PRAVIDLA (Kritické):
 1. Dcera (Emma) NESNÁŠÍ hrady, zámky, zříceniny a nudu z historie. Tyto akce jí vůbec nenabízej!
@@ -252,8 +253,17 @@ RODINNÁ PRAVIDLA (Kritické):
 4. Syn (František) ZBOŽŇUJE hokej a je zarytý fanoušek HC Kometa Brno. Jakékoliv akce spojené s hokejem nebo Kometou jsou pro něj jak dělané!
 5. Táta a syn (případně i ostatní) milují počítačové hry a PlayStation. Herní akce, turnaje, VR herny nebo výstavy počítačů jsou pro ně gigantické plus!
 6. POČASÍ JE KLÍČOVÉ: Zkontroluj předpověď počasí na nadcházející víkend pro Jihomoravský kraj. Pokud má pršet, být zima nebo celkově ošklivo, nabízej POUZE akce pod střechou (kino, herny, výstavy). Pokud má být teplo a slunečno, zařaď venkovní akce.
+7. CYKLO VÝLETY: Táta a syn (František) rádi jezdí na kole. Pokud je hezké počasí, navrhni alespoň jeden cyklo výlet pro ně dva. 
+   PRAVIDLA PRO CYKLO:
+   - Target je VŽDY "pro_syna".
+   - Trasa MUSÍ být OKRUH (start i cíl na stejném místě).
+   - Start i cíl MUSÍ být v místě: ${userLocation || "v blízkosti bydliště (Brno/Vyškov)"}.
+   - Uveď délku trasy v km a převýšení v poli "cycling_info".
+   - Do pole "url" POVINNĚ vlož odkaz na plánovač trasy na mapy.cz s kompletní trasou. Formát URL: https://mapy.cz/cykloturisticka?planovani-trasy&start=NAZEV_STARTU&finish=NAZEV_STARTU&via1=BOD1&via2=BOD2... (start i finish je STEJNÝ BOD!).
+   - Povinně vyplň pole "cycling_info": distance, elevation, duration.
 
-Vyber 5 nejlepších akcí z internetu. Některé pro oba ("pro_vsechny"), některé speciálně zacílené bez hradů pro dceru ("pro_dceru") nebo bez vody pro syna ("pro_syna").
+Vyber 5–7 nejlepších akcí z internetu. POVINNĚ musí být zastoupena minimálně 1 inspirace pro dceru ("pro_dceru") a minimálně 1 pro syna ("pro_syna"). Zbytek může být "pro_vsechny".
+Některé akce zacíli speciálně bez hradů pro dceru ("pro_dceru") nebo bez vody pro syna ("pro_syna").
 
 SPECIÁLNÍ PRAVIDLA PRO KINO:
 Pokud navrhuješ návštěvu kina (např. CineStar Olomouc), NEVYPISUJ konkrétní film jako hlavní tip.
@@ -286,7 +296,8 @@ Vrať VÝHRADNĚ JSON pole s touto strukturou (a žádný jiný text):
     "indoor": true,
     "age_recommendation": "pro celou rodinu / od 6 let",
     "ticket_url": "https://odkaz-na-nákup-vstupenek.cz (pokud existuje)",
-    "cinema_listings": null
+    "cinema_listings": null,
+    "cycling_info": { "distance": "25 km", "elevation": "120 m", "duration": "1:45 h" } (pouze u cyklo výletů, jinak null)
   },
   {
     "title": "CineStar Olomouc – víkendový program",
@@ -359,8 +370,9 @@ DŮLEŽITÉ — PŘESNOST INFORMACÍ:
 
   // AI Agent Route pro generování inspirace
   app.post("/api/agent/generate", async (req, res) => {
+    const { location } = req.body;
     try {
-      const suggestions = await generateInspirations();
+      const suggestions = await generateInspirations(location);
       res.json({ success: true, count: suggestions.length, suggestions });
     } catch (error: any) {
       console.error("AI Agent Error:", error);

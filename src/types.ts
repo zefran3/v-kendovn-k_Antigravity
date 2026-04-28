@@ -35,11 +35,23 @@ export interface ActivitySuggestion {
   comments?: ActivityComment[];
 }
 
+export type UserRole = 'admin' | 'parent' | 'child' | 'viewer';
+
+export interface UserPermissions {
+  canSuggest: boolean;
+  canComment: boolean;
+  canApprove: boolean;
+  canManageUsers: boolean;
+}
+
 export interface UserProfile {
   id?: string;
   avatar: string;
   email?: string;
+  displayName?: string;
   updatedAt?: number;
+  role?: UserRole;
+  permissions?: UserPermissions;
 }
 
 export interface CinemaListing {
@@ -65,6 +77,11 @@ export interface Inspiration {
   age_recommendation?: string;
   cinema_listings?: CinemaListing[];
   ticket_url?: string;
+  cycling_info?: {
+    distance: string;
+    elevation: string;
+    duration: string;
+  };
   createdAt?: any;
 }
 
