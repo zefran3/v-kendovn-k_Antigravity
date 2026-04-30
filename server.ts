@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import fs from "fs";
 import admin from "firebase-admin";
 import cron from "node-cron";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 
@@ -265,7 +265,7 @@ async function startServer() {
       throw new Error("Missing GEMINI_API_KEY");
     }
     
-    const ai = new GoogleGenAI(process.env.GEMINI_API_KEY!);
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
     const prompt = `Jsi organizátor rodinných aktivit pro aplikaci Víkendovník. 
 K vyhledání informací POVINNĚ použi Google Search Grounding. Vyhledej AKTUÁLNÍ (pro tento nebo příští víkend) a reálně existující akce v Jihomoravském kraji a okolí (Brno, Vyškov, Olomouc, do cca 1 hodiny cesty autem).
@@ -356,9 +356,9 @@ DŮLEŽITÉ — PŘESNOST INFORMACÍ (Kritické):
 - OTEVÍRACÍ DOBY: Pole "opening_hours" vyplň pouze pokud jsi otevírací dobu skutečně našel na webu. Nenajdeš-li, nastav na null.
 - Všechna pole musí být přítomna v každém objektu (i když jsou null).`;
 
-    const model = ai.getGenerativeModel({ 
-      model: 'gemini-1.5-pro', // Pro je mnohem lepší v přesnosti dat
-      tools: [{ googleSearchRetrieval: {} }] 
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-2.5-flash', // Ověřený vítěz testu (podporuje i vyhledávání)
+      tools: [{ googleSearch: {} }] 
     });
 
     const result = await model.generateContent(prompt);
@@ -393,55 +393,7 @@ DŮLEŽITÉ — PŘESNOST INFORMACÍ (Kritické):
     return suggestions;
   }
 
-  // Chat Assistant Route
-  app.post("/api/agent/chat", async (req, res) => {
-    const { message, userLocation, userName } = req.body;
-    try {
-      const ai = new GoogleGenAI(process.env.GEMINI_API_KEY);
-      const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-      const chatPrompt = `Jsi rodinný asistent v aplikaci Víkendovník. Pomáháš uživateli ${userName} rychle vytvořit záznam v aplikaci pomocí přirozeného jazyka.
-AKTUÁLNÍ LOKALITA UŽIVATELE: ${userLocation || "neznámá"}
-
-ÚKOL: Analyzuj zprávu uživatele a rozhodni, jakou akci chce provést.
-Možné akce:
-1. CREATE_RIDE: Uživatel potřebuje odvézt (např. "Potřebuju odvézt ze školy domů", "Vyzvedneš mě v 5 u kina?").
-2. CREATE_ACTIVITY: Uživatel navrhuje výlet nebo akci (např. "Chtěl bych jít v sobotu do ZOO", "Půjdeme v neděli na pizzu do centra?").
-3. UNKNOWN: Pokud zprávě nerozumíš nebo není o tvoření aktivit.
-
-Vrať VÝHRADNĚ JSON v tomto formátu:
-{
-  "action": "CREATE_RIDE" | "CREATE_ACTIVITY" | "UNKNOWN",
-  "data": {
-    // Pro CREATE_RIDE:
-    "rideFrom": "místo odkud (použij aktuální lokalitu ${userLocation} pokud dává smysl)",
-    "rideTo": "cíl cesty",
-    "eventTime": "HH:MM (pokud je zmíněn)",
-    // Pro CREATE_ACTIVITY:
-    "title": "krátký název",
-    "description": "popis",
-    "location": "místo konání",
-    "suggestedTime": "sobota" | "neděle" (pokud lze určit),
-    "eventDate": "YYYY-MM-DD (pokud lze určit)"
-  },
-  "reply": "Krátká, milá odpověď uživateli, co jsi pro něj připravil (česky)."
-}
-
-ZPRÁVA UŽIVATELE: "${message}"`;
-
-      console.log(`Chat Agent: Processing message from ${userName}: "${message}"`);
-      const result = await model.generateContent(chatPrompt);
-      const responseText = result.response.text();
-      console.log("Chat Agent AI Response:", responseText);
-
-      const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const actionData = JSON.parse(cleanJson);
-      res.json(actionData);
-    } catch (error: any) {
-      console.error("Chat Agent Error:", error);
-      res.status(500).json({ error: error.message });
-    }
-  });
 
   // AI Agent Route pro generování inspirace
   app.post("/api/agent/generate", async (req, res) => {
