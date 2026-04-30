@@ -288,11 +288,17 @@ RODINNÁ PRAVIDLA (Kritické):
    - Do pole "url" POVINNĚ vlož odkaz na hotovou trasu na Mapy.cz. Formát URL: https://mapy.cz/turisticka?rc=lat1,lon1&rc=lat2,lon2&rc=lat3,lon3&rc=lat1 (start i cíl MUSÍ být stejný!). DŮLEŽITÉ: Jako souřadnice použij reálná čísla (např. 49.195,16.608). Mapy.cz takto trasu okamžitě vypočítají a zobrazí v mapě.
    - Povinně vyplň pole "cycling_info": distance (např. "25 km"), elevation (např. "300 m"), duration (např. "2:30").
 
-Vyber 5–7 nejlepších akcí z internetu. POVINNĚ musí být zastoupena minimálně 1 inspirace pro dceru ("pro_dceru") a minimálně 1 pro syna ("pro_syna"). Zbytek může být "pro_vsechny".
-Některé akce zacíli speciálně bez hradů pro dceru ("pro_dceru") nebo bez vody pro syna ("pro_syna").
+291. SPECIÁLNÍ POŽADAVEK — VYŠKOV (KRITICKÉ):
+   - POVINNĚ do výsledků zařaď aktuální akce z Vyškova.
+   - Konkrétně hledej program Kina Sokolský dům a akce Městského kulturního střediska Vyškov.
+   - Hlavním zdrojem informací je web: https://www.mksvyskov.cz/
+   - U těchto akcí nastav pole "is_vyskov": true. U ostatních akcí ho nastav na false.
+
+Vyber 6–8 nejlepších akcí z internetu. POVINNĚ musí být zastoupena minimálně 1 inspirace pro dceru ("pro_dceru") a minimálně 1 pro syna ("pro_syna"). Zbytek může být "pro_vsechny".
+Alespoň 2-3 akce MUSÍ být z Vyškova (MKS Vyškov / Kino Sokolský dům).
 
 SPECIÁLNÍ PRAVIDLA PRO KINO:
-Pokud navrhuješ návštěvu kina (např. CineStar Olomouc), NEVYPISUJ konkrétní film jako hlavní tip.
+Pokud navrhuješ návštěvu kina (např. CineStar Olomouc nebo Sokolský dům Vyškov), NEVYPISUJ konkrétní film jako hlavní tip.
 Místo toho vypiš v poli "cinema_listings" až 5 vhodných filmů, které hrají daný víkend, s časy představení a odkazem na nákup lístků.
 Filtruj filmy vhodné pro rodinu (ne horory, ne filmy 18+).
 
@@ -304,6 +310,7 @@ TYPY ČASOVÝCH ÚDAJŮ (time_type):
 
 POVINNÉ POLE pro každou akci:
 - "indoor": true pokud jde o akci pod střechou, false pokud venku. U kombinovaných (např. ZOO) uveď false.
+- "is_vyskov": true jen pro akce z MKS Vyškov / Kino Sokolský dům, jinak false.
 
 Vrať VÝHRADNĚ JSON pole s touto strukturou (a žádný jiný text):
 [
@@ -312,6 +319,7 @@ Vrať VÝHRADNĚ JSON pole s touto strukturou (a žádný jiný text):
     "description": "Lákavý a krátký popis (proč tam jít). 2-3 věty.",
     "target": "pro_vsechny",
     "location": "Přesný název místa nebo adresa",
+    "is_vyskov": true,
     "date": "2026-05-03",
     "time": "14:00",
     "time_type": "event",
@@ -324,25 +332,6 @@ Vrať VÝHRADNĚ JSON pole s touto strukturou (a žádný jiný text):
     "ticket_url": "https://odkaz-na-nákup-vstupenek.cz (pokud existuje)",
     "cinema_listings": null,
     "cycling_info": { "distance": "25 km", "elevation": "120 m", "duration": "1:45 h" } (pouze u cyklo výletů, jinak null)
-  },
-  {
-    "title": "CineStar Olomouc – víkendový program",
-    "description": "Vyber si z aktuálního programu kina!",
-    "target": "pro_vsechny",
-    "location": "CineStar Olomouc, Olomouc City",
-    "date": "2026-05-03",
-    "time": null,
-    "time_type": "opening_hours",
-    "opening_hours": "So-Ne 10:00–22:00",
-    "price": "od 199 Kč",
-    "duration": "dle filmu",
-    "url": "https://www.cinestar.cz/olomouc",
-    "indoor": true,
-    "age_recommendation": "pro celou rodinu",
-    "ticket_url": "https://www.cinestar.cz/olomouc",
-    "cinema_listings": [
-      { "film": "Název filmu", "time": "14:30, 17:00, 20:15" }
-    ]
   }
 ]
 
@@ -354,7 +343,8 @@ DŮLEŽITÉ — PŘESNOST INFORMACÍ (Kritické):
 - Pole "ticket_url" = stránka kde se kupují vstupenky/vstupné. Hledej na webu dané instituce stránky jako: vstupné, vstupenky, e-shop, eshop, obchod, tickets, buy. Mnoho institucí má e-shop na vlastní doméně nebo používá externí prodejce (GoOut, Ticketportal, Ticketmaster). Pokud najdeš, použij. Pokud ne, nastav na null.
 - Pole "cinema_listings" vyplň POUZE u kin. U ostatních akcí ho nastav na null. U cinema_listings NEUVÁDEJ URL u jednotlivých filmů.
 - OTEVÍRACÍ DOBY: Pole "opening_hours" vyplň pouze pokud jsi otevírací dobu skutečně našel na webu. Nenajdeš-li, nastav na null.
-- Všechna pole musí být přítomna v každém objektu (i když jsou null).`;
+- Všechna pole musí být přítomna v každém objektu (i když jsou null).
+- Pole "is_vyskov" MUSÍ být přítomno u každé položky.`;
 
     const model = genAI.getGenerativeModel({ 
       model: 'gemini-2.5-flash', // Ověřený vítěz testu (podporuje i vyhledávání)

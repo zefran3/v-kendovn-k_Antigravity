@@ -202,6 +202,14 @@ export default function App() {
   const [expandedInspiration, setExpandedInspiration] = useState<string | null>(null);
   const [expandedSuggestion, setExpandedSuggestion] = useState<string | null>(null);
   const [showUserManagement, setShowUserManagement] = useState(false);
+  const [showVyskovOnly, setShowVyskovOnly] = useState(false);
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   const ROLE_DEFAULTS: Record<UserRole, UserPermissions> = {
     admin: { canSuggest: true, canComment: true, canApprove: true, canManageUsers: true },
@@ -584,10 +592,19 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ location: weather?.city })
       });
-      if (!res.ok) throw new Error("Chyba při generování ze serveru");
-    } catch (err) {
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        const errorMsg = errorData?.error || "";
+        
+        if (errorMsg.includes("503") || errorMsg.includes("high demand")) {
+          throw new Error("AI servery jsou přetížené. Zkuste to za pár minut.");
+        }
+        throw new Error("Nepodařilo se spojit s AI agentem. Zkuste to později.");
+      }
+    } catch (err: any) {
       console.error(err);
-      setError("Nepodařilo se vygenerovat tipy z AI.");
+      setError(err.message || "Chyba při generování tipů.");
     } finally {
       setIsGeneratingInspiration(false);
     }
@@ -1288,6 +1305,19 @@ export default function App() {
                     >
                       {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
                     </button>
+                    {showInspirationsView && (
+                      <button 
+                        onClick={() => setShowVyskovOnly(!showVyskovOnly)}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl font-bold text-xs w-full flex items-center justify-center gap-2 transition-all shadow-sm border-2",
+                          showVyskovOnly 
+                            ? "bg-amber-400 border-amber-500 text-amber-950" 
+                            : "bg-white border-indigo-100 text-indigo-500 hover:border-indigo-200"
+                        )}
+                      >
+                        🏰 {showVyskovOnly ? "Všechny tipy" : "Jen Vyškov (MKS/Kino)"}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -1400,6 +1430,9 @@ export default function App() {
                 <div className="columns-1 md:columns-2 gap-5 pb-4">
                   {inspirations
                     .filter(insp => {
+                      // Pokud je zapnutý filtr na Vyškov, ukaž jen ty s příznakem
+                      if (showVyskovOnly && !insp.is_vyskov) return false;
+
                       if (view === "parent") return true;
                       const userEmail = user?.email?.toLowerCase();
                       if (userEmail === "emasterba@gmail.com") return insp.target === "pro_dceru" || insp.target === "pro_vsechny";
@@ -1424,14 +1457,16 @@ export default function App() {
                         <h4 className="font-extrabold text-stone-800 text-lg mb-2 leading-tight">{insp.title}</h4>
                         <div className="text-xs text-stone-400 mb-3 font-bold flex items-center justify-between">
                           <div className="flex items-center gap-1">📍 {insp.location}</div>
-                          <a 
-                            href={`https://mapy.cz/zakladni?q=${encodeURIComponent(insp.location)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-700 transition-colors bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100"
-                          >
-                            <Navigation size={12} /> Trasa
-                          </a>
+                          {userProfiles[user?.uid || '']?.role !== 'child' && (
+                            <a 
+                              href={`https://mapy.cz/zakladni?q=${encodeURIComponent(insp.location)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-700 transition-colors bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100"
+                            >
+                              <Navigation size={12} /> Trasa
+                            </a>
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-1.5 mb-4">
                           {insp.indoor !== undefined && insp.indoor !== null && (
@@ -1609,6 +1644,8 @@ export default function App() {
                                   return `https://mapy.cz/turisticka?q=${encodeURIComponent(insp.location)}`;
                                 };
                                 
+                                if (userProfiles[user?.uid || '']?.role === 'child') return null;
+
                                 return (
                                   <div className="flex flex-wrap gap-2 mt-3 border-t border-indigo-100/50 pt-3">
                                     {isCycling ? (

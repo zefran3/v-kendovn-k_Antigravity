@@ -83,6 +83,7 @@ export interface Inspiration {
     elevation: string;
     duration: string;
   };
+  is_vyskov?: boolean;
   createdAt?: any;
 }
 
