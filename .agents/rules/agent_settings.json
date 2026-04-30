@@ -1,0 +1,22 @@
+{
+  "antigravity_workspace_settings": {
+    "agent_defaults": {
+      "reasoning_tier": "low", 
+      "max_context_tokens": 50000
+    },
+    "task_overrides": [
+      {
+        "trigger_keywords": ["refactor", "architecture", "debug complex", "build feature"],
+        "reasoning_tier": "high",
+        "allow_browser_automation": true,
+        "require_artifacts": ["implementation_plan", "verification_screenshot"]
+      },
+      {
+        "trigger_keywords": ["docs", "unit test", "format", "fix typo"],
+        "reasoning_tier": "low",
+        "allow_browser_automation": false,
+        "require_artifacts": []
+      }
+    ]
+  }
+}

@@ -183,6 +183,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [cancellingEvent, setCancellingEvent] = useState<ActivitySuggestion | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [selectedLeaderboardUser, setSelectedLeaderboardUser] = useState<string | null>(null);
@@ -210,6 +211,13 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [error]);
+
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => setSuccess(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [success]);
 
   const ROLE_DEFAULTS: Record<UserRole, UserPermissions> = {
     admin: { canSuggest: true, canComment: true, canApprove: true, canManageUsers: true },
@@ -602,6 +610,7 @@ export default function App() {
         }
         throw new Error("Nepodařilo se spojit s AI agentem. Zkuste to později.");
       }
+      setSuccess("Nové tipy byly úspěšně vygenerovány!");
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Chyba při generování tipů.");
@@ -1112,7 +1121,15 @@ export default function App() {
             <>
               {["zefran3@gmail.com"].includes(user.email?.toLowerCase() || "") && (
                 <button 
-                  onClick={() => setView(view === "parent" ? "child" : "parent")}
+                  onClick={() => {
+                    setView(view === "parent" ? "child" : "parent");
+                    setShowInspirationsView(false);
+                    setShowArchive(false);
+                    setShowUserManagement(false);
+                    setShowVyskovOnly(false);
+                    setExpandedInspiration(null);
+                    setExpandedSuggestion(null);
+                  }}
                   className="flex items-center gap-2 px-3 py-2 rounded-lg text-stone-500 hover:bg-rose-50 hover:text-rose-500 transition-colors text-sm font-semibold"
                 >
                   {view === "parent" ? <User size={16} /> : <Settings size={16} />}
@@ -1218,7 +1235,23 @@ export default function App() {
                 <AlertCircle size={18} />
                 {error}
               </div>
-              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 p-1">
+              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 p-1 transition-colors">
+                <X size={16} />
+              </button>
+            </motion.div>
+          )}
+          {success && (
+            <motion.div 
+              initial={{ opacity: 0, y: -20, x: "-50%" }}
+              animate={{ opacity: 1, y: 0, x: "-50%" }}
+              exit={{ opacity: 0, y: -20, x: "-50%" }}
+              className="fixed top-6 left-1/2 z-[100] w-[90%] max-w-md bg-emerald-100 border border-emerald-200 p-4 rounded-xl flex items-center justify-between shadow-lg"
+            >
+              <div className="flex items-center gap-3 text-emerald-700 text-sm font-medium">
+                <Check size={18} />
+                {success}
+              </div>
+              <button onClick={() => setSuccess(null)} className="text-emerald-400 hover:text-emerald-600 p-1 transition-colors">
                 <X size={16} />
               </button>
             </motion.div>
@@ -1260,7 +1293,10 @@ export default function App() {
                 {userProfiles[user?.uid || '']?.role !== 'viewer' && (
                   <button
                     onClick={() => { 
-                      if (showInspirationsView) { setExpandedInspiration(null); } 
+                      if (showInspirationsView) { 
+                        setExpandedInspiration(null); 
+                        setShowVyskovOnly(false);
+                      } 
                       else { setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100); }
                       setShowInspirationsView(!showInspirationsView); 
                     }}
@@ -1297,7 +1333,10 @@ export default function App() {
                     </button>
                     <button
                       onClick={() => { 
-                        if (showInspirationsView) { setExpandedInspiration(null); } 
+                        if (showInspirationsView) { 
+                          setExpandedInspiration(null); 
+                          setShowVyskovOnly(false);
+                        } 
                         else { setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }
                         setShowInspirationsView(!showInspirationsView); 
                       }}
@@ -1315,7 +1354,7 @@ export default function App() {
                             : "bg-white border-indigo-100 text-indigo-500 hover:border-indigo-200"
                         )}
                       >
-                        🏰 {showVyskovOnly ? "Všechny tipy" : "Jen Vyškov (MKS/Kino)"}
+                        🏰 {showVyskovOnly ? "Všechny tipy" : "Akce ve Vyškově"}
                       </button>
                     )}
                   </>
@@ -1413,7 +1452,7 @@ export default function App() {
             <div ref={inspirationsRef} className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-[24px] p-5 md:p-8 border border-indigo-100 shadow-[inset_0_4px_8px_rgba(255,255,255,0.8),inset_0_-3px_6px_rgba(0,0,0,0.02),0_6px_12px_-2px_rgba(0,0,0,0.05)] flex flex-col gap-6 min-h-[400px]">
               <div className="flex flex-wrap justify-between items-center gap-3">
                 <div className="text-lg md:text-xl uppercase tracking-widest text-indigo-500 font-extrabold flex items-center gap-2 drop-shadow-sm">
-                  <span>✨</span> Inspirace na víkend z AI
+                  <span>{showVyskovOnly ? "🏰" : "✨"}</span> {showVyskovOnly ? "Akce ve Vyškově" : "Inspirace na víkend z AI"}
                 </div>
                 {view === "parent" && (
                   <button 
@@ -1599,17 +1638,19 @@ export default function App() {
                               )}
 
                               {/* Cinema Listings */}
-                              {insp.cinema_listings && insp.cinema_listings.length > 0 && (
+                              {insp.cinema_listings && insp.cinema_listings.filter(l => l.film && l.film.trim() !== "").length > 0 && (
                                 <div className="mt-3 border-t border-indigo-100/50 pt-3">
                                   <div className="font-bold text-indigo-600 text-xs uppercase tracking-wider mb-3 flex items-center gap-1">
                                     <Film size={12} /> Program kina
                                   </div>
                                   <div className="space-y-2">
-                                    {insp.cinema_listings.map((listing: CinemaListing, idx: number) => (
+                                    {insp.cinema_listings
+                                      .filter(listing => listing.film && listing.film.trim() !== "")
+                                      .map((listing: CinemaListing, idx: number) => (
                                       <div key={idx} className="flex items-center bg-white rounded-lg p-3 border border-indigo-100/50 shadow-sm">
                                         <div>
                                           <div className="font-bold text-stone-800 text-sm">{listing.film}</div>
-                                          <div className="text-xs text-stone-500 mt-0.5">🕐 {listing.time}</div>
+                                          <div className="text-xs text-stone-500 mt-0.5">🕐 {listing.time || "Dle programu"}</div>
                                         </div>
                                       </div>
                                     ))}
@@ -1640,8 +1681,9 @@ export default function App() {
                                     }
                                   }
                                   
-                                  // Fallback na Mapy.cz vyhledávání cíle
-                                  return `https://mapy.cz/turisticka?q=${encodeURIComponent(insp.location)}`;
+                                  // Fallback na Google Maps cyklo
+                                  const cleanLoc = insp.location.replace(/\s*\(.*?\)\s*/g, '').trim();
+                                  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(cleanLoc)}&travelmode=bicycling`;
                                 };
                                 
                                 if (userProfiles[user?.uid || '']?.role === 'child') return null;
@@ -1663,7 +1705,7 @@ export default function App() {
                                       /* Běžná akce — Navigovat + Web akce */
                                       <>
                                         <a 
-                                          href={`https://mapy.cz/zakladni?q=${encodeURIComponent(insp.location)}`}
+                                          href={`https://mapy.cz/zakladni?q=${encodeURIComponent(insp.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
@@ -1881,7 +1923,7 @@ export default function App() {
                       {suggestion.location && (
                         <>
                           <a 
-                            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(suggestion.location)}&travelmode=driving`}
+                            href={`https://mapy.cz/zakladni?q=${encodeURIComponent(suggestion.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="mt-3 flex items-center gap-2 text-xs text-stone-500 font-medium p-2 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition-colors active:bg-rose-100 cursor-pointer"
@@ -1921,7 +1963,7 @@ export default function App() {
 
                                 <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-stone-100">
                                   <a 
-                                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(suggestion.location)}&travelmode=driving`}
+                                    href={`https://mapy.cz/zakladni?q=${encodeURIComponent(suggestion.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-rose-200 text-rose-500 font-bold text-xs hover:bg-rose-50 transition-colors shadow-sm"
@@ -1954,15 +1996,13 @@ export default function App() {
                           </div>
                           <div className="text-[11px] text-stone-500 font-semibold">
                             Navrhl(a): <strong className="font-bold text-stone-700">{suggestion.childName}</strong> • {
-                              suggestion.eventDate ? (
+                              suggestion.createdAt ? (
                                 (() => {
-                                  const d = new Date(suggestion.eventDate);
-                                  const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' };
-                                  const formattedDate = d.toLocaleDateString("cs-CZ", options);
-                                  const capitalDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
-                                  return suggestion.eventTime ? `${capitalDate} v ${suggestion.eventTime}` : capitalDate;
+                                  const d = new Date(suggestion.createdAt);
+                                  const options: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' };
+                                  return d.toLocaleString("cs-CZ", options);
                                 })()
-                              ) : suggestion.suggestedTime
+                              ) : "Neznámé datum"
                             }
                           </div>
                         </div>

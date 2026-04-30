@@ -27,6 +27,8 @@ messaging.onBackgroundMessage((payload) => {
       body: payload.data?.body,
       icon: '/pwa-192x192.png',
       badge: '/logo.png',
+      vibrate: [200, 100, 200, 100, 200],
+      requireInteraction: true,
       data: payload.data
     };
     self.registration.showNotification(notificationTitle, notificationOptions);

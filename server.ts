@@ -71,7 +71,18 @@ async function sendPushNotification(suggestion: any) {
       tokens.forEach((t, i) => console.log(`  Token ${i+1}: ${t.substring(0, 20)}...${t.substring(t.length - 10)}`));
       
       const message = {
-        notification: { title, body },
+        data: { 
+          title: title, 
+          body: body 
+        },
+        android: {
+          priority: 'high' as const
+        },
+        webpush: {
+          headers: {
+            Urgency: 'high'
+          }
+        },
         tokens: tokens
       };
       
@@ -108,7 +119,16 @@ async function sendBroadcastNotification(title: string, body: string) {
 
     if (tokens.length > 0) {
       const message = {
-        notification: { title, body },
+        data: {
+          title: title,
+          body: body
+        },
+        android: {
+          priority: 'high' as const
+        },
+        webpush: {
+          headers: { Urgency: 'high' }
+        },
         tokens: tokens
       };
       await admin.messaging().sendEachForMulticast(message);
@@ -285,7 +305,7 @@ RODINNÁ PRAVIDLA (Kritické):
    - Trasa MUSÍ být OKRUH (start i cíl na stejném místě).
    - Start i cíl MUSÍ být v místě: ${userLocation || "v blízkosti bydliště (Brno/Vyškov)"}.
    - Uveď délku trasy v km a převýšení v poli "cycling_info".
-   - Do pole "url" POVINNĚ vlož odkaz na hotovou trasu na Mapy.cz. Formát URL: https://mapy.cz/turisticka?rc=lat1,lon1&rc=lat2,lon2&rc=lat3,lon3&rc=lat1 (start i cíl MUSÍ být stejný!). DŮLEŽITÉ: Jako souřadnice použij reálná čísla (např. 49.195,16.608). Mapy.cz takto trasu okamžitě vypočítají a zobrazí v mapě.
+   - Do pole "url" POVINNĚ vlož odkaz na hotovou trasu na Mapy.cz. Formát URL MUSÍ obsahovat plánování trasy a profil pro horská kola: https://mapy.cz/turisticka?planovani-trasy&rc=lon1,lat1&rc=lon2,lat2&rc=lon3,lat3&rc=lon1,lat1&mrp={"c":112} (start i cíl MUSÍ být stejný a odpovídat lokaci: ${userLocation || "v blízkosti bydliště (Brno/Vyškov)"}). DŮLEŽITÉ: Mapy.cz vyžadují pořadí souřadnic LONGITUDE, LATITUDE (nejprve 16.xxx, pak 49.xxx).
    - Povinně vyplň pole "cycling_info": distance (např. "25 km"), elevation (např. "300 m"), duration (např. "2:30").
 
 291. SPECIÁLNÍ POŽADAVEK — VYŠKOV (KRITICKÉ):
@@ -299,7 +319,9 @@ Alespoň 2-3 akce MUSÍ být z Vyškova (MKS Vyškov / Kino Sokolský dům).
 
 SPECIÁLNÍ PRAVIDLA PRO KINO:
 Pokud navrhuješ návštěvu kina (např. CineStar Olomouc nebo Sokolský dům Vyškov), NEVYPISUJ konkrétní film jako hlavní tip.
-Místo toho vypiš v poli "cinema_listings" až 5 vhodných filmů, které hrají daný víkend, s časy představení a odkazem na nákup lístků.
+Místo toho vypiš v poli "cinema_listings" až 5 vhodných filmů, které hrají daný víkend, s časy představení.
+POZOR NA ODKAZY U KINA: Filmy se rychle mění a hluboké odkazy často nefungují. Do polí "url" a "ticket_url" vlož VŽDY POUZE úvodní stránku kina (např. "https://www.mksvyskov.cz/kino-sokolsky-dum" nebo "https://www.cinestar.cz/olomouc"). NESNAŽ se generovat odkaz na konkrétní film nebo lístek.
+POZOR NA PRÁZDNÝ PROGRAM: Pokud se ti nepodaří zjistit konkrétní program z webu, nastav celé pole "cinema_listings" na null. Nevytvářej prázdné objekty.
 Filtruj filmy vhodné pro rodinu (ne horory, ne filmy 18+).
 
 TYPY ČASOVÝCH ÚDAJŮ (time_type):
@@ -397,18 +419,27 @@ DŮLEŽITÉ — PŘESNOST INFORMACÍ (Kritické):
     }
   });
 
+  // Funkce pro automatické generování s retry logikou (1 minuta)
+  async function runAutomatedGeneration(retryCount = 0) {
+    console.log(`CRON: Spouštím automatické generování (pokus č. ${retryCount + 1})...`);
+    try {
+      const suggestions = await generateInspirations();
+      console.log(`CRON: Úspěšně vygenerováno ${suggestions.length} tipů.`);
+      sendBroadcastNotification(
+        "✨ Nové tipy na víkend!", 
+        "AI agent právě našel čerstvé nápady na výlety. Podívej se do aplikace!"
+      );
+    } catch (error) {
+      console.error(`CRON Error (pokus ${retryCount + 1}):`, error);
+      // Pokud se generování nepovede, zkusíme to znovu za 1 minutu
+      console.log("CRON: Generování selhalo, zkusím to znovu za 1 minutu...");
+      setTimeout(() => runAutomatedGeneration(retryCount + 1), 60000);
+    }
+  }
+
   // CRON úloha - spouštění každou středu ve 3:00 ráno
   cron.schedule("0 3 * * 3", () => {
-    console.log("CRON: Spouštím automatické generování víkendové inspirace...");
-    generateInspirations()
-      .then(suggestions => {
-        console.log(`CRON: Úspěšně vygenerováno ${suggestions.length} tipů.`);
-        sendBroadcastNotification(
-          "✨ Nové tipy na víkend!", 
-          "AI agent právě našel čerstvé nápady na výlety. Podívej se do aplikace!"
-        );
-      })
-      .catch(error => console.error("CRON Error:", error));
+    runAutomatedGeneration();
   });
 
   // Vite middleware for development
