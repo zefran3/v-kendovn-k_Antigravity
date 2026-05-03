@@ -25,10 +25,10 @@ try {
       credential: admin.credential.cert(serviceAccount)
     });
     console.log("Firebase Admin initialized successfully.");
-    
+
     const db = admin.firestore();
     const startTime = admin.firestore.Timestamp.now();
-    
+
     db.collection('suggestions').where('createdAt', '>', startTime).onSnapshot(snapshot => {
       snapshot.docChanges().forEach(change => {
         if (change.type === 'added') {
@@ -50,30 +50,30 @@ async function sendPushNotification(suggestion: any) {
   try {
     const db = admin.firestore();
     const usersSnapshot = await db.collection('users').get();
-    
+
     const tokens: string[] = [];
     usersSnapshot.forEach(doc => {
       const userData = doc.data();
       // Odesíláme notifikace pouze pro administrátory nebo všechny?
       // Ponecháme to zatím primárně pro účet zefran3@gmail.com (Táta) a evičku
       if ((userData.email === 'zefran3@gmail.com' || userData.email === 'eva.kubartova@gmail.com') && userData.fcmToken) {
-         if (!tokens.includes(userData.fcmToken)) {
-             tokens.push(userData.fcmToken);
-         }
+        if (!tokens.includes(userData.fcmToken)) {
+          tokens.push(userData.fcmToken);
+        }
       }
     });
 
     if (tokens.length > 0) {
       const title = suggestion.type === 'ride' ? 'Nová žádost o odvoz 🚗' : 'Nový návrh aktivity 🎉';
       const body = `${suggestion.childName}: ${suggestion.title}`;
-      
+
       console.log(`[PUSH DEBUG] Sending to ${tokens.length} tokens:`);
-      tokens.forEach((t, i) => console.log(`  Token ${i+1}: ${t.substring(0, 20)}...${t.substring(t.length - 10)}`));
-      
+      tokens.forEach((t, i) => console.log(`  Token ${i + 1}: ${t.substring(0, 20)}...${t.substring(t.length - 10)}`));
+
       const message = {
-        data: { 
-          title: title, 
-          body: body 
+        data: {
+          title: title,
+          body: body
         },
         android: {
           priority: 'high' as const
@@ -85,14 +85,14 @@ async function sendPushNotification(suggestion: any) {
         },
         tokens: tokens
       };
-      
+
       const response = await admin.messaging().sendEachForMulticast(message);
       console.log('Push notifications sent successfully:', response.successCount, 'failed:', response.failureCount);
-      
+
       if (response.failureCount > 0) {
         response.responses.forEach((r, i) => {
           if (!r.success) {
-            console.error(`  Token ${i+1} error:`, r.error?.code, r.error?.message);
+            console.error(`  Token ${i + 1} error:`, r.error?.code, r.error?.message);
           }
         });
       }
@@ -108,7 +108,7 @@ async function sendBroadcastNotification(title: string, body: string) {
   try {
     const db = admin.firestore();
     const usersSnapshot = await db.collection('users').get();
-    
+
     const tokens: string[] = [];
     usersSnapshot.forEach(doc => {
       const userData = doc.data();
@@ -212,26 +212,26 @@ async function startServer() {
         orderBy: "startTime",
         // Odstraněno q: "Děti", přebíráme vše nadcházející a filtrujeme bezpečně lokálně nebo přes Google tags
       });
-      
+
       const allEvents = response.data.items || [];
       const filteredEvents = allEvents.filter(e => {
         // 1. Shoda podle ID, které aplikace eviduje v databázi (nejbezpečnější a zpětně kompatibilní)
         if (knownIds.includes(e.id)) return true;
-        
+
         // 2. Shoda přes Extended Properties (nové události od této chvíle)
         if (e.extendedProperties?.private?.app === 'vikendovnik') return true;
 
         // 3. Fallback pro úplně první starší události s "Děti" 
         if (e.summary && e.summary.toLowerCase().includes("děti")) return true;
-        
+
         return false;
       });
-      
+
       res.json(filteredEvents.slice(0, 10));
     } catch (error: any) {
       console.error("Error fetching events:", error);
       if (error.message?.includes('invalid_grant') || error.code === 401) {
-         return res.status(401).json({ error: "invalid_grant" });
+        return res.status(401).json({ error: "invalid_grant" });
       }
       res.status(500).json({ error: "Failed to fetch events" });
     }
@@ -284,7 +284,7 @@ async function startServer() {
     if (!process.env.GEMINI_API_KEY) {
       throw new Error("Missing GEMINI_API_KEY");
     }
-    
+
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
     const prompt = `Jsi organizátor rodinných aktivit pro aplikaci Víkendovník. 
@@ -299,14 +299,20 @@ RODINNÁ PRAVIDLA (Kritické):
 4. Syn (František) ZBOŽŇUJE hokej a je zarytý fanoušek HC Kometa Brno. Jakékoliv akce spojené s hokejem nebo Kometou jsou pro něj jak dělané!
 5. Táta a syn (případně i ostatní) milují počítačové hry a PlayStation. Herní akce, turnaje, VR herny nebo výstavy počítačů jsou pro ně gigantické plus!
 6. POČASÍ JE KLÍČOVÉ: Zkontroluj předpověď počasí na nadcházející víkend pro Jihomoravský kraj. Pokud má pršet, být zima nebo celkově ošklivo, nabízej POUZE akce pod střechou (kino, herny, výstavy). Pokud má být teplo a slunečno, zařaď venkovní akce.
-7. CYKLO VÝLETY: Táta a syn (František) rádi jezdí na kole. Pokud je hezké počasí, navrhni alespoň jeden cyklo výlet pro ně dva. 
+7. CYKLO VÝLETY: Táta a syn (František) rádi jezdí na kole. Pokud je hezké počasí, POVINNĚ VŽDY navrhni přesně jeden cyklo výlet pro ně dva. (Pokud prší, mrzne nebo je silný vítr, nenavrhuj ho).
    PRAVIDLA PRO CYKLO:
    - Target je VŽDY "pro_syna".
    - Trasa MUSÍ být OKRUH (start i cíl na stejném místě).
    - Start i cíl MUSÍ být v místě: ${userLocation || "v blízkosti bydliště (Brno/Vyškov)"}.
    - Uveď délku trasy v km a převýšení v poli "cycling_info".
-   - Do pole "url" POVINNĚ vlož odkaz na hotovou trasu na Mapy.cz. Formát URL MUSÍ obsahovat plánování trasy a profil pro horská kola: https://mapy.cz/turisticka?planovani-trasy&rc=lon1,lat1&rc=lon2,lat2&rc=lon3,lat3&rc=lon1,lat1&mrp={"c":112} (start i cíl MUSÍ být stejný a odpovídat lokaci: ${userLocation || "v blízkosti bydliště (Brno/Vyškov)"}). DŮLEŽITÉ: Mapy.cz vyžadují pořadí souřadnic LONGITUDE, LATITUDE (nejprve 16.xxx, pak 49.xxx).
-   - Povinně vyplň pole "cycling_info": distance (např. "25 km"), elevation (např. "300 m"), duration (např. "2:30").
+   - Jsi asistent pro plánování tras. U cyklo výletů je tvým úkolem převést navrženou trasu (start, cíl a případné průjezdní body) na funkční URL odkaz pro plánovač Mapy.cz pomocí oficiálního formátu.
+   Postup krok za krokem:
+   1. Zjisti přesné zeměpisné souřadnice (lon a lat) pro zadaná místa (start, cíl, případné průjezdní body). Desetinná místa nejsou omezena.
+   2. Sestav odkaz přesně podle této struktury: https://mapy.cz/fnc/v1/route?start=lon,lat&end=lon,lat&routeType=bike_road (Kde lon je zeměpisná délka a lat zeměpisná šířka. Oddělují se čárkou).
+   3. Pokud uživatel zadá i průjezdní body, přidej nakonec parametr &waypoints= a body do něj vlož ve formátu lon,lat;lon,lat (oddělené středníkem).
+   Příklad: Pokud navrhuješ trasu Vyškov -> Brno, vygeneruješ do pole "url" odkaz: https://mapy.cz/fnc/v1/route?start=16.9989,49.2774&end=16.6068,49.1951&routeType=bike_road
+   Tento vygenerovaný klikací odkaz pro cyklotrasu vlož do pole "url". U běžných aktivit vkládej do pole "url" hlavní webovou stránku akce.
+- Povinně vyplň pole "cycling_info": distance (např. "25 km"), elevation (např. "300 m"), duration (např. "2:30").
 
 291. SPECIÁLNÍ POŽADAVEK — VYŠKOV (KRITICKÉ):
    - POVINNĚ do výsledků zařaď aktuální akce z Vyškova.
@@ -320,9 +326,9 @@ Alespoň 2-3 akce MUSÍ být z Vyškova (MKS Vyškov / Kino Sokolský dům).
 SPECIÁLNÍ PRAVIDLA PRO KINO:
 Pokud navrhuješ návštěvu kina (např. CineStar Olomouc nebo Sokolský dům Vyškov), NEVYPISUJ konkrétní film jako hlavní tip.
 Místo toho vypiš v poli "cinema_listings" až 5 vhodných filmů, které hrají daný víkend, s časy představení.
-POZOR NA ODKAZY U KINA: Filmy se rychle mění a hluboké odkazy často nefungují. Do polí "url" a "ticket_url" vlož VŽDY POUZE úvodní stránku kina (např. "https://www.mksvyskov.cz/kino-sokolsky-dum" nebo "https://www.cinestar.cz/olomouc"). NESNAŽ se generovat odkaz na konkrétní film nebo lístek.
+POZOR NA ODKAZY U KINA: Filmy se rychle mění a hluboké odkazy často nefungují. Do polí "url" a "ticket_url" vlož VŽDY POUZE úvodní stránku kina (např. "https://www.mksvyskov.cz" nebo "https://www.cinestar.cz/olomouc"). NESNAŽ se generovat odkaz na konkrétní film nebo lístek.
 POZOR NA PRÁZDNÝ PROGRAM: Pokud se ti nepodaří zjistit konkrétní program z webu, nastav celé pole "cinema_listings" na null. Nevytvářej prázdné objekty.
-Filtruj filmy vhodné pro rodinu (ne horory, ne filmy 18+).
+Filtruj filmy vhodné pro rodinu (ne horory).
 
 TYPY ČASOVÝCH ÚDAJŮ (time_type):
 - "event" = jednorázová akce s konkrétním začátkem (koncert, divadlo, přednáška). Uveď přesný čas v poli "time".
@@ -353,24 +359,19 @@ Vrať VÝHRADNĚ JSON pole s touto strukturou (a žádný jiný text):
     "age_recommendation": "pro celou rodinu / od 6 let",
     "ticket_url": "https://odkaz-na-nákup-vstupenek.cz (pokud existuje)",
     "cinema_listings": null,
-    "cycling_info": { "distance": "25 km", "elevation": "120 m", "duration": "1:45 h" } (pouze u cyklo výletů, jinak null)
+    "cycling_info": { "distance": "25 km", "elevation": "120 m", "duration": "1:45 h" }
   }
 ]
 
 DŮLEŽITÉ — PŘESNOST INFORMACÍ (Kritické):
-- ABSOLUTNÍ ZÁKAZ ODHADOVÁNÍ URL. Nikdy nevytvářej URL adresu jen na základě názvu akce (např. nikdy nedoplňuj .cz za název). Použij VÝHRADNĚ a POUZE tu URL adresu, kterou jsi skutečně našel v Google Search Grounding výsledcích pro danou akci. 
-- Pokud v search results nenajdeš přímou a funkční URL adresu akce, nastav pole "url" na null. Raději null, než nefunkční nebo "skoro správný" odkaz. 
-- Adresy končící chybou nebo nefunkční přesměrování nepoužívej.
-- NEVYMÝŠLEJ SI CENY. Pole "price" vyplň POUZE pokud jsi cenu skutečně našel na webu dané instituce/akce. Pokud cenu nenajdeš, nastav pole na null.
-- Pole "ticket_url" = stránka kde se kupují vstupenky/vstupné. Hledej na webu dané instituce stránky jako: vstupné, vstupenky, e-shop, eshop, obchod, tickets, buy. Mnoho institucí má e-shop na vlastní doméně nebo používá externí prodejce (GoOut, Ticketportal, Ticketmaster). Pokud najdeš, použij. Pokud ne, nastav na null.
-- Pole "cinema_listings" vyplň POUZE u kin. U ostatních akcí ho nastav na null. U cinema_listings NEUVÁDEJ URL u jednotlivých filmů.
-- OTEVÍRACÍ DOBY: Pole "opening_hours" vyplň pouze pokud jsi otevírací dobu skutečně našel na webu. Nenajdeš-li, nastav na null.
-- Všechna pole musí být přítomna v každém objektu (i když jsou null).
-- Pole "is_vyskov" MUSÍ být přítomno u každé položky.`;
+- ABSOLUTNÍ ZÁKAZ ODHADOVÁNÍ HLUBOKÝCH URL u běžných akcí. Do pole "url" VŽDY VLOŽ POUZE A PŘESNĚ domovskou (hlavní) URL adresu portálu (např. "https://www.kudyznudy.cz", "https://www.gotobrno.cz"). Výjimkou jsou CYKLO VÝLETY, kde do pole "url" vložíš přesně vygenerovanou URL z Mapy.cz s parametry 'routeType=bike_road' podle postupu výše.
+- NEVYMÝŠLEJ SI CENY ani otevírací doby. Pokud tyto informace bezpečně nenajdeš na webu, nastav příslušná pole na null.
+- Pole "ticket_url" vyplň POUZE, pokud 100% víš hlavní adresu e-shopu (např. ticketportal.cz). Jinak null.
+- Všechna pole musí být přítomna v každém objektu (i když jsou null). Pole "is_vyskov" MUSÍ být přítomno.`;
 
-    const model = genAI.getGenerativeModel({ 
+    const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash', // Ověřený vítěz testu (podporuje i vyhledávání)
-      tools: [{ googleSearch: {} }] 
+      tools: [{ googleSearch: {} }]
     });
 
     const result = await model.generateContent(prompt);
@@ -390,7 +391,7 @@ DŮLEŽITÉ — PŘESNOST INFORMACÍ (Kritické):
     if (admin.apps.length > 0) {
       const db = admin.firestore();
       const batch = db.batch();
-      
+
       const oldInspirations = await db.collection('inspirations').get();
       oldInspirations.docs.forEach(doc => batch.delete(doc.ref));
 
@@ -419,6 +420,27 @@ DŮLEŽITÉ — PŘESNOST INFORMACÍ (Kritické):
     }
   });
 
+  // Získání GPX souboru
+  app.get("/api/gpx/:id", async (req, res) => {
+    try {
+      const db = admin.firestore();
+      const doc = await db.collection('inspirations').doc(req.params.id).get();
+      if (!doc.exists) {
+        return res.status(404).send("GPX nenalezeno");
+      }
+      const data = doc.data();
+      if (!data?.gpx_content) {
+        return res.status(404).send("Pro tento tip neexistuje GPX trasa");
+      }
+      res.setHeader('Content-Type', 'application/gpx+xml');
+      res.setHeader('Content-Disposition', `attachment; filename="cyklotrasa_${req.params.id}.gpx"`);
+      res.send(data.gpx_content);
+    } catch (error) {
+      console.error("Chyba při stahování GPX:", error);
+      res.status(500).send("Chyba serveru");
+    }
+  });
+
   // Funkce pro automatické generování s retry logikou (1 minuta)
   async function runAutomatedGeneration(retryCount = 0) {
     console.log(`CRON: Spouštím automatické generování (pokus č. ${retryCount + 1})...`);
@@ -426,7 +448,7 @@ DŮLEŽITÉ — PŘESNOST INFORMACÍ (Kritické):
       const suggestions = await generateInspirations();
       console.log(`CRON: Úspěšně vygenerováno ${suggestions.length} tipů.`);
       sendBroadcastNotification(
-        "✨ Nové tipy na víkend!", 
+        "✨ Nové tipy na víkend!",
         "AI agent právě našel čerstvé nápady na výlety. Podívej se do aplikace!"
       );
     } catch (error) {

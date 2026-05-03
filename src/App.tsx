@@ -1479,7 +1479,7 @@ export default function App() {
                       return insp.target === "pro_vsechny";
                     })
                     .map(insp => (
-                    <div key={insp.id} className="break-inside-avoid mb-5 bg-white p-6 rounded-2xl shadow-sm border border-indigo-50 flex flex-col justify-between hover:shadow-md transition-shadow">
+                    <div key={insp.id} className="break-inside-avoid inline-block w-full mb-5 bg-white p-6 rounded-2xl shadow-sm border border-indigo-50 flex flex-col justify-between hover:shadow-md transition-shadow">
                       <div>
                         {view === "parent" && (
                           <div className="flex justify-between items-start mb-4">
@@ -1660,28 +1660,33 @@ export default function App() {
 
                               {/* Action buttons */}
                               {(() => {
-                                const isCycling = (insp.url && insp.url.includes('mapy.cz')) || 
+                                const isCycling = (insp.url && insp.url.includes('mapy.cz') && (insp.url.includes('rc=') || insp.url.includes('routeType='))) || 
                                   /cykl|kolo|bike|cycling/i.test(insp.title + ' ' + insp.description);
                                 
-                                // Pro cyklo trasy: sestav URL z průjezdních bodů v názvu
-                                // Pro cyklo trasy: sestav Google Maps URL s cyklo režimem a průjezdními body
                                 const getCyclingUrl = () => {
-                                  // 1. Přednost má odkaz přímo od AI agenta (pokud je to Mapy.cz)
-                                  if (insp.url && insp.url.includes('mapy.cz')) {
+                                  // Přednost má přímo vygenerovaná URL od AI
+                                  if (insp.url && insp.url.includes('mapy.cz') && (insp.url.includes('rc=') || insp.url.includes('routeType='))) {
                                     return insp.url;
                                   }
 
-                                  // 2. Pokus o extrakci bodů z názvu a sestavení Mapy.cz odkazu
+                                  // Fallback na starší extrakci z názvu (pokud chybí url z AI)
                                   const routeMatch = insp.title.match(/\(([^)]+)\)/);
                                   if (routeMatch) {
                                     const points = routeMatch[1].split(/\s*[-–→]\s*/).map(p => p.trim());
                                     if (points.length >= 2) {
-                                      const waypoints = points.map(p => `rc=${encodeURIComponent(p)}`).join('&');
-                                      return `https://mapy.cz/turisticka?planovani-trasy&${waypoints}`;
+                                      const origin = points[0];
+                                      const destination = points[points.length - 1];
+                                      const waypoints = points.slice(1, -1).join('|');
+                                      
+                                      let googleUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=bicycling`;
+                                      if (waypoints) {
+                                        googleUrl += `&waypoints=${encodeURIComponent(waypoints)}`;
+                                      }
+                                      return googleUrl;
                                     }
                                   }
                                   
-                                  // Fallback na Google Maps cyklo
+                                  // Ultimátní fallback na Google Maps cíl
                                   const cleanLoc = insp.location.replace(/\s*\(.*?\)\s*/g, '').trim();
                                   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(cleanLoc)}&travelmode=bicycling`;
                                 };
@@ -1691,7 +1696,7 @@ export default function App() {
                                 return (
                                   <div className="flex flex-wrap gap-2 mt-3 border-t border-indigo-100/50 pt-3">
                                     {isCycling ? (
-                                      /* Cyklo trasa — jen tlačítko Trasa */
+                                      /* Cyklo trasa — jen tlačítko Trasa s URL */
                                       <a 
                                         href={getCyclingUrl()}
                                         target="_blank"
@@ -1699,7 +1704,7 @@ export default function App() {
                                         className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
                                       >
                                         <Navigation size={14} />
-                                        🚴 Trasa
+                                        Naplánovat trasu
                                       </a>
                                     ) : (
                                       /* Běžná akce — Navigovat + Web akce */
@@ -1820,7 +1825,7 @@ export default function App() {
                 </div>
               </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="columns-1 md:columns-2 gap-4">
             <AnimatePresence mode="popLayout">
                 {suggestions
                   .filter(suggestion => {
@@ -1867,7 +1872,7 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     className={cn(
-                      "bg-white rounded-[20px] p-5 border-2 transition-all shadow-[inset_0_4px_8px_rgba(255,255,255,1),inset_0_-3px_6px_rgba(0,0,0,0.03),0_12px_24px_-6px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[160px]",
+                      "break-inside-avoid inline-block w-full mb-4 bg-white rounded-[20px] p-5 border-2 transition-all shadow-[inset_0_4px_8px_rgba(255,255,255,1),inset_0_-3px_6px_rgba(0,0,0,0.03),0_12px_24px_-6px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[160px]",
                       suggestion.reconsiderationRequested ? "bg-orange-50 border-orange-400 ring-4 ring-orange-200/50 shadow-orange-100" :
                       suggestion.status === "approved" ? "bg-green-50 border-green-100" :
                       suggestion.status === "rejected" ? "bg-red-50 border-red-100" :
@@ -1998,7 +2003,17 @@ export default function App() {
                             Navrhl(a): <strong className="font-bold text-stone-700">{suggestion.childName}</strong> • {
                               suggestion.createdAt ? (
                                 (() => {
-                                  const d = new Date(suggestion.createdAt);
+                                  let d = new Date();
+                                  if (typeof suggestion.createdAt === 'number') {
+                                    d = new Date(suggestion.createdAt);
+                                  } else if (suggestion.createdAt && typeof (suggestion.createdAt as any).toDate === 'function') {
+                                    d = (suggestion.createdAt as any).toDate();
+                                  } else if (suggestion.createdAt && typeof (suggestion.createdAt as any).toMillis === 'function') {
+                                    d = new Date((suggestion.createdAt as any).toMillis());
+                                  } else {
+                                    return "Neznámé datum";
+                                  }
+                                  if (isNaN(d.getTime())) return "Neznámé datum";
                                   const options: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' };
                                   return d.toLocaleString("cs-CZ", options);
                                 })()
@@ -2102,7 +2117,7 @@ export default function App() {
                     setNewSuggestion(prev => ({ ...prev, childName: getLoggedInFamilyName() }));
                     setShowForm(true);
                   }}
-                  className="rounded-[20px] p-5 border-2 border-dashed border-stone-200 flex flex-col justify-center items-center min-h-[160px] cursor-pointer hover:bg-stone-50 transition-colors"
+                  className="break-inside-avoid inline-block w-full mb-4 rounded-[20px] p-5 border-2 border-dashed border-stone-200 flex flex-col justify-center items-center min-h-[160px] cursor-pointer hover:bg-stone-50 transition-colors"
                 >
                   <div className="text-center text-stone-400">
                     <div className="text-3xl font-light mb-1">+</div>
