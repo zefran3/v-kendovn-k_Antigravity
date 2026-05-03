@@ -31,6 +31,9 @@ export interface ActivitySuggestion {
   rideTo?: string;
   grade?: number;
   location?: string;
+  url?: string;
+  adminModifiedTime?: boolean;
+  calendarError?: string;
   createdAt: number;
   comments?: ActivityComment[];
 }

@@ -231,7 +231,7 @@ async function startServer() {
     } catch (error: any) {
       console.error("Error fetching events:", error);
       if (error.message?.includes('invalid_grant') || error.code === 401) {
-        return res.status(401).json({ error: "invalid_grant" });
+        return res.status(401).json({ error: "Vypršelo připojení ke Google kalendáři (invalid_grant). Obnovte přihlášení." });
       }
       res.status(500).json({ error: "Failed to fetch events" });
     }
@@ -252,9 +252,12 @@ async function startServer() {
         requestBody: event,
       });
       res.json(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating event:", error);
-      res.status(500).json({ error: "Failed to create event" });
+      if (error.message?.includes('invalid_grant') || error.code === 401) {
+        return res.status(401).json({ error: "Vypršelo připojení ke Google kalendáři (invalid_grant). Obnovte přihlášení." });
+      }
+      res.status(500).json({ error: error.message || "Failed to create event" });
     }
   });
 
@@ -274,9 +277,12 @@ async function startServer() {
         eventId: eventId,
       });
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting event:", error);
-      res.status(500).json({ error: "Failed to delete event" });
+      if (error.message?.includes('invalid_grant') || error.code === 401) {
+        return res.status(401).json({ error: "Vypršelo připojení ke Google kalendáři (invalid_grant). Obnovte přihlášení." });
+      }
+      res.status(500).json({ error: error.message || "Failed to delete event" });
     }
   });
 
@@ -320,8 +326,8 @@ RODINNÁ PRAVIDLA (Kritické):
    - Hlavním zdrojem informací je web: https://www.mksvyskov.cz/
    - U těchto akcí nastav pole "is_vyskov": true. U ostatních akcí ho nastav na false.
 
-Vyber 6–8 nejlepších akcí z internetu. POVINNĚ musí být zastoupena minimálně 1 inspirace pro dceru ("pro_dceru") a minimálně 1 pro syna ("pro_syna"). Zbytek může být "pro_vsechny".
-Alespoň 2-3 akce MUSÍ být z Vyškova (MKS Vyškov / Kino Sokolský dům).
+Vyber přesně 10 nejlepších akcí z internetu. POVINNĚ musí být zastoupena minimálně 2 inspirace pro dceru ("pro_dceru") a minimálně 2 pro syna ("pro_syna"). Zbytek může být "pro_vsechny".
+Alespoň 3 akce MUSÍ být z Vyškova (MKS Vyškov / Kino Sokolský dům).
 
 SPECIÁLNÍ PRAVIDLA PRO KINO:
 Pokud navrhuješ návštěvu kina (např. CineStar Olomouc nebo Sokolský dům Vyškov), NEVYPISUJ konkrétní film jako hlavní tip.

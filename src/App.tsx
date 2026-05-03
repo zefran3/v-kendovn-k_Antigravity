@@ -204,6 +204,9 @@ export default function App() {
   const [expandedSuggestion, setExpandedSuggestion] = useState<string | null>(null);
   const [showUserManagement, setShowUserManagement] = useState(false);
   const [showVyskovOnly, setShowVyskovOnly] = useState(false);
+  const [approvingEvent, setApprovingEvent] = useState<ActivitySuggestion | null>(null);
+  const [approveDate, setApproveDate] = useState("");
+  const [approveTime, setApproveTime] = useState("");
 
   useEffect(() => {
     if (error) {
@@ -372,6 +375,7 @@ export default function App() {
     eventDate: "",
     eventTime: "",
     location: "",
+    url: "",
     rideFrom: "",
     rideTo: ""
   });
@@ -743,7 +747,7 @@ export default function App() {
         setError(`Chyba Google kalendáře: ${errorMsg}`);
         
         if (response.status === 401 || (data.error && data.error.includes("invalid_grant"))) {
-          // setGoogleTokens(null); // Dočasně vypnuto, abychom viděli chybu a nezmizela hned
+          setGoogleTokens(null); // Odhlásíme, aby si uživatel musel vyžádat nový token
         }
       }
     } catch (error) {
@@ -791,6 +795,7 @@ export default function App() {
         status: "pending",
         type: formType,
         ...(formType === "ride" ? { rideFrom: newSuggestion.rideFrom, rideTo: newSuggestion.rideTo } : {}),
+        ...(newSuggestion.url ? { url: newSuggestion.url } : {}),
         likes: 0,
         createdAt: serverTimestamp()
       });
@@ -803,7 +808,7 @@ export default function App() {
   const handleCloseForm = () => {
     setShowForm(false);
     setFormType("activity");
-    setNewSuggestion({ title: "", description: "", eventDate: "", eventTime: "", location: "", childName: "", customChildName: "", rideFrom: "", rideTo: "" });
+    setNewSuggestion({ title: "", description: "", eventDate: "", eventTime: "", location: "", url: "", childName: "", customChildName: "", rideFrom: "", rideTo: "" });
     setError(null);
   };
 
@@ -863,7 +868,7 @@ export default function App() {
     setShowForm(true);
   };
 
-  const handleUpdateStatus = async (id: string, status: "approved" | "rejected") => {
+  const handleUpdateStatus = async (id: string, status: "approved" | "rejected", overrideDate?: string, overrideTime?: string) => {
     // Ověření kalendáře vynucujeme jen pro Schválení, Zamítnout můžeme kdykoliv
     if (status === "approved" && !googleTokens) {
       setError("Než schválíte aktivitu, musíte se propojit s Google Kalendářem (modré tlačítko výše).");
@@ -872,82 +877,56 @@ export default function App() {
 
     const path = `suggestions/${id}`;
     try {
-      await updateDoc(doc(db, 'suggestions', id), { status });
-      
-      if (status === "approved" && googleTokens) {
-        const suggestion = suggestions.find(s => s.id === id);
-        if (suggestion) {
-          
-          let eventParams: any = {};
+      let calendarEventId: string | undefined = undefined;
+      const suggestion = suggestions.find(s => s.id === id);
+      if (!suggestion) return;
 
-          if (suggestion.eventTime) {
-            // Pokus o extrakci platného času (HH:MM) z eventTime
-            const timeMatch = suggestion.eventTime.match(/^(\d{1,2}):(\d{2})$/);
-            
-            if (timeMatch && suggestion.eventDate) {
-              // Standardní čas (např. "14:00") + platné datum
-              try {
-                let eventDateObj = new Date(`${suggestion.eventDate}T${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:00`);
-                if (isNaN(eventDateObj.getTime())) throw new Error("Invalid date");
-                
-                const endDateObj = new Date(eventDateObj.getTime() + (suggestion.type === "ride" ? 0.5 : 2) * 60 * 60 * 1000);
-                eventParams = {
-                  start: { dateTime: eventDateObj.toISOString(), timeZone: 'Europe/Prague' },
-                  end: { dateTime: endDateObj.toISOString(), timeZone: 'Europe/Prague' },
-                };
-              } catch {
-                // Fallback na celodenní událost
-                eventParams = {
-                  start: { date: suggestion.eventDate },
-                  end: { date: (() => { const d = new Date(suggestion.eventDate); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })() },
-                };
-              }
-            } else {
-              // Nestandartní čas (otevírací doba, "celý den" atd.) → celodenní událost
-              let eventDateString = suggestion.eventDate;
-              if (!eventDateString) {
-                const dayOffset = suggestion.suggestedTime === "sobota" ? 6 : 0; 
-                eventDateString = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), dayOffset + 5).toISOString().split('T')[0];
-              }
-              try {
-                const startDateObj = new Date(eventDateString);
-                if (isNaN(startDateObj.getTime())) throw new Error("Invalid date");
-                const endDateObj = new Date(startDateObj);
-                endDateObj.setDate(endDateObj.getDate() + 1);
-                eventParams = {
-                  start: { date: eventDateString },
-                  end: { date: endDateObj.toISOString().split('T')[0] },
-                };
-              } catch {
-                // Úplný fallback — příští sobota
-                const nextSat = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), 5);
-                const nextSun = addDays(nextSat, 1);
-                eventParams = {
-                  start: { date: nextSat.toISOString().split('T')[0] },
-                  end: { date: nextSun.toISOString().split('T')[0] },
-                };
-              }
+      const finalDate = overrideDate !== undefined ? overrideDate : suggestion.eventDate;
+      const finalTime = overrideTime !== undefined ? overrideTime : suggestion.eventTime;
+
+      if (status === "approved" && googleTokens) {
+        let eventParams: any = {};
+
+        if (finalTime) {
+          // Pokus o extrakci platného času (HH:MM) z eventTime
+          const timeMatch = finalTime.match(/^(\d{1,2}):(\d{2})$/);
+          
+          if (timeMatch && finalDate) {
+            // Standardní čas (např. "14:00") + platné datum
+            try {
+              let eventDateObj = new Date(`${finalDate}T${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:00`);
+              if (isNaN(eventDateObj.getTime())) throw new Error("Invalid date");
+              
+              const endDateObj = new Date(eventDateObj.getTime() + (suggestion.type === "ride" ? 0.5 : 2) * 60 * 60 * 1000);
+              eventParams = {
+                start: { dateTime: eventDateObj.toISOString(), timeZone: 'Europe/Prague' },
+                end: { dateTime: endDateObj.toISOString(), timeZone: 'Europe/Prague' },
+              };
+            } catch {
+              // Fallback na celodenní událost
+              eventParams = {
+                start: { date: finalDate },
+                end: { date: (() => { const d = new Date(finalDate); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })() },
+              };
             }
           } else {
-            // Žádný čas → celodenní událost
-            let eventDateString = suggestion.eventDate;
+            // Nestandartní čas (otevírací doba, "celý den" atd.) → celodenní událost
+            let eventDateString = finalDate;
             if (!eventDateString) {
               const dayOffset = suggestion.suggestedTime === "sobota" ? 6 : 0; 
               eventDateString = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), dayOffset + 5).toISOString().split('T')[0];
             }
-            
             try {
               const startDateObj = new Date(eventDateString);
               if (isNaN(startDateObj.getTime())) throw new Error("Invalid date");
               const endDateObj = new Date(startDateObj);
               endDateObj.setDate(endDateObj.getDate() + 1);
-              const endDateString = endDateObj.toISOString().split('T')[0];
-
               eventParams = {
                 start: { date: eventDateString },
-                end: { date: endDateString },
+                end: { date: endDateObj.toISOString().split('T')[0] },
               };
             } catch {
+              // Úplný fallback — příští sobota
               const nextSat = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), 5);
               const nextSun = addDays(nextSat, 1);
               eventParams = {
@@ -956,46 +935,110 @@ export default function App() {
               };
             }
           }
-
-          const isRide = suggestion.type === "ride";
-          const event = {
-            summary: isRide ? `🚗 ${suggestion.childName}: ${suggestion.rideFrom} ➡️ ${suggestion.rideTo}` : `${suggestion.childName}: ${suggestion.title}`,
-            description: `${suggestion.childName}: ${suggestion.description}`,
-            extendedProperties: {
-              private: {
-                app: 'vikendovnik',
-                suggestionId: suggestion.id
-              }
-            },
-            ...(isRide ? {
-               transparency: 'transparent', // Neoznačí jako "Mám plno"
-               colorId: '11', // Červená barva (Tomato) pro odvozy
-               reminders: {
-                 useDefault: false,
-                 overrides: [
-                   { method: 'popup', minutes: 30 },
-                 ],
-               }
-            } : {}),
-            ...eventParams
-          };
-
-          const res = await fetch('/api/calendar/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tokens: googleTokens, event }),
-          });
-
-          if (!res.ok) {
-             throw new Error("Nepodařilo se vytvořit událost v kalendáři.");
+        } else {
+          // Žádný čas → celodenní událost
+          let eventDateString = finalDate;
+          if (!eventDateString) {
+            const dayOffset = suggestion.suggestedTime === "sobota" ? 6 : 0; 
+            eventDateString = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), dayOffset + 5).toISOString().split('T')[0];
           }
+          
+          try {
+            const startDateObj = new Date(eventDateString);
+            if (isNaN(startDateObj.getTime())) throw new Error("Invalid date");
+            const endDateObj = new Date(startDateObj);
+            endDateObj.setDate(endDateObj.getDate() + 1);
+            const endDateString = endDateObj.toISOString().split('T')[0];
 
-          const createdEvent = await res.json();
-          await updateDoc(doc(db, 'suggestions', id), { calendarEventId: createdEvent.id });
-
-          fetchCalendarEvents(googleTokens);
+            eventParams = {
+              start: { date: eventDateString },
+              end: { date: endDateString },
+            };
+          } catch {
+            const nextSat = addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), 5);
+            const nextSun = addDays(nextSat, 1);
+            eventParams = {
+              start: { date: nextSat.toISOString().split('T')[0] },
+              end: { date: nextSun.toISOString().split('T')[0] },
+            };
+          }
         }
+
+        const isRide = suggestion.type === "ride";
+        const event = {
+          summary: isRide ? `🚗 ${suggestion.childName}: ${suggestion.rideFrom} ➡️ ${suggestion.rideTo}` : `${suggestion.childName}: ${suggestion.title}`,
+          description: `${suggestion.childName}: ${suggestion.description}`,
+          extendedProperties: {
+            private: {
+              app: 'vikendovnik',
+              suggestionId: suggestion.id
+            }
+          },
+          ...(isRide ? {
+             transparency: 'transparent', // Neoznačí jako "Mám plno"
+             colorId: '11', // Červená barva (Tomato) pro odvozy
+             reminders: {
+               useDefault: false,
+               overrides: [
+                 { method: 'popup', minutes: 30 },
+               ],
+             }
+          } : {}),
+          ...eventParams
+        };
+
+        const res = await fetch('/api/calendar/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tokens: googleTokens, event }),
+        });
+
+        if (!res.ok) {
+           const errData = await res.json().catch(() => ({}));
+           const errStr = errData.error || errData.message || res.statusText || "Neznámá chyba serveru";
+           
+           // Uložíme chybovou hlášku do Firebase, ale status necháme 'pending' (čekající)
+           await updateDoc(doc(db, 'suggestions', id), { 
+             calendarError: errStr 
+           });
+           
+           if (res.status === 401 || errStr.includes("invalid_grant")) {
+             setGoogleTokens(null); // Resetujeme klíče
+           }
+           
+           setApprovingEvent(null);
+           throw new Error(errStr);
+        }
+
+        const createdEvent = await res.json();
+        calendarEventId = createdEvent.id;
       }
+
+      // Pokud jsme zde, nedošlo k chybě (nebo se jen zamítá). 
+      // Můžeme aktivitu finálně schválit a aktualizovat data.
+      const updateData: any = { status };
+      
+      if (status === "approved" && (overrideDate !== undefined || overrideTime !== undefined)) {
+        if (overrideDate !== undefined) updateData.eventDate = overrideDate;
+        if (overrideTime !== undefined) updateData.eventTime = overrideTime;
+        updateData.adminModifiedTime = true;
+      }
+      
+      if (calendarEventId) {
+        updateData.calendarEventId = calendarEventId;
+      }
+      
+      // Smazat případnou starou chybu
+      updateData.calendarError = null;
+
+      await updateDoc(doc(db, 'suggestions', id), updateData);
+      setApprovingEvent(null);
+
+      if (status === "approved" && googleTokens) {
+        fetchCalendarEvents(googleTokens);
+      }
+
+
     } catch (err: any) {
       console.error("Update failed", err);
       if (err instanceof Error && err.message.includes("permission")) {
@@ -1069,16 +1112,25 @@ export default function App() {
 
       // Smazání z kalendáře v případě schválené události
       if (suggestion.calendarEventId && googleTokens) {
-        try {
-          await fetch('/api/calendar/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tokens: googleTokens, eventId: suggestion.calendarEventId }),
-          });
-          fetchCalendarEvents(googleTokens);
-        } catch (e) {
-          console.error("Nepodařilo se smazat z kalendáře", e);
+        const res = await fetch('/api/calendar/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tokens: googleTokens, eventId: suggestion.calendarEventId }),
+        });
+        
+        if (!res.ok) {
+           const errData = await res.json().catch(() => ({}));
+           const errStr = errData.error || errData.message || res.statusText || "Neznámá chyba při mazání z kalendáře.";
+           
+           if (res.status === 401 || errStr.includes("invalid_grant")) {
+             setGoogleTokens(null); // Odhlásit, vyžádat nový token
+           }
+           
+           setError(`Smazání z kalendáře selhalo: ${errStr}`);
+           return; // Zastavit mazání, dokud to nepůjde smazat v kalendáři
         }
+        
+        fetchCalendarEvents(googleTokens);
       }
 
       // Pouze ji "zrušíme" pro vhled v historii, místo smazání
@@ -1469,9 +1521,7 @@ export default function App() {
                 <div className="columns-1 md:columns-2 gap-5 pb-4">
                   {inspirations
                     .filter(insp => {
-                      // Pokud je zapnutý filtr na Vyškov, ukaž jen ty s příznakem
                       if (showVyskovOnly && !insp.is_vyskov) return false;
-
                       if (view === "parent") return true;
                       const userEmail = user?.email?.toLowerCase();
                       if (userEmail === "emasterba@gmail.com") return insp.target === "pro_dceru" || insp.target === "pro_vsechny";
@@ -1479,7 +1529,7 @@ export default function App() {
                       return insp.target === "pro_vsechny";
                     })
                     .map(insp => (
-                    <div key={insp.id} className="break-inside-avoid inline-block w-full mb-5 bg-white p-6 rounded-2xl shadow-sm border border-indigo-50 flex flex-col justify-between hover:shadow-md transition-shadow">
+                    <div id={`insp-${insp.id}`} key={insp.id} className="break-inside-avoid inline-block w-full mb-5 bg-white p-6 rounded-2xl shadow-sm border border-indigo-50 flex flex-col justify-between hover:shadow-md transition-shadow">
                       <div>
                         {view === "parent" && (
                           <div className="flex justify-between items-start mb-4">
@@ -1493,20 +1543,19 @@ export default function App() {
                             </span>
                           </div>
                         )}
-                        <h4 className="font-extrabold text-stone-800 text-lg mb-2 leading-tight">{insp.title}</h4>
-                        <div className="text-xs text-stone-400 mb-3 font-bold flex items-center justify-between">
-                          <div className="flex items-center gap-1">📍 {insp.location}</div>
-                          {userProfiles[user?.uid || '']?.role !== 'child' && (
+                        <h4 className="font-extrabold text-stone-800 text-lg mb-1 leading-tight">{insp.title}</h4>
+                        {insp.location && (
+                          <div className="mb-3">
                             <a 
-                              href={`https://mapy.cz/zakladni?q=${encodeURIComponent(insp.location)}`}
+                              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(insp.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-700 transition-colors bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100"
+                              className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700 transition-colors font-bold"
                             >
-                              <Navigation size={12} /> Trasa
+                              <MapPin size={12} /> {insp.location}
                             </a>
-                          )}
-                        </div>
+                          </div>
+                        )}
                         <div className="flex flex-wrap gap-1.5 mb-4">
                           {insp.indoor !== undefined && insp.indoor !== null && (
                             <span className={cn(
@@ -1526,16 +1575,6 @@ export default function App() {
                               ⏱️ {insp.duration}
                             </span>
                           )}
-                          {insp.cycling_info && (
-                            <>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
-                                🚲 {insp.cycling_info.distance}
-                              </span>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
-                                📈 {insp.cycling_info.elevation}
-                              </span>
-                            </>
-                          )}
                         </div>
                         <p className="text-sm text-stone-600 leading-relaxed mb-6">{insp.description}</p>
                         
@@ -1549,13 +1588,17 @@ export default function App() {
                             >
                               <div className="font-bold text-indigo-600 text-xs uppercase tracking-wider mb-2">📋 Podrobnosti</div>
                               
-                              {/* Datum */}
                               <div className="flex items-center gap-2">
                                 <Calendar size={14} className="text-indigo-400 flex-shrink-0" />
-                                <strong>Datum:</strong> {insp.date ? (() => { try { return format(parseISO(insp.date), "EEEE d. MMMM yyyy", { locale: cs }); } catch { return insp.date; } })() : "Bude upřesněno"}
+                                <strong>Datum:</strong> {insp.date ? (() => { 
+                                  try { 
+                                    return insp.date.split(',').map((d: string) => format(parseISO(d.trim()), "dd. MMMM yyyy", { locale: cs })).join(' - '); 
+                                  } catch { 
+                                    return insp.date; 
+                                  } 
+                                })() : "Bude upřesněno"}
                               </div>
                               
-                              {/* Čas — chytré zobrazení dle time_type */}
                               {insp.time_type === 'opening_hours' && insp.opening_hours ? (
                                 <div className="flex items-center gap-2">
                                   <Clock size={14} className="text-indigo-400 flex-shrink-0" />
@@ -1578,13 +1621,11 @@ export default function App() {
                                 </div>
                               ) : null}
                               
-                              {/* Místo */}
                               <div className="flex items-center gap-2">
                                 <MapPin size={14} className="text-indigo-400 flex-shrink-0" />
                                 <strong>Místo:</strong> {insp.location}
                               </div>
 
-                              {/* Cena */}
                               {insp.price && (
                                 <div className="flex items-center gap-2">
                                   <span className="text-indigo-400 flex-shrink-0 text-xs font-bold">💰</span>
@@ -1592,7 +1633,6 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* Délka */}
                               {insp.duration && (
                                 <div className="flex items-center gap-2">
                                   <Timer size={14} className="text-indigo-400 flex-shrink-0" />
@@ -1621,13 +1661,7 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* Věk */}
-                              {insp.age_recommendation && (
-                                <div className="flex items-center gap-2">
-                                  <Baby size={14} className="text-indigo-400 flex-shrink-0" />
-                                  <strong>Vhodné:</strong> {insp.age_recommendation}
-                                </div>
-                              )}
+
 
                               {/* Indoor/Outdoor badge */}
                               {insp.indoor !== undefined && insp.indoor !== null && (
@@ -1707,41 +1741,19 @@ export default function App() {
                                         Naplánovat trasu
                                       </a>
                                     ) : (
-                                      /* Běžná akce — Navigovat + Web akce */
-                                      <>
+                                      /* Běžná akce — Pouze web akce, Navigovat bylo odstraněno a přesunuto pod nadpis */
+                                      insp.url && (
                                         <a 
-                                          href={`https://mapy.cz/zakladni?q=${encodeURIComponent(insp.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`}
+                                          href={insp.url}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
                                         >
-                                          <Navigation size={14} />
-                                          Navigovat
+                                          <ExternalLink size={14} />
+                                          Web akce
                                         </a>
-                                        {insp.url && (
-                                          <a 
-                                            href={insp.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
-                                          >
-                                            <ExternalLink size={14} />
-                                            Web akce
-                                          </a>
-                                        )}
-                                      </>
+                                      )
                                     )}
-                                {insp.ticket_url && (
-                                  <a 
-                                    href={insp.ticket_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-500 text-white rounded-lg font-bold text-xs hover:bg-indigo-600 transition-colors shadow-sm"
-                                  >
-                                    <ExternalLink size={14} />
-                                    Koupit lístky
-                                  </a>
-                                )}
                               </div>
                                 );
                               })()}
@@ -1756,30 +1768,56 @@ export default function App() {
                       
                       <div className="flex gap-2">
                         <button 
-                          onClick={() => setExpandedInspiration(expandedInspiration === insp.id ? null : insp.id)}
+                          onClick={() => {
+                            if (expandedInspiration === insp.id) {
+                              setExpandedInspiration(null);
+                            } else {
+                              setExpandedInspiration(insp.id);
+                              setTimeout(() => {
+                                const el = document.getElementById(`insp-${insp.id}`);
+                                if (el) {
+                                  const y = el.getBoundingClientRect().top + window.scrollY - 80; // 80px offset pro hlavičku
+                                  window.scrollTo({ top: y, behavior: 'smooth' });
+                                }
+                              }, 100);
+                            }
+                          }}
                           className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-600 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1"
                         >
                           {expandedInspiration === insp.id ? "Méně info" : "Více info"}
                         </button>
-                        <button 
-                          onClick={() => {
-                            setNewSuggestion(prev => ({
-                              ...prev,
-                              title: insp.title,
-                              description: insp.description,
-                              eventDate: insp.date || "",
-                              eventTime: insp.time || "",
-                              location: insp.location || "",
-                              childName: getLoggedInFamilyName()
-                            }));
-                            setFormType("activity");
-                            setShowForm(true);
-                            setShowInspirationsView(false);
-                          }}
-                          className="flex-[2] py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold text-xs rounded-xl transition-colors border border-indigo-200"
-                        >
-                          Chci tohle navrhnout!
-                        </button>
+                        {(() => {
+                          const isAlreadyProposed = suggestions.some(s => s.title === insp.title && s.status !== 'rejected');
+                          return (
+                            <button 
+                              disabled={isAlreadyProposed}
+                              onClick={() => {
+                                if (isAlreadyProposed) return;
+                                setNewSuggestion(prev => ({
+                                  ...prev,
+                                  title: insp.title,
+                                  description: insp.description,
+                                  eventDate: insp.date || "",
+                                  eventTime: insp.time || "",
+                                  location: insp.location || "",
+                                  url: insp.url || "",
+                                  childName: getLoggedInFamilyName()
+                                }));
+                                setFormType("activity");
+                                setShowForm(true);
+                                setShowInspirationsView(false);
+                              }}
+                              className={cn(
+                                "flex-[2] py-3 font-bold text-xs rounded-xl transition-colors border",
+                                isAlreadyProposed 
+                                  ? "bg-stone-100 text-stone-400 border-stone-200 cursor-not-allowed"
+                                  : "bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-200 cursor-pointer"
+                              )}
+                            >
+                              {isAlreadyProposed ? "Již navrženo" : "Chci tohle navrhnout!"}
+                            </button>
+                          );
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -1927,15 +1965,26 @@ export default function App() {
                       
                       {suggestion.location && (
                         <>
-                          <a 
-                            href={`https://mapy.cz/zakladni?q=${encodeURIComponent(suggestion.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-3 flex items-center gap-2 text-xs text-stone-500 font-medium p-2 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition-colors active:bg-rose-100 cursor-pointer"
-                          >
-                            <MapPin size={14} className="text-rose-400 flex-shrink-0" />
-                            <span className="underline decoration-dotted underline-offset-2">{suggestion.location}</span>
-                          </a>
+                          {(() => {
+                            const isCycling = (suggestion.url && suggestion.url.includes('mapy.cz') && (suggestion.url.includes('rc=') || suggestion.url.includes('routeType='))) || 
+                              /cykl|kolo|bike|cycling/i.test(suggestion.title + ' ' + suggestion.description);
+
+                            const navUrl = (isCycling && suggestion.url && suggestion.url.includes('mapy.cz')) 
+                              ? suggestion.url 
+                              : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(suggestion.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`;
+
+                            return (
+                              <a 
+                                href={navUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 flex items-center gap-2 text-xs text-stone-500 font-medium p-2 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition-colors active:bg-rose-100 cursor-pointer"
+                              >
+                                <MapPin size={14} className="text-rose-400 flex-shrink-0" />
+                                <span className="underline decoration-dotted underline-offset-2">{suggestion.location}</span>
+                              </a>
+                            );
+                          })()}
                           
                           <AnimatePresence>
                             {expandedSuggestion === suggestion.id && (
@@ -1950,7 +1999,8 @@ export default function App() {
                                 {suggestion.eventDate && (
                                   <div className="flex items-center gap-2">
                                     <Calendar size={14} className="text-rose-400 flex-shrink-0" />
-                                    <strong>Datum:</strong> {(() => { try { return format(parseISO(suggestion.eventDate), "EEEE d. MMMM yyyy", { locale: cs }); } catch { return suggestion.eventDate; } })()}
+                                    <strong>Datum:</strong> {(() => { try { return format(parseISO(suggestion.eventDate), "dd. MMMM yyyy", { locale: cs }); } catch { return suggestion.eventDate; } })()}
+                                    {suggestion.adminModifiedTime && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-2 uppercase tracking-wide font-bold">Změněno administrátorem</span>}
                                   </div>
                                 )}
                                 
@@ -1967,15 +2017,26 @@ export default function App() {
                                 </div>
 
                                 <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-stone-100">
-                                  <a 
-                                    href={`https://mapy.cz/zakladni?q=${encodeURIComponent(suggestion.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-rose-200 text-rose-500 font-bold text-xs hover:bg-rose-50 transition-colors shadow-sm"
-                                  >
-                                    <Navigation size={14} />
-                                    Navigovat
-                                  </a>
+                                  {(() => {
+                                    const isCycling = (suggestion.url && suggestion.url.includes('mapy.cz') && (suggestion.url.includes('rc=') || suggestion.url.includes('routeType='))) || 
+                                      /cykl|kolo|bike|cycling/i.test(suggestion.title + ' ' + suggestion.description);
+
+                                    const navUrl = (isCycling && suggestion.url && suggestion.url.includes('mapy.cz')) 
+                                      ? suggestion.url 
+                                      : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(suggestion.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`;
+
+                                    return (
+                                      <a 
+                                        href={navUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-rose-200 text-rose-500 font-bold text-xs hover:bg-rose-50 transition-colors shadow-sm"
+                                      >
+                                        <Navigation size={14} />
+                                        {isCycling ? "Naplánovat trasu" : "Navigovat"}
+                                      </a>
+                                    );
+                                  })()}
                                 </div>
                               </motion.div>
                             )}
@@ -1986,6 +2047,13 @@ export default function App() {
                       {suggestion.rejectReason && (
                         <div className="mt-3 p-3 bg-white/60 rounded-lg text-sm text-stone-700 italic border border-stone-200/50">
                           <strong>{suggestion.status === "cancelled" ? "Důvod zrušení:" : "Důvod zamítnutí:"}</strong> {suggestion.rejectReason}
+                        </div>
+                      )}
+                      
+                      {suggestion.calendarError && (
+                        <div className="mt-3 p-3 bg-red-50 rounded-lg text-sm text-red-700 border border-red-200">
+                          <strong>⚠️ Chyba zápisu do kalendáře:</strong><br/>
+                          {suggestion.calendarError}
                         </div>
                       )}
                       
@@ -2041,19 +2109,63 @@ export default function App() {
                     </div>
 
                     {view === "parent" && suggestion.status === "pending" && (
-                      <div className="mt-4 flex gap-2">
-                        <button 
-                          onClick={() => handleUpdateStatus(suggestion.id, "approved")}
-                          className="px-4 py-2.5 rounded-xl bg-green-500 text-white font-bold text-xs hover:opacity-90 transition-opacity flex-1"
-                        >
-                          Schválit
-                        </button>
-                        <button 
-                          onClick={() => handleUpdateStatus(suggestion.id, "rejected")}
-                          className="px-4 py-2.5 rounded-xl bg-red-500 text-white font-bold text-xs hover:opacity-90 transition-opacity flex-1"
-                        >
-                          Zamítnout
-                        </button>
+                      <div className="mt-4 flex flex-col gap-2">
+                        {approvingEvent?.id === suggestion.id ? (
+                          <div className="p-3 bg-green-50 rounded-xl border border-green-200">
+                            <div className="text-[11px] font-bold text-green-700 mb-2 uppercase tracking-wider">Úprava data a času před schválením:</div>
+                            <div className="flex gap-2 mb-2">
+                              <input 
+                                type="date" 
+                                value={approveDate}
+                                onChange={e => setApproveDate(e.target.value)}
+                                className="w-full text-xs p-2 rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-green-400"
+                              />
+                              <input 
+                                type="time" 
+                                value={approveTime}
+                                onChange={e => setApproveTime(e.target.value)}
+                                className="w-full text-xs p-2 rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-green-400"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => handleUpdateStatus(suggestion.id, "approved", approveDate, approveTime)}
+                                className="px-4 py-2 rounded-lg bg-green-600 text-white font-bold text-xs hover:bg-green-700 transition-colors flex-1"
+                              >
+                                Potvrdit schválení
+                              </button>
+                              <button 
+                                onClick={() => setApprovingEvent(null)}
+                                className="px-4 py-2 rounded-lg bg-stone-200 text-stone-700 font-bold text-xs hover:bg-stone-300 transition-colors"
+                              >
+                                Zrušit
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => {
+                                if (suggestion.type === "ride") {
+                                  handleUpdateStatus(suggestion.id, "approved");
+                                } else {
+                                  setApprovingEvent(suggestion);
+                                  setApproveDate(suggestion.eventDate || "");
+                                  setApproveTime(suggestion.eventTime || "");
+                                }
+                              }}
+                              className="px-4 py-2.5 rounded-xl bg-green-500 text-white font-bold text-xs hover:opacity-90 transition-opacity flex-1"
+                            >
+                              Schválit
+                            </button>
+                            <button 
+                              onClick={() => handleUpdateStatus(suggestion.id, "rejected")}
+                              className="px-4 py-2.5 rounded-xl bg-red-500 text-white font-bold text-xs hover:opacity-90 transition-opacity flex-1"
+                            >
+                              Zamítnout
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
