@@ -29,11 +29,14 @@ export interface ActivitySuggestion {
   type?: 'activity' | 'ride';
   rideFrom?: string;
   rideTo?: string;
-  grade?: number;
+  grade?: number; // Starší systém nebo fallback
+  userGrades?: Record<string, { grade: number; changesCount: number }>;
+  averageGrade?: number;
   location?: string;
   url?: string;
   adminModifiedTime?: boolean;
   calendarError?: string;
+  hiddenFromBoard?: boolean;
   createdAt: number;
   comments?: ActivityComment[];
 }
