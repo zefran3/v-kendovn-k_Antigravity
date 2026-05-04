@@ -56,7 +56,10 @@ service cloud.firestore {
              (!('type' in data) || data.type in ['activity', 'ride']) &&
              (!('rideFrom' in data) || (data.rideFrom is string && data.rideFrom.size() <= 100)) &&
              (!('rideTo' in data) || (data.rideTo is string && data.rideTo.size() <= 100)) &&
-             (!('grade' in data) || (data.grade is number && data.grade >= 1 && data.grade <= 5)) &&
+             (!('grade' in data) || (data.grade is number && data.grade >= 0 && data.grade <= 5)) &&
+             (!('averageGrade' in data) || data.averageGrade is number) &&
+             (!('userGrades' in data) || data.userGrades is map) &&
+             (!('comments' in data) || data.comments is list) &&
              data.status in ['pending', 'approved', 'rejected', 'cancelled'];
     }
 
@@ -77,8 +80,8 @@ service cloud.firestore {
       // Admins can update anything. Users can ONLY update the likes counter OR their own reconsideration!
       allow update: if isAuthenticated() && (isAdmin() || (
         isValidSuggestion(request.resource.data) && (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'grade']) ||
-          (request.auth.uid == resource.data.authorId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reconsiderationRequested', 'hasAppealed', 'appealReason', 'grade']))
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'grade', 'userGrades', 'averageGrade', 'comments']) ||
+          (request.auth.uid == resource.data.authorId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reconsiderationRequested', 'hasAppealed', 'appealReason', 'grade', 'userGrades', 'averageGrade', 'comments']))
         )
       ));
 

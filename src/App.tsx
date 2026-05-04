@@ -2711,7 +2711,7 @@ export default function App() {
                           </div>
                           <div className="flex gap-1 mt-1">
                             {[1, 2, 3, 4, 5].map(num => {
-                              const myGrade = user ? (suggestion.userGrades?.[user.uid]?.grade || suggestion.grade) : suggestion.grade;
+                              const myGrade = user ? (suggestion.userGrades ? suggestion.userGrades[user.uid]?.grade : suggestion.grade) : suggestion.grade;
                               return (
                                 <button
                                   key={num}
