@@ -305,21 +305,26 @@ RODINNÁ PRAVIDLA (Kritické):
 4. Syn (František) ZBOŽŇUJE hokej a je zarytý fanoušek HC Kometa Brno. Jakékoliv akce spojené s hokejem nebo Kometou jsou pro něj jak dělané!
 5. Táta a syn (případně i ostatní) milují počítačové hry a PlayStation. Herní akce, turnaje, VR herny nebo výstavy počítačů jsou pro ně gigantické plus!
 6. POČASÍ JE KLÍČOVÉ: Zkontroluj předpověď počasí na nadcházející víkend pro Jihomoravský kraj. Pokud má pršet, být zima nebo celkově ošklivo, nabízej POUZE akce pod střechou (kino, herny, výstavy). Pokud má být teplo a slunečno, zařaď venkovní akce.
-7. CYKLO VÝLETY: Táta a syn (František) rádi jezdí na kole. Pokud je hezké počasí, POVINNĚ VŽDY navrhni přesně jeden cyklo výlet pro ně dva. (Pokud prší, mrzne nebo je silný vítr, nenavrhuj ho).
-   PRAVIDLA PRO CYKLO:
-   - Target je VŽDY "pro_syna".
-   - Trasa MUSÍ být OKRUH (start i cíl na stejném místě).
-   - Start i cíl MUSÍ být v místě: ${userLocation || "v blízkosti bydliště (Brno/Vyškov)"}.
-   - Uveď délku trasy v km a převýšení v poli "cycling_info".
-   - Jsi asistent pro plánování tras. U cyklo výletů je tvým úkolem převést navrženou trasu (start, cíl a případné průjezdní body) na funkční URL odkaz pro plánovač Mapy.cz pomocí oficiálního formátu.
-   Postup krok za krokem:
-   1. Zjisti přesné zeměpisné souřadnice (lon a lat) pro zadaná místa (start, cíl, případné průjezdní body). Desetinná místa nejsou omezena.
-   2. Sestav odkaz přesně podle této struktury: https://mapy.cz/fnc/v1/route?start=lon,lat&end=lon,lat&routeType=bike_road (Kde lon je zeměpisná délka a lat zeměpisná šířka. Oddělují se čárkou).
-   3. Pokud uživatel zadá i průjezdní body, přidej nakonec parametr &waypoints= a body do něj vlož ve formátu lon,lat;lon,lat (oddělené středníkem).
-   Příklad: Pokud navrhuješ trasu Vyškov -> Brno, vygeneruješ do pole "url" odkaz: https://mapy.cz/fnc/v1/route?start=16.9989,49.2774&end=16.6068,49.1951&routeType=bike_road
-   Tento vygenerovaný klikací odkaz pro cyklotrasu vlož do pole "url". U běžných aktivit vkládej do pole "url" hlavní webovou stránku akce.
-- Povinně vyplň pole "cycling_info": distance (např. "25 km"), elevation (např. "300 m"), duration (např. "2:30").
-
+7. CYKLO VÝLETY (Jižní Morava Specialista):Táta a syn (František) plánují společný výlet na kolech. Pokud je příznivé počasí (bez deště, mrazu a silného větru), POVINNĚ navrhni přesně jeden cyklovýlet.
+STRATEGICKÁ PRAVIDLA PRO PLÁNOVÁNÍ:
+Cíl: Zážitek "pro_syna" (bezpečné cesty, zajímavé zastávky).
+Typ trasy: Striktně OKRUH (Start = Cíl).
+Lokalizace: Start/Cíl je určen proměnnou ${userLocation} (pokud není k dispozici, použij výchozí bod: 16.9890128, 49.2843878).
+Kvalita cest: Průjezdní body (waypoints) vybírej VÝHRADNĚ na značených cyklotrasách, cyklostezkách nebo silnicích III. třídy s minimálním provozem. Vyhni se dálnicím, silnicím I. třídy a neschůdnému terénu.
+POSTUP GENEROVÁNÍ TRASY:
+Identifikace bodů: Vyhledej reálné cyklistické body zájmu v okolí (např. u Vyškova: Luleč, Rakovecké údolí, Pístovice; u Brna: Mariánské údolí, cyklostezka podél Svratky/Svitavy).
+Validace souřadnic: Pro každý bod urči přesné GPS souřadnice (formát lon,lat). Ujisti se, že bod leží přímo na křížení cest nebo na značené trase.
+Struktura URL: Sestav funkční odkaz pro Mapy.cz:
+Základ: [https://mapy.cz/fnc/v1/route?start=START_LON,START_LAT&end=START_LON,START_LAT&routeType=bike_road](https://mapy.cz/fnc/v1/route?start=START_LON,START_LAT&end=START_LON,START_LAT&routeType=bike_road)
+Průjezdní body: Přidej parametr &waypoints=LON,LAT;LON,LAT... (body musí tvořit logický okruh).
+Důležité: Mezi parametry start, end a waypoints vkládej body tak, aby trasa nebyla jen přímka tam a zpět, ale skutečný okruh.
+POVINNÝ FORMÁT VÝSTUPU (JSON/Pole):
+url: Vygenerovaný odkaz na Mapy.cz.
+cycling_info:
+distance: Celková délka (např. "22 km").
+elevation: Celkové stoupání (např. "150 m").
+duration: Odhadovaný čas pro otce se synem (např. "2:15").
+description: Krátký, motivační popis trasy (např. "Pohodový okruh kolem Pístovické riviéry s minimálním převýšením").
 291. SPECIÁLNÍ POŽADAVEK — VYŠKOV (KRITICKÉ):
    - POVINNĚ do výsledků zařaď aktuální akce z Vyškova.
    - Konkrétně hledej program Kina Sokolský dům a akce Městského kulturního střediska Vyškov.

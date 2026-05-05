@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { cn } from "./lib/utils";
 import { ActivitySuggestion, WeekendEvent, UserProfile, ActivityComment, Inspiration, CinemaListing } from "./types";
+import GameHub from "./GameHub";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { cs } from "date-fns/locale";
 import { auth, db, messaging } from "./firebase";
@@ -213,7 +214,10 @@ export default function App() {
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState<"rejected" | "cancelled" | null>(null);
+  const [deleteFilterStatus, setDeleteFilterStatus] = useState<"rejected" | "cancelled" | null>(null);
+  const [showNothingToDeleteModal, setShowNothingToDeleteModal] = useState(false);
   const [showGradeLimitModal, setShowGradeLimitModal] = useState(false);
+  const [showGameHub, setShowGameHub] = useState(false);
   useEffect(() => {
     const handleScroll = () => {
       setShowScrollToTop(window.scrollY > 300);
@@ -274,6 +278,22 @@ export default function App() {
     } catch (err) {
       console.error(err);
       setError("Nepodařilo se aktualizovat poznámku k uživateli.");
+    }
+  };
+
+  const toggleUserBlocked = async (userId: string, currentBlocked: boolean) => {
+    if (userId === user?.uid) {
+      setError("Nemůžete zablokovat sami sebe.");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "users", userId), { 
+        isBlocked: !currentBlocked,
+        updatedAt: serverTimestamp() 
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Nepodařilo se změnit stav blokování uživatele.");
     }
   };
 
@@ -866,7 +886,7 @@ export default function App() {
     if (!suggestion.userGrades) return suggestion.grade || 0;
     const grades = Object.values(suggestion.userGrades).map(g => g.grade);
     if (grades.length === 0) return suggestion.grade || 0;
-    return Number((grades.reduce((a, b) => a + b, 0) / grades.length).toFixed(1));
+    return Number((grades.reduce((a, b) => a + b, 0) / grades.length).toFixed(2));
   };
 
   const handleGradeActivity = async (id: string, grade: number) => {
@@ -890,7 +910,7 @@ export default function App() {
     };
 
     const gradesArray = Object.values(newUserGrades).map(g => g.grade);
-    const newAverage = Number((gradesArray.reduce((a, b) => a + b, 0) / gradesArray.length).toFixed(1));
+    const newAverage = Number((gradesArray.reduce((a, b) => a + b, 0) / gradesArray.length).toFixed(2));
 
     try {
       await updateDoc(doc(db, 'suggestions', id), { 
@@ -898,6 +918,13 @@ export default function App() {
         averageGrade: newAverage,
         grade: newAverage // Fallback pro starší verze
       });
+      // Zajistíme, že po zařazení na novou pozici se karta udrží v zorném poli
+      setTimeout(() => {
+        const el = document.getElementById(`archive-${id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 400); // 400ms čekáme na dokončení animace layoutu
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `suggestions/${id}`);
     }
@@ -1161,7 +1188,9 @@ export default function App() {
       const toDelete = suggestions.filter(s => {
         if (s.status !== status || s.hiddenFromBoard) return false;
         if (status === "rejected") {
-          // Zamítnuté u kterých je stále možnost Znovu otevřit k posouzení smazány nebudou.
+          // Žádosti o odvoz se mažou vždy
+          if (s.type === "ride") return true;
+          // Zamítnuté u kterých je stále možnost Znovu otevřít k posouzení smazány nebudou.
           const canBeReopened = !s.hasAppealed || s.reconsiderationRequested;
           if (canBeReopened) return false;
         }
@@ -1187,6 +1216,8 @@ export default function App() {
       }
       setSuccess(`Aktivity (${toDelete.length}) byly úspěšně odstraněny z nástěnky.`);
       setIsDeleteMode(false);
+      setDeleteFilterStatus(null);
+      setBoardFilter("all");
     } catch (err: any) {
       console.error("Hromadné mazání selhalo", err);
       setError("Chyba při hromadném mazání.");
@@ -1266,6 +1297,7 @@ export default function App() {
                   onClick={() => {
                     setView(view === "parent" ? "child" : "parent");
                     setIsDeleteMode(false);
+                    setDeleteFilterStatus(null);
                     setBoardFilter("all");
                     setShowInspirationsView(false);
                     setShowArchive(false);
@@ -1354,6 +1386,31 @@ export default function App() {
             >
               <LogIn size={18} />
               Přihlásit se googlem
+            </button>
+          </motion.div>
+        </motion.main>
+      ) : userProfiles[user.uid]?.isBlocked ? (
+        <motion.main 
+          key="blocked"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.3 }}
+          className="flex flex-col items-center justify-center flex-grow p-6 mt-12"
+        >
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col items-center justify-center text-center max-w-sm w-full bg-white p-10 rounded-3xl shadow-[0_10px_20px_-10px_rgba(0,0,0,0.05)] border border-rose-200"
+          >
+            <AlertTriangle size={64} className="text-rose-500 mb-6" />
+            <h1 className="text-2xl font-bold mb-4">Přístup odepřen</h1>
+            <p className="text-stone-500 mb-8">Váš účet byl zablokován administrátorem aplikace.</p>
+            <button 
+              onClick={handleLogout} 
+              className="flex items-center gap-3 px-6 py-3.5 rounded-xl bg-stone-100 text-stone-600 hover:bg-stone-200 transition-all text-[15px] font-bold w-full justify-center"
+            >
+              Odhlásit se
             </button>
           </motion.div>
         </motion.main>
@@ -1562,6 +1619,20 @@ export default function App() {
                 ))}
               </div>
             </motion.div>
+          )}
+
+          {/* Game Hub Entry Button */}
+          {leaderboard.length > 0 && (
+            <motion.button
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              onClick={() => setShowGameHub(true)}
+              className="w-full bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 text-white rounded-2xl p-4 flex items-center justify-center gap-3 font-bold text-sm shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 transition-all hover:-translate-y-0.5 active:scale-[0.98]"
+            >
+              <span className="text-lg">⚡</span>
+              Game Hub – Zážitkové body
+              <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">ZB</span>
+            </motion.button>
           )}
 
           {/* Calendar Events Section */}
@@ -1950,7 +2021,30 @@ export default function App() {
                         key={f.id}
                         onClick={() => {
                           if (isDeleteMode) {
-                            setShowBulkDeleteModal(f.id as "rejected" | "cancelled");
+                            const status = f.id as "rejected" | "cancelled";
+                            if (deleteFilterStatus === status) {
+                              // Druhý klik na stejné tlačítko → potvrzovací modal
+                              setShowBulkDeleteModal(status);
+                            } else {
+                              // První klik → filtrovat a zobrazit náhled
+                              const deletable = suggestions.filter(s => {
+                                if (s.status !== status || s.hiddenFromBoard) return false;
+                                if (status === "rejected") {
+                                  if (s.type === "ride") return true;
+                                  const canBeReopened = !s.hasAppealed || s.reconsiderationRequested;
+                                  if (canBeReopened) return false;
+                                }
+                                return true;
+                              });
+                              if (deletable.length === 0) {
+                                setShowNothingToDeleteModal(true);
+                                setDeleteFilterStatus(null);
+                                setBoardFilter("all");
+                              } else {
+                                setDeleteFilterStatus(status);
+                                setBoardFilter(status);
+                              }
+                            }
                           } else {
                             setBoardFilter(f.id as any);
                           }
@@ -1958,20 +2052,22 @@ export default function App() {
                         className={cn(
                           "px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm",
                           isDeleteMode 
-                            ? "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 hover:border-rose-300"
+                            ? deleteFilterStatus === f.id
+                              ? "bg-rose-500 text-white border border-rose-500 shadow-md"
+                              : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 hover:border-rose-300"
                             : boardFilter === f.id 
                               ? "bg-stone-700 text-white shadow-md border-transparent" 
                               : "bg-white text-stone-500 border border-stone-200 hover:border-stone-300 hover:text-stone-700"
                         )}
                       >
-                        {f.label}
+                        {deleteFilterStatus === f.id ? `🗑️ ${f.label} — potvrdit smazání` : f.label}
                       </button>
                     ))}
                   </div>
                   
                   {view === "parent" && (
                     <button
-                      onClick={() => setIsDeleteMode(!isDeleteMode)}
+                      onClick={() => { setIsDeleteMode(!isDeleteMode); setDeleteFilterStatus(null); if (!isDeleteMode) setBoardFilter("all"); else setBoardFilter("all"); }}
                       className={cn(
                         "p-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ml-auto flex-shrink-0 h-8 w-8 flex items-center justify-center",
                         isDeleteMode
@@ -2323,7 +2419,7 @@ export default function App() {
                       </div>
                     )}
 
-                    {view === "child" && user && user.uid === suggestion.authorId && (suggestion.status === "rejected" || suggestion.status === "cancelled") && !suggestion.reconsiderationRequested && !suggestion.hasAppealed && (
+                    {view === "child" && user && user.uid === suggestion.authorId && (suggestion.status === "rejected" || suggestion.status === "cancelled") && !suggestion.reconsiderationRequested && !suggestion.hasAppealed && suggestion.type !== "ride" && (
                        <div className="mt-4">
                         <button 
                           onClick={() => handleOpenAppeal(suggestion)}
@@ -2334,13 +2430,13 @@ export default function App() {
                       </div>
                     )}
 
-                    {view === "child" && (suggestion.status === "rejected" || suggestion.status === "cancelled") && suggestion.hasAppealed && !suggestion.reconsiderationRequested && (
+                    {view === "child" && (suggestion.status === "rejected" || suggestion.status === "cancelled") && suggestion.hasAppealed && !suggestion.reconsiderationRequested && suggestion.type !== "ride" && (
                        <div className="mt-4 text-xs text-center text-stone-500 font-serif italic bg-stone-50 rounded-lg p-3 border border-stone-200">
                          Tento ortel je vytesán do chladné skály,<br/>a všechny dřívější prosby už podzimní vítr svál.
                        </div>
                     )}
 
-                    {view === "child" && suggestion.reconsiderationRequested && (
+                    {view === "child" && suggestion.reconsiderationRequested && suggestion.type !== "ride" && (
                       <div className="mt-4 text-xs text-center text-orange-600 font-bold bg-orange-50 rounded-lg p-2 border border-orange-100">
                         Žádost o přehodnocení odeslána.
                       </div>
@@ -2642,6 +2738,22 @@ export default function App() {
                 </button>
               </div>
 
+              <AnimatePresence>
+                {archiveTab === "completed" && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex-shrink-0 overflow-hidden"
+                  >
+                    <div className="bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 mb-6 shadow-sm">
+                      <span>💡</span>
+                      <span>Známku dvakrát měř, jednou opravuj.</span>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* List */}
               <div className="overflow-y-auto flex-1 space-y-4 pr-1 scrollbar-hide pb-10">
                 {suggestions
@@ -2667,7 +2779,7 @@ export default function App() {
                     }
                   })
                   .map(suggestion => (
-                  <div id={`archive-${suggestion.id}`} key={suggestion.id} className="bg-white rounded-[24px] p-5 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] border border-stone-100 flex flex-col gap-4 scroll-mt-6 transition-all duration-500">
+                  <motion.div layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} id={`archive-${suggestion.id}`} key={suggestion.id} className="bg-white rounded-[24px] p-5 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] border border-stone-100 flex flex-col gap-4 scroll-mt-6 transition-all duration-500">
                     <div className="flex flex-col md:flex-row gap-4 justify-between w-full">
                     <div className="flex-1">
                       <div className="flex gap-2 items-center mb-2">
@@ -2705,7 +2817,7 @@ export default function App() {
                           <div className="flex flex-col items-center">
                             <div className="text-[10px] uppercase font-bold text-stone-400 tracking-wider">Hodnocení</div>
                             <div className="text-xl font-black text-rose-500 my-1">
-                               {calcAvgGrade(suggestion) === 0 ? "-" : calcAvgGrade(suggestion)}
+                               {calcAvgGrade(suggestion) === 0 ? "-" : calcAvgGrade(suggestion).toFixed(2).replace('.', ',')}
                             </div>
                             <div className="text-[9px] text-stone-400 leading-none mb-1">Průměrná známka (1 = nejlepší)</div>
                           </div>
@@ -2808,7 +2920,7 @@ export default function App() {
                         )}
                       </div>
                     )}
-                  </div>
+                  </motion.div>
                 ))}
 
                 {suggestions.filter(s => s.status === (archiveTab === "completed" ? "approved" : "cancelled") && s.type !== "ride").length === 0 && (
@@ -2961,25 +3073,22 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-white rounded-[24px] p-6 shadow-2xl z-[100] flex flex-col gap-5 border-2 border-rose-100"
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85%] max-w-xs bg-white rounded-[24px] p-5 shadow-2xl z-[100] flex flex-col gap-4 border-2 border-rose-100"
             >
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-extrabold text-stone-800 tracking-tight flex items-center gap-2">
-                  <span>🚫</span> Nelze změnit hodnocení
+                <h2 className="text-lg font-extrabold text-stone-800 tracking-tight flex items-center gap-2">
+                  <span>🚫</span> Limit úprav vyčerpán
                 </h2>
-                <button onClick={() => setShowGradeLimitModal(false)} className="text-stone-400 hover:text-stone-600 bg-stone-100 p-2 rounded-full cursor-pointer">
-                  <X size={20} />
-                </button>
               </div>
 
               <div className="text-sm text-stone-600 leading-relaxed">
-                Již jste vyčerpal(a) své pokusy na hodnocení této aktivity. Známku lze po jejím udělení upravit pouze jednou.
+                Už jsi své hodnocení jednou změnil. Tato známka už je definitivní.
               </div>
 
-              <div className="flex justify-end mt-2">
+              <div className="flex justify-end mt-1">
                 <button 
                   onClick={() => setShowGradeLimitModal(false)}
-                  className="px-6 py-3 bg-stone-800 text-white rounded-xl font-bold text-sm shadow-md hover:bg-stone-900 transition-colors"
+                  className="px-6 py-2.5 bg-rose-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-rose-600 transition-colors"
                 >
                   Rozumím
                 </button>
@@ -3143,20 +3252,23 @@ export default function App() {
               </div>
 
               <div className="overflow-y-auto pr-1">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-stone-100 text-[11px] uppercase tracking-wider text-stone-400 font-bold">
-                      <th className="pb-3 px-2">Uživatel</th>
-                      <th className="pb-3 px-2 text-center">Role</th>
-                      <th className="pb-3 px-2">Oprávnění</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <div className="w-full text-left">
+                  <div className="grid grid-cols-[1fr_100px_180px] gap-4 border-b border-stone-100 pb-3 px-3 text-[11px] uppercase tracking-wider text-stone-400 font-bold">
+                    <div>Uživatel</div>
+                    <div className="text-center">Role</div>
+                    <div>Oprávnění</div>
+                  </div>
+                  <div className="flex flex-col mt-2 gap-1.5">
                     {Object.values(userProfiles).map((profile) => (
-                      <tr key={profile.id} className="border-b border-stone-50 hover:bg-stone-50 transition-colors">
-                        <td className="py-4 px-2">
+                      <div key={profile.id} className={cn(
+                        "grid gap-4 items-center px-3 py-3 transition-colors",
+                        profile.isBlocked 
+                          ? "grid-cols-[1fr_auto] bg-stone-100 rounded-2xl border border-stone-200 grayscale-[0.2]" 
+                          : "grid-cols-[1fr_100px_180px] border-b border-stone-50 hover:bg-stone-50"
+                      )}>
+                        <div>
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full overflow-hidden bg-white border border-stone-200 flex items-center justify-center flex-shrink-0">
+                            <div className={cn("w-8 h-8 rounded-full overflow-hidden bg-white flex items-center justify-center flex-shrink-0", profile.isBlocked ? "border-stone-300 opacity-70" : "border border-stone-200")}>
                               {profile.avatar?.startsWith('http') || profile.avatar?.startsWith('data:') ? (
                                 <img src={profile.avatar} className="w-full h-full object-cover" />
                               ) : (
@@ -3172,45 +3284,68 @@ export default function App() {
                                     updateUserAdminAlias(profile.id!, e.target.value);
                                   }
                                 }}
-                                className="font-bold text-stone-700 text-sm bg-transparent border-b border-transparent hover:border-stone-300 focus:border-indigo-400 focus:outline-none transition-colors"
+                                className={cn("font-bold text-sm bg-transparent border-b border-transparent focus:outline-none transition-colors w-full", profile.isBlocked ? "text-stone-500" : "text-stone-700 hover:border-stone-300 focus:border-indigo-400")}
                                 title="Soukromé jméno pro admina"
+                                disabled={profile.isBlocked}
                               />
                               <span className="text-[10px] text-stone-400">{profile.email}</span>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-2 text-center">
-                          <select 
-                            value={profile.role || 'viewer'} 
-                            onChange={(e) => updateUserRole(profile.id!, e.target.value as UserRole)}
-                            className="text-xs font-bold bg-stone-100 border-none rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-rose-200 outline-none cursor-pointer"
-                          >
-                            <option value="admin">Admin</option>
-                            <option value="parent">Rodič</option>
-                            <option value="child">Dítě</option>
-                            <option value="viewer">Divák</option>
-                          </select>
-                        </td>
-                        <td className="py-4 px-2">
-                          <div className="flex flex-wrap gap-1.5">
-                            {profile.role === 'admin' && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 border border-stone-200 uppercase tracking-tighter">Administrátor</span>
-                            )}
-                            {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canSuggest && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 border border-blue-100">Navrhuje</span>
-                            )}
-                            {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canComment && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-500 border border-emerald-100">Komentuje</span>
-                            )}
-                            {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canApprove && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-500 border border-rose-100">Schvaluje</span>
+                            {!profile.isBlocked && profile.id !== user?.uid && (
+                              <button
+                                onClick={() => toggleUserBlocked(profile.id!, false)}
+                                className="ml-auto p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors flex-shrink-0"
+                                title="Zablokovat uživatele"
+                              >
+                                <X size={18} strokeWidth={3} />
+                              </button>
                             )}
                           </div>
-                        </td>
-                      </tr>
+                        </div>
+                        {profile.isBlocked ? (
+                          <div className="text-right">
+                            <button
+                              onClick={() => toggleUserBlocked(profile.id!, true)}
+                              className="px-5 py-2 bg-stone-600 text-white font-bold rounded-xl hover:bg-stone-700 transition-colors text-xs shadow-sm"
+                            >
+                              Odblokovat
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-center">
+                              <select 
+                                value={profile.role || 'viewer'} 
+                                onChange={(e) => updateUserRole(profile.id!, e.target.value as UserRole)}
+                                className="text-xs font-bold bg-stone-100 border-none rounded-xl px-2 py-2 focus:ring-2 focus:ring-rose-200 outline-none cursor-pointer w-full"
+                              >
+                                <option value="admin">Admin</option>
+                                <option value="parent">Rodič</option>
+                                <option value="child">Dítě</option>
+                                <option value="viewer">Divák</option>
+                              </select>
+                            </div>
+                            <div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {profile.role === 'admin' && (
+                                  <span className="text-[9px] font-bold px-2 py-1 rounded bg-stone-100 text-stone-600 border border-stone-200 uppercase tracking-tighter">Administrátor</span>
+                                )}
+                                {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canSuggest && (
+                                  <span className="text-[9px] font-bold px-2 py-1 rounded bg-blue-50 text-blue-500 border border-blue-100">Navrhuje</span>
+                                )}
+                                {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canComment && (
+                                  <span className="text-[9px] font-bold px-2 py-1 rounded bg-emerald-50 text-emerald-500 border border-emerald-100">Komentuje</span>
+                                )}
+                                {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canApprove && (
+                                  <span className="text-[9px] font-bold px-2 py-1 rounded bg-rose-50 text-rose-500 border border-rose-100">Schvaluje</span>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                  </div>
+                </div>
               </div>
               
               <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3 items-start">
@@ -3304,6 +3439,56 @@ export default function App() {
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Nothing to Delete Modal */}
+      <AnimatePresence>
+        {showNothingToDeleteModal && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowNothingToDeleteModal(false)}
+              className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[80]"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-white rounded-[24px] p-6 shadow-2xl z-[90] flex flex-col gap-5 border border-stone-200"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-extrabold text-stone-800 flex items-center gap-2">
+                  <span>📭</span> Nic ke smazání
+                </h2>
+                <button onClick={() => setShowNothingToDeleteModal(false)} className="text-stone-400 hover:bg-stone-100 p-2 rounded-full transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="text-sm text-stone-600">
+                Nebyly nalezeny žádné aktivity, které by odpovídaly kritériím pro smazání.
+              </div>
+              <button 
+                onClick={() => setShowNothingToDeleteModal(false)} 
+                className="w-full py-3 bg-stone-100 text-stone-600 font-bold rounded-xl hover:bg-stone-200 transition-colors"
+              >
+                Rozumím
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Game Hub */}
+      <AnimatePresence>
+        {showGameHub && (
+          <GameHub
+            suggestions={suggestions}
+            userProfiles={userProfiles}
+            currentUserName={getLoggedInFamilyName()}
+            currentUserId={user?.uid || ""}
+            view={view}
+            onClose={() => setShowGameHub(false)}
+            getAvatarForChild={getAvatarForChild}
+          />
         )}
       </AnimatePresence>
 

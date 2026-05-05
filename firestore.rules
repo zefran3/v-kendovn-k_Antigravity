@@ -106,5 +106,17 @@ service cloud.firestore {
       // Zápis dělá pouze náš backend s admin právy, takže z frontendu zakázáno
       allow write: if false;
     }
+
+    match /wishlists/{wishId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /quests/{questId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
   }
 }

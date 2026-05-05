@@ -59,6 +59,7 @@ export interface UserProfile {
   updatedAt?: number;
   role?: UserRole;
   permissions?: UserPermissions;
+  isBlocked?: boolean;
 }
 
 export interface CinemaListing {
@@ -99,4 +100,27 @@ export interface WeekendEvent {
   start: string;
   end: string;
   isWeekendWithKids?: boolean;
+}
+
+export interface WishlistItem {
+  id: string;
+  childName: string;
+  authorId: string;
+  name: string;
+  url?: string;
+  imageBase64?: string;
+  targetZB: number;       // Cena v ZB (nastavuje rodič)
+  status: 'pending' | 'approved' | 'rejected';
+  rejectReason?: string;
+  createdAt: number;
+}
+
+export interface MysteryQuest {
+  id: string;
+  title: string;
+  description: string;
+  bonusMultiplier: number; // např. 2 = dvojité body
+  deadlineHours: number;   // časový limit v hodinách
+  active: boolean;
+  createdAt: number;
 }
