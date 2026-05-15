@@ -291,12 +291,167 @@ async function startServer() {
       throw new Error("Missing GEMINI_API_KEY");
     }
 
+    // --- OVERPASS API CYCLING LOGIC ---
+    let lat = 49.2843878;
+    let lon = 16.9890128;
+    if (userLocation) {
+      const parts = userLocation.split(',');
+      if (parts.length === 2 && !isNaN(parseFloat(parts[0])) && !isNaN(parseFloat(parts[1]))) {
+         lat = parseFloat(parts[0]);
+         lon = parseFloat(parts[1]);
+      }
+    }
+
+    let cyclingRouteText = "";
+    try {
+      const query = `[out:json];
+(
+  nwr["tourism"~"viewpoint|attraction|museum|theme_park"](around:10000, ${lat}, ${lon});
+  nwr["historic"~"castle|ruins|monument|archaeological_site"](around:10000, ${lat}, ${lon});
+  nwr["leisure"~"park|nature_reserve"](around:10000, ${lat}, ${lon});
+  nwr["water"="reservoir"](around:10000, ${lat}, ${lon});
+);
+out center 20;`;
+      
+      const response = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Accept": "application/json",
+          "User-Agent": "Vikendovnik/1.0"
+        },
+        body: "data=" + encodeURIComponent(query)
+      });
+      const data = await response.json();
+      if (data.elements && data.elements.length > 0) {
+        let points = data.elements.map((e: any) => ({
+          lat: e.lat || e.center?.lat,
+          lon: e.lon || e.center?.lon,
+          name: e.tags?.name || e.tags?.tourism || e.tags?.historic || e.tags?.leisure || 'Zajímavé místo'
+        })).filter((p: any) => p.lat && p.lon && p.name !== 'Zajímavé místo');
+
+        // Unikátní jména
+        points = points.filter((v: any, i: number, a: any) => a.findIndex((t: any) => (t.name === v.name)) === i);
+
+        if (points.length > 0) {
+          // Zamíchání bodů pro větší variabilitu a vyhnutí se těm nejbližším
+          const shuffled = points.sort(() => 0.5 - Math.random());
+          
+          // Vybereme až 3 body
+          let selected = shuffled.slice(0, Math.min(3, shuffled.length));
+
+          // Pomocná funkce pro výpočet úhlu vůči startu (radiální řazení)
+          const getAngle = (cx: number, cy: number, px: number, py: number) => Math.atan2(py - cy, px - cx);
+          
+          // Seřazení bodů po směru hodinových ručiček (čímž se zamezí křížení cesty a vznikne čistý okruh)
+          selected.sort((a: any, b: any) => {
+            const angleA = getAngle(lon, lat, a.lon, a.lat);
+            const angleB = getAngle(lon, lat, b.lon, b.lat);
+            return angleA - angleB;
+          });
+
+          let distanceText = "";
+          let elevationText = "";
+
+          // OpenRouteService (ORS) pro ověření sjízdnosti a profilu
+          if (process.env.ORS_API_KEY) {
+            try {
+              const routePayload = {
+                coordinates: [
+                  [lon, lat],
+                  ...selected.map((p: any) => [p.lon, p.lat]),
+                  [lon, lat]
+                ],
+                elevation: true,
+                instructions: false
+              };
+
+              const orsResponse = await fetch("https://api.openrouteservice.org/v2/directions/cycling-touring", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": process.env.ORS_API_KEY
+                },
+                body: JSON.stringify(routePayload)
+              });
+
+              if (orsResponse.ok) {
+                const orsData = await orsResponse.json();
+                const summary = orsData.features?.[0]?.properties?.summary;
+                if (summary) {
+                  distanceText = summary.distance ? `${(summary.distance / 1000).toFixed(1)} km` : "";
+                  elevationText = summary.ascent ? `${Math.round(summary.ascent)} m` : "";
+                }
+              } else {
+                console.warn("ORS API error:", orsResponse.status);
+              }
+            } catch (orsErr) {
+              console.error("ORS Fetch Error:", orsErr);
+            }
+          }
+
+          const waypoints = selected.map((p: any) => `${p.lon},${p.lat}`).join(';');
+          const mapyUrl = `https://mapy.cz/fnc/v1/route?start=${lon},${lat}&end=${lon},${lat}&routeType=bike_road${waypoints ? '&waypoints=' + waypoints : ''}`;
+          
+          const pointNames = selected.map((p: any) => p.name).join(' a ');
+
+          cyclingRouteText = `\nNAŠLI JSME REÁLNÁ DATA PRO CYKLO VÝLET:
+Start i cíl: lon=${lon}, lat=${lat}
+Vybrané průjezdní body (tvoří okruh): ${pointNames}
+${distanceText ? `Ověřená vzdálenost z ORS: ${distanceText}` : ''}
+${elevationText ? `Ověřené stoupání z ORS: ${elevationText}` : ''}
+
+TVŮJ ÚKOL PRO CYKLO VÝLET:
+1. TRASA A OKRUH: Navrhni příběh přesně na tyto vybrané body (${pointNames}). Trasa přes ně geometricky tvoří logický okruh a je ověřena přes ORS profil cycling-touring.
+2. SESTAV URL MAPY.CZ: Do pole "url" vlož PŘESNĚ TENTO ODKAZ bez úprav: ${mapyUrl}
+3. PARAMETRY TRASY: Do pole "cycling_info.distance" dej hodnotu "${distanceText || 'cca 20 km'}", do "cycling_info.elevation" dej "${elevationText || 'cca 200 m'}".
+4. PŘÍBĚH: Do pole "description" napiš příběh pro děti (např. "Dnešní mise...").`;
+        }
+      }
+    } catch (err) {
+      console.error("Overpass API error:", err);
+    }
+    // ----------------------------------
+
+    // Načtení dat z Firebase pro personalizaci věku
+    let ageRules = "";
+    if (admin.apps.length > 0) {
+      try {
+        const db = admin.firestore();
+        const usersSnapshot = await db.collection('users').where('role', '==', 'child').get();
+        let hasTeenagers = false;
+        let hasToddlers = false;
+        let childrenAgesText = "";
+
+        usersSnapshot.forEach(doc => {
+          const user = doc.data();
+          const age = user.age !== undefined ? user.age : (user.birthYear ? new Date().getFullYear() - user.birthYear : null);
+          
+          if (age !== null) {
+            childrenAgesText += `- ${user.displayName || user.email || 'Dítě'}: ${age} let\n`;
+            if (age >= 13) hasTeenagers = true;
+            if (age <= 5) hasToddlers = true;
+          }
+        });
+
+        if (childrenAgesText) {
+          ageRules = `VĚKOVÝ PROFIL DĚTÍ V RODINĚ:\n${childrenAgesText}`;
+          if (hasTeenagers) ageRules += `⚠️ PRAVIDLO PRO TEENAGERY: Dětem je 13 a více let. Zahrň do výběru i akce pro starší (únikové hry, technická muzea, náročnější cyklo traily, VR herny).\n`;
+          if (hasToddlers) ageRules += `⚠️ PRAVIDLO PRO NEJMENŠÍ: V rodině je dítě do 5 let. Výrazně prioritizuj dětská hřiště, interaktivní a bezpečné výstavy s možností houpání nebo prolézaček.\n`;
+        }
+      } catch (err) {
+        console.error("Chyba při načítání věku uživatelů:", err);
+      }
+    }
+
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
     const prompt = `Jsi organizátor rodinných aktivit pro aplikaci Víkendovník. 
 K vyhledání informací POVINNĚ použi Google Search Grounding. Vyhledej AKTUÁLNÍ (pro tento nebo příští víkend) a reálně existující akce v Jihomoravském kraji a okolí (Brno, Vyškov, Olomouc, do cca 1 hodiny cesty autem).
 ${userLocation ? `AKTUÁLNÍ LOKALITA UŽIVATELE: ${userLocation}. Upřednostni akce v blízkosti tohoto místa.` : ""}
 Hledej primárně na portálech: gotobrno.cz, kudyznudy.cz, jizni-morava.cz, mksvyskov.cz, cinestar.cz (Olomouc), cyklo-jizni-morava.cz, mapy.cz (cykloturistická vrstva).
+
+${ageRules}
 
 RODINNÁ PRAVIDLA (Kritické):
 1. Dcera (Emma) NESNÁŠÍ hrady, zámky, zříceniny a nudu z historie. Tyto akce jí vůbec nenabízej!
@@ -305,19 +460,8 @@ RODINNÁ PRAVIDLA (Kritické):
 4. Syn (František) ZBOŽŇUJE hokej a je zarytý fanoušek HC Kometa Brno. Jakékoliv akce spojené s hokejem nebo Kometou jsou pro něj jak dělané!
 5. Táta a syn (případně i ostatní) milují počítačové hry a PlayStation. Herní akce, turnaje, VR herny nebo výstavy počítačů jsou pro ně gigantické plus!
 6. POČASÍ JE KLÍČOVÉ: Zkontroluj předpověď počasí na nadcházející víkend pro Jihomoravský kraj. Pokud má pršet, být zima nebo celkově ošklivo, nabízej POUZE akce pod střechou (kino, herny, výstavy). Pokud má být teplo a slunečno, zařaď venkovní akce.
-7. CYKLO VÝLETY (Jižní Morava Specialista):Táta a syn (František) plánují společný výlet na kolech. Pokud je příznivé počasí (bez deště, mrazu a silného větru), POVINNĚ navrhni přesně jeden cyklovýlet.
-STRATEGICKÁ PRAVIDLA PRO PLÁNOVÁNÍ:
-Cíl: Zážitek "pro_syna" (bezpečné cesty, zajímavé zastávky).
-Typ trasy: Striktně OKRUH (Start = Cíl).
-Lokalizace: Start/Cíl je určen proměnnou ${userLocation} (pokud není k dispozici, použij výchozí bod: 16.9890128, 49.2843878).
-Kvalita cest: Průjezdní body (waypoints) vybírej VÝHRADNĚ na značených cyklotrasách, cyklostezkách nebo silnicích III. třídy s minimálním provozem. Vyhni se dálnicím, silnicím I. třídy a neschůdnému terénu.
-POSTUP GENEROVÁNÍ TRASY:
-Identifikace bodů: Vyhledej reálné cyklistické body zájmu v okolí (např. u Vyškova: Luleč, Rakovecké údolí, Pístovice; u Brna: Mariánské údolí, cyklostezka podél Svratky/Svitavy).
-Validace souřadnic: Pro každý bod urči přesné GPS souřadnice (formát lon,lat). Ujisti se, že bod leží přímo na křížení cest nebo na značené trase.
-Struktura URL: Sestav funkční odkaz pro Mapy.cz:
-Základ: [https://mapy.cz/fnc/v1/route?start=START_LON,START_LAT&end=START_LON,START_LAT&routeType=bike_road](https://mapy.cz/fnc/v1/route?start=START_LON,START_LAT&end=START_LON,START_LAT&routeType=bike_road)
-Průjezdní body: Přidej parametr &waypoints=LON,LAT;LON,LAT... (body musí tvořit logický okruh).
-Důležité: Mezi parametry start, end a waypoints vkládej body tak, aby trasa nebyla jen přímka tam a zpět, ale skutečný okruh.
+7. CYKLO VÝLETY (Jižní Morava Specialista): Táta a syn (František) plánují společný výlet na kolech. POVINNĚ navrhni přesně jeden cyklovýlet s okruhem (Start = Cíl). ${cyclingRouteText ? cyclingRouteText : 'Vymysli zajímavou trasu jako okruh v okolí a vytvoř funkční odkaz na Mapy.cz (ideálně s body zájmu a parametrem rc=lon,lat~lon,lat...).'}
+Pokud máš předvyplněná data přes "NAŠLI JSME REÁLNÁ DATA PRO CYKLO VÝLET", MUSÍŠ JE POUŽÍT a držet se zadání (zejména url mapy.cz a příběh do description).
 POVINNÝ FORMÁT VÝSTUPU (JSON/Pole):
 url: Vygenerovaný odkaz na Mapy.cz.
 cycling_info:
@@ -375,7 +519,7 @@ Vrať VÝHRADNĚ JSON pole s touto strukturou (a žádný jiný text):
 ]
 
 DŮLEŽITÉ — PŘESNOST INFORMACÍ (Kritické):
-- ABSOLUTNÍ ZÁKAZ ODHADOVÁNÍ HLUBOKÝCH URL u běžných akcí. Do pole "url" VŽDY VLOŽ POUZE A PŘESNĚ domovskou (hlavní) URL adresu portálu (např. "https://www.kudyznudy.cz", "https://www.gotobrno.cz"). Výjimkou jsou CYKLO VÝLETY, kde do pole "url" vložíš přesně vygenerovanou URL z Mapy.cz s parametry 'routeType=bike_road' podle postupu výše.
+- ABSOLUTNÍ ZÁKAZ ODHADOVÁNÍ HLUBOKÝCH URL u běžných akcí. Do pole "url" VŽDY VLOŽ POUZE A PŘESNĚ domovskou (hlavní) URL adresu portálu (např. "https://www.kudyznudy.cz", "https://www.gotobrno.cz"). Výjimkou jsou CYKLO VÝLETY, kde do pole "url" vložíš přesně vygenerovanou URL z Mapy.cz, kterou jsme ti poskytli.
 - NEVYMÝŠLEJ SI CENY ani otevírací doby. Pokud tyto informace bezpečně nenajdeš na webu, nastav příslušná pole na null.
 - Pole "ticket_url" vyplň POUZE, pokud 100% víš hlavní adresu e-shopu (např. ticketportal.cz). Jinak null.
 - Všechna pole musí být přítomna v každém objektu (i když jsou null). Pole "is_vyskov" MUSÍ být přítomno.`;

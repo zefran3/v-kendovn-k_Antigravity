@@ -1709,14 +1709,24 @@ export default function App() {
                         <h4 className="font-extrabold text-stone-800 text-lg mb-1 leading-tight">{insp.title}</h4>
                         {insp.location && (
                           <div className="mb-3">
-                            <a 
-                              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(insp.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700 transition-colors font-bold"
-                            >
-                              <MapPin size={12} /> {insp.location}
-                            </a>
+                            {(() => {
+                              const isCycling = (insp.url && insp.url.includes('mapy.cz') && (insp.url.includes('rc=') || insp.url.includes('routeType='))) || 
+                                /cykl|kolo|bike|cycling/i.test(insp.title + ' ' + insp.description);
+                              const navUrl = (isCycling && insp.url && insp.url.includes('mapy.cz')) 
+                                ? insp.url 
+                                : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(insp.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`;
+                              
+                              return (
+                                <a 
+                                  href={navUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700 transition-colors font-bold"
+                                >
+                                  <MapPin size={12} /> {insp.location}
+                                </a>
+                              );
+                            })()}
                           </div>
                         )}
                         <div className="flex flex-wrap gap-1.5 mb-4">
