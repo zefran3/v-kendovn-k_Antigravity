@@ -1,0 +1,47 @@
+    });
+  };
+
+  const handleProposeBikeRoute = async (id: string) => {
+    if (!user) return;
+    try {
+      const response = await fetch(`/api/inspirations/${id}/propose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid })
+      });
+      if (response.ok) {
+        setShowSuccessToast(true);
+        setTimeout(() => setShowSuccessToast(false), 3000);
+      }
+    } catch (err) {
+      console.error("Error proposing bike route:", err);
+    }
+  };
+
+  const handleApproveBikeRoute = async (id: string) => {
+    if (!user) return;
+    try {
+      const response = await fetch(`/api/inspirations/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid })
+      });
+      if (response.ok) {
+        setShowSuccessToast(true);
+        setTimeout(() => setShowSuccessToast(false), 3000);
+      }
+    } catch (err) {
+      console.error("Error approving bike route:", err);
+    }
+  };
+
+  const handleUpdateAvatar = async (avatarValue: string) => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, "users", user.uid), {
+        avatar: avatarValue,
+        email: user.email || "",
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setShowAvatarModal(false);
+    } catch (err: any) {

@@ -33,10 +33,15 @@ import {
   Loader2,
   ArrowUp,
   Trash2,
-  ArrowLeft
+  ArrowLeft,
+  Shield,
+  AlertTriangle,
+  Bike
 } from "lucide-react";
+import AdminPanel from "./components/AdminPanel";
+import BikeRouteGenerator from "./components/BikeRouteGenerator";
 import { cn } from "./lib/utils";
-import { ActivitySuggestion, WeekendEvent, UserProfile, ActivityComment, Inspiration, CinemaListing } from "./types";
+import { ActivitySuggestion, WeekendEvent, UserProfile, UserRole, UserPermissions, ActivityComment, Inspiration, CinemaListing } from "./types";
 import GameHub from "./GameHub";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { cs } from "date-fns/locale";
@@ -53,6 +58,7 @@ import {
   collection, 
   addDoc, 
   updateDoc, 
+  deleteDoc,
   doc, 
   onSnapshot, 
   query, 
@@ -180,7 +186,7 @@ export default function App() {
   });
   const [showArchive, setShowArchive] = useState(false);
   const [archiveTab, setArchiveTab] = useState<"completed" | "cancelled">("completed");
-  const [boardFilter, setBoardFilter] = useState<"all" | "pending" | "approved" | "rejected" | "cancelled">("all");
+  const [boardFilter, setBoardFilter] = useState<"all" | "pending" | "approved" | "rejected" | "cancelled" | "ride" | "bike">("all");
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const [likedSuggestions, setLikedSuggestions] = useState<string[]>(() => {
     const saved = localStorage.getItem('likedSuggestions');
@@ -193,6 +199,7 @@ export default function App() {
   const [selectedLeaderboardUser, setSelectedLeaderboardUser] = useState<string | null>(null);
   const [appealingEvent, setAppealingEvent] = useState<ActivitySuggestion | null>(null);
   const [appealReason, setAppealReason] = useState("");
+  const [isDraftsExpanded, setIsDraftsExpanded] = useState(false);
   const [weather, setWeather] = useState<{ temp: number; icon: string; city: string } | null>(null);
   const [showWeatherModal, setShowWeatherModal] = useState(false);
   const [commentingOn, setCommentingOn] = useState<string | null>(null);
@@ -211,6 +218,12 @@ export default function App() {
   const [approvingEvent, setApprovingEvent] = useState<ActivitySuggestion | null>(null);
   const [approveDate, setApproveDate] = useState("");
   const [approveTime, setApproveTime] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [rejectingActivity, setRejectingActivity] = useState<ActivitySuggestion | null>(null);
+  const [rejectReasonText, setRejectReasonText] = useState("");
+
+  const [loadingStep, setLoadingStep] = useState('');
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState<"rejected" | "cancelled" | null>(null);
@@ -604,8 +617,8 @@ export default function App() {
     const q = query(collection(db, path), orderBy("createdAt", "desc"));
     const unsubscribeSuggestions = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        id: doc.id
       })) as ActivitySuggestion[];
       
       // Řazení tak, aby žádosti o přehodnocení byly vždy jako první a dále dle datumu
@@ -622,8 +635,8 @@ export default function App() {
 
     const unsubscribeInspirations = onSnapshot(query(collection(db, 'inspirations')), (snapshot) => {
       const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        id: doc.id
       })) as Inspiration[];
       setInspirations(data);
     });
@@ -635,30 +648,85 @@ export default function App() {
     };
   }, [user]);
 
-  const handleGenerateInspirations = async () => {
+  const handleGenerateInspirations = () => {
     setIsGeneratingInspiration(true);
+    setLoadingStep('Inicializuji generování...');
+    const location = weather?.city ? `location=${encodeURIComponent(weather.city)}` : '';
+    const uidParam = user?.uid ? `&uid=${user.uid}` : '';
+    const es = new EventSource(`/api/agent/generate/stream?${location}${uidParam}`);
+    es.addEventListener('status', (e: MessageEvent) => {
+      try {
+        const { message } = JSON.parse(e.data);
+        setLoadingStep(message);
+      } catch { /* ignore */ }
+    });
+    es.addEventListener('done', (e: MessageEvent) => {
+      es.close();
+      setShowSuccessToast(true);
+      setTimeout(() => setShowSuccessToast(false), 3000);
+      setIsGeneratingInspiration(false);
+      setLoadingStep('');
+    });
+    es.addEventListener('error', () => {
+      es.close();
+      setError('Chyba při generování tipů.');
+      setIsGeneratingInspiration(false);
+      setLoadingStep('');
+    });
+  };
+
+
+
+  const handleProposeBikeRoute = (id: string) => {
+    const draft = suggestions.find(s => s.id === id) || inspirations.find(i => i.id === id);
+    if (!draft) return;
+    
+    setFormType("activity");
+    setNewSuggestion({
+      title: draft.title,
+      description: draft.description,
+      childName: (draft as any).childName || getLoggedInFamilyName() || "",
+      customChildName: "",
+      eventDate: (draft as any).eventDate || "",
+      eventTime: (draft as any).eventTime || "",
+      location: draft.location || "",
+      url: draft.url || "",
+      rideFrom: "",
+      rideTo: ""
+    });
+    setEditingId(id);
+    setShowForm(true);
+  };
+
+  const handleApproveBikeRoute = async (id: string) => {
+    if (!user) return;
     try {
-      const res = await fetch('/api/agent/generate', { 
+      const response = await fetch(`/api/inspirations/${id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ location: weather?.city })
+        body: JSON.stringify({ uid: user.uid })
       });
-      
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => null);
-        const errorMsg = errorData?.error || "";
-        
-        if (errorMsg.includes("503") || errorMsg.includes("high demand")) {
-          throw new Error("AI servery jsou přetížené. Zkuste to za pár minut.");
-        }
-        throw new Error("Nepodařilo se spojit s AI agentem. Zkuste to později.");
+      if (response.ok) {
+        setShowSuccessToast(true);
+        setTimeout(() => setShowSuccessToast(false), 3000);
       }
-      setSuccess("Nové tipy byly úspěšně vygenerovány!");
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Chyba při generování tipů.");
-    } finally {
-      setIsGeneratingInspiration(false);
+    } catch (err) { console.error(err); }
+  };
+
+  const handleDeleteInspiration = async (id: string) => {
+    if (!user) return;
+    if (!window.confirm("Opravdu chcete tento návrh smazat?")) return;
+    
+    try {
+      await deleteDoc(doc(db, 'suggestions', id));
+      // Okamžitý update UI pro lepší pocit z aplikace
+      setSuggestions(prev => prev.filter(s => s.id !== id));
+      setInspirations(prev => prev.filter(i => i.id !== id));
+      setShowSuccessToast(true);
+      setTimeout(() => setShowSuccessToast(false), 3000);
+    } catch (err) {
+      console.error("Failed to delete inspiration", err);
+      setError("Nepodařilo se smazat návrh.");
     }
   };
 
@@ -823,21 +891,41 @@ export default function App() {
         return;
       }
 
-      await addDoc(collection(db, path), {
-        title: formType === "ride" ? `Odvoz: ${newSuggestion.rideFrom} ➡️ ${newSuggestion.rideTo}` : newSuggestion.title,
-        description: formType === "ride" ? `Potřebuji odvézt.\nOdkud: ${newSuggestion.rideFrom}\nKam: ${newSuggestion.rideTo}` : newSuggestion.description,
-        childName: finalChildName,
-        authorId: user.uid,
-        eventDate: newSuggestion.eventDate || "",
-        eventTime: newSuggestion.eventTime || "",
-        location: newSuggestion.location || "",
-        status: "pending",
-        type: formType,
-        ...(formType === "ride" ? { rideFrom: newSuggestion.rideFrom || "", rideTo: newSuggestion.rideTo || "" } : {}),
-        ...(newSuggestion.url ? { url: newSuggestion.url } : {}),
-        likes: 0,
-        createdAt: serverTimestamp()
-      });
+      if (editingId) {
+        // Aktualizace stávajícího draftu na pending návrh
+        await updateDoc(doc(db, 'suggestions', editingId), {
+          title: formType === "ride" ? `Odvoz: ${newSuggestion.rideFrom} ➡️ ${newSuggestion.rideTo}` : newSuggestion.title,
+          description: formType === "ride" ? `Potřebuji odvézt.\nOdkud: ${newSuggestion.rideFrom}\nKam: ${newSuggestion.rideTo}` : newSuggestion.description,
+          childName: finalChildName,
+          eventDate: newSuggestion.eventDate || "",
+          eventTime: newSuggestion.eventTime || "",
+          location: newSuggestion.location || "",
+          status: "pending",
+          type: formType,
+          proposedAt: serverTimestamp(),
+          proposedBy: user.uid,
+          ...(formType === "ride" ? { rideFrom: newSuggestion.rideFrom || "", rideTo: newSuggestion.rideTo || "" } : {}),
+          ...(newSuggestion.url ? { url: newSuggestion.url } : {}),
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        // Vytvoření nového návrhu
+        await addDoc(collection(db, path), {
+          title: formType === "ride" ? `Odvoz: ${newSuggestion.rideFrom} ➡️ ${newSuggestion.rideTo}` : newSuggestion.title,
+          description: formType === "ride" ? `Potřebuji odvézt.\nOdkud: ${newSuggestion.rideFrom}\nKam: ${newSuggestion.rideTo}` : newSuggestion.description,
+          childName: finalChildName,
+          authorId: user.uid,
+          eventDate: newSuggestion.eventDate || "",
+          eventTime: newSuggestion.eventTime || "",
+          location: newSuggestion.location || "",
+          status: "pending",
+          type: formType,
+          ...(formType === "ride" ? { rideFrom: newSuggestion.rideFrom || "", rideTo: newSuggestion.rideTo || "" } : {}),
+          ...(newSuggestion.url ? { url: newSuggestion.url } : {}),
+          likes: 0,
+          createdAt: serverTimestamp()
+        });
+      }
       handleCloseForm();
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
@@ -847,6 +935,7 @@ export default function App() {
   const handleCloseForm = () => {
     setShowForm(false);
     setFormType("activity");
+    setEditingId(null);
     setNewSuggestion({ title: "", description: "", eventDate: "", eventTime: "", location: "", url: "", childName: "", customChildName: "", rideFrom: "", rideTo: "" });
     setError(null);
   };
@@ -948,7 +1037,7 @@ export default function App() {
     setShowForm(true);
   };
 
-  const handleUpdateStatus = async (id: string, status: "approved" | "rejected", overrideDate?: string, overrideTime?: string) => {
+  const handleUpdateStatus = async (id: string, status: "approved" | "rejected", overrideDate?: string, overrideTime?: string, reason?: string) => {
     // Ověření kalendáře vynucujeme jen pro Schválení, Zamítnout můžeme kdykoliv
     if (status === "approved" && !googleTokens) {
       setError("Než schválíte aktivitu, musíte se propojit s Google Kalendářem (modré tlačítko výše).");
@@ -1098,6 +1187,10 @@ export default function App() {
       // Můžeme aktivitu finálně schválit a aktualizovat data.
       const updateData: any = { status };
       
+      if (status === "rejected" && reason) {
+        updateData.rejectReason = reason;
+      }
+      
       if (status === "approved" && (overrideDate !== undefined || overrideTime !== undefined)) {
         if (overrideDate !== undefined) updateData.eventDate = overrideDate;
         if (overrideTime !== undefined) updateData.eventTime = overrideTime;
@@ -1117,8 +1210,6 @@ export default function App() {
       if (status === "approved" && googleTokens) {
         fetchCalendarEvents(googleTokens);
       }
-
-
     } catch (err: any) {
       console.error("Update failed", err);
       if (err instanceof Error && err.message.includes("permission")) {
@@ -1126,6 +1217,17 @@ export default function App() {
       } else {
         handleFirestoreError(err, OperationType.WRITE, path);
       }
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectingActivity || !rejectReasonText.trim()) return;
+    try {
+      await handleUpdateStatus(rejectingActivity.id, "rejected", undefined, undefined, rejectReasonText.trim());
+      setRejectingActivity(null);
+      setRejectReasonText("");
+    } catch (err) {
+      console.error("Rejection failed", err);
     }
   };
 
@@ -1459,7 +1561,7 @@ export default function App() {
           )}
         </AnimatePresence>
         
-        <aside className="flex flex-col gap-5 landscape:sticky md:sticky landscape:top-[70px] md:top-[80px] landscape:h-fit md:h-fit landscape:max-h-[calc(100vh-90px)] md:max-h-[calc(100vh-100px)] overflow-y-auto scrollbar-hide landscape:pb-4 md:pb-4 -mx-2 px-2 md:mx-0 md:px-0">
+        <aside className="flex flex-col gap-5 landscape:sticky md:sticky landscape:top-[70px] md:top-[80px] landscape:h-fit md:h-fit landscape:max-h-[calc(100vh-90px)] md:max-h-[calc(100vh-100px)] overflow-y-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden landscape:pb-4 md:pb-4 -mx-2 px-2 md:mx-0 md:px-0">
           {/* Welcome Section */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -1487,11 +1589,11 @@ export default function App() {
               <div className="flex flex-col gap-3">
                 <button
                   onClick={() => setShowUserManagement(true)}
-                  className="px-4 py-2.5 rounded-xl bg-stone-800 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-stone-900 transition-colors shadow-sm"
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-lg hover:-translate-y-0.5"
                 >
-                  <User size={16} /> Správa uživatelů
+                  <Shield size={16} /> 🛡️ Admin HUB
                 </button>
-                {userProfiles[user?.uid || '']?.role !== 'viewer' && (
+                {(userProfiles[user?.uid || '']?.role === 'admin' || userProfiles[user?.uid || '']?.role === 'parent') && (
                   <button
                     onClick={() => { 
                       if (showInspirationsView) { 
@@ -1584,7 +1686,23 @@ export default function App() {
             </button>
           </motion.div>
 
-          {/* Leaderboard Section */}
+          {/* === GENERÁTOR CYKLOTRAS — dostupný všem přihlášeným uživatelům === */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+          >
+            <BikeRouteGenerator
+              userCity={weather?.city}
+              userId={user?.uid}
+              authorName={getLoggedInFamilyName() || user?.displayName || user?.email || 'Uživatel'}
+              onGenerated={() => {
+                // Přepnout na Nástěnku, kde se zobrazí nové "pískoviště" s návrhy
+                setShowInspirationsView(false);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            />
+          </motion.div>
           {leaderboard.length > 0 && (
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
@@ -1685,6 +1803,15 @@ export default function App() {
                   {inspirations
                     .filter(insp => {
                       if (showVyskovOnly && !insp.is_vyskov) return false;
+                      // Draft trasy jsou soukromé — vidí je pouze jejich autor
+                      if ((insp as any).status === 'draft') {
+                        return (insp as any).userId === user?.uid;
+                      }
+                      // Proposed trasy (čekají na schválení) — vidí autor + admini/parent
+                      if ((insp as any).status === 'proposed') {
+                        return (insp as any).userId === user?.uid || view === 'parent';
+                      }
+                      // Schválené trasy — standardní filtrování dle cíle
                       if (view === "parent") return true;
                       const userEmail = user?.email?.toLowerCase();
                       if (userEmail === "emasterba@gmail.com") return insp.target === "pro_dceru" || insp.target === "pro_vsechny";
@@ -1694,6 +1821,22 @@ export default function App() {
                     .map(insp => (
                     <div id={`insp-${insp.id}`} key={insp.id} className="break-inside-avoid inline-block w-full mb-5 bg-white p-6 rounded-2xl shadow-sm border border-indigo-50 flex flex-col justify-between hover:shadow-md transition-shadow">
                       <div>
+                        {/* Badge pro draft/proposed cyklotrasy */}
+                        {(insp as any).status === 'draft' && (
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-[10px] font-black bg-amber-50 text-amber-600 border border-amber-200 px-2.5 py-1 rounded-full uppercase tracking-wide flex items-center gap-1">
+                              🔒 Moje soukromá trasa
+                            </span>
+                            <span className="text-[10px] text-stone-400">Viditelná jen tobě</span>
+                          </div>
+                        )}
+                        {(insp as any).status === 'proposed' && (
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-[10px] font-black bg-indigo-50 text-indigo-600 border border-indigo-200 px-2.5 py-1 rounded-full uppercase tracking-wide flex items-center gap-1">
+                              ⏳ Čeká na schválení
+                            </span>
+                          </div>
+                        )}
                         {view === "parent" && (
                           <div className="flex justify-between items-start mb-4">
                             <span className={cn(
@@ -1831,6 +1974,12 @@ export default function App() {
                                       <span className="text-xs font-extrabold text-indigo-600">{insp.cycling_info.duration}</span>
                                     </div>
                                   </div>
+                                  {insp.cycling_info.difficulty && (
+                                    <div className="flex items-center gap-1.5 pt-1 border-t border-indigo-100 mt-1">
+                                      <span className="text-[10px] text-stone-400 font-bold uppercase">Obtížnost:</span>
+                                      <span className="text-[11px] font-extrabold text-emerald-600">{insp.cycling_info.difficulty}</span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
 
@@ -1898,6 +2047,28 @@ export default function App() {
                                   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(cleanLoc)}&travelmode=bicycling`;
                                 };
                                 
+                                if (insp.status === 'draft') {
+                                  return (
+                                    <button 
+                                      onClick={() => handleProposeBikeRoute(insp.id)}
+                                      className="mt-4 w-full py-3 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 transition-colors shadow-sm flex items-center justify-center gap-2 text-xs"
+                                    >
+                                      🚀 Navrhnout rodině
+                                    </button>
+                                  );
+                                }
+
+                                if (insp.status === 'proposed' && userProfiles[user?.uid || '']?.role === 'parent') {
+                                  return (
+                                    <button 
+                                      onClick={() => handleApproveBikeRoute(insp.id)}
+                                      className="mt-4 w-full py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-colors shadow-sm flex items-center justify-center gap-2 text-xs"
+                                    >
+                                      ✅ Schválit pro všechny
+                                    </button>
+                                  );
+                                }
+
                                 if (userProfiles[user?.uid || '']?.role === 'child') return null;
 
                                 return (
@@ -2024,7 +2195,8 @@ export default function App() {
                           { id: "approved", label: "Schválené" },
                           { id: "rejected", label: "Zamítnuté" },
                           { id: "cancelled", label: "Zrušené" },
-                          { id: "ride", label: "🚗 Odvoz" }
+                          { id: "ride", label: "🚗 Odvoz" },
+                          { id: "bike", label: "🚴 Cyklotrasy" }
                         ]
                     ).map(f => (
                       <button
@@ -2089,8 +2261,132 @@ export default function App() {
                       {isDeleteMode ? <ArrowLeft size={16} /> : <Trash2 size={16} />}
                     </button>
                   )}
-                </div>
               </div>
+            </div>
+
+            {/* Moje rozpracované cyklotrasy (Návrhy) — dostupné jen autorovi */}
+            {suggestions.some(insp => (insp as any).status === 'draft' && (insp as any).authorId === user?.uid) && (
+              <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-orange-50 overflow-hidden shadow-sm mb-10">
+                {/* Hlavička — kliknutím rozbalí/sbalí */}
+                <button
+                  onClick={() => setIsDraftsExpanded(v => !v)}
+                  className="w-full flex items-center justify-between p-4 text-left group cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-sm">
+                      <Bike className="text-white" size={20} />
+                    </div>
+                    <div>
+                      <div className="font-bold text-stone-800 text-sm leading-tight">Moje rozpracované cyklotrasy (Návrhy)</div>
+                      <div className="text-[11px] text-amber-600 font-semibold">Viditelné jen pro tebe</div>
+                    </div>
+                  </div>
+                  <ChevronRight
+                    size={18}
+                    className={cn(
+                      "text-stone-400 transition-transform duration-200",
+                      isDraftsExpanded && "rotate-90"
+                    )}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isDraftsExpanded && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.22 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="px-4 pb-5 flex flex-col gap-5">
+                        <div className="border-t border-amber-100" />
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                          {suggestions
+                            .filter(insp => (insp as any).status === 'draft' && (insp as any).authorId === user?.uid)
+                            .map(insp => (
+                              <motion.div 
+                                key={insp.id}
+                                layout
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="bg-white border-2 border-amber-200/50 p-6 rounded-[24px] shadow-sm relative group overflow-hidden hover:shadow-xl hover:shadow-amber-500/5 transition-all duration-300"
+                              >
+                                {/* Background decoration */}
+                                <div className="absolute -top-6 -right-6 p-4 opacity-[0.04] pointer-events-none rotate-12 group-hover:rotate-0 transition-transform duration-700">
+                                   <Bike size={140} />
+                                </div>
+
+                                <div className="flex justify-between items-start mb-3 relative z-10">
+                                  <div className="flex flex-col gap-1 items-start">
+                                    <h4 className="font-black text-stone-800 text-lg leading-tight group-hover:text-amber-600 transition-colors">{insp.title}</h4>
+                                    <div className="flex gap-2">
+                                      {(insp as any).routeType === 'random' ? (
+                                        <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-lg font-bold border border-amber-200">🎲 Náhodný tip</span>
+                                      ) : (
+                                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-bold border border-emerald-200">🎯 Trasa na míru</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <p className="text-sm text-stone-500 mb-5 line-clamp-2 italic leading-relaxed">
+                                  {insp.description}
+                                </p>
+
+                                {insp.cycling_info && (
+                                  <div className="grid grid-cols-3 gap-3 bg-stone-50/80 backdrop-blur-sm p-4 rounded-2xl border border-stone-100 mb-5">
+                                    <div className="flex flex-col">
+                                      <span className="text-[9px] text-stone-400 font-black uppercase tracking-tighter">Vzdálenost</span>
+                                      <span className="text-xs font-black text-amber-600">{(insp as any).actualDistance ? `${(insp as any).actualDistance} km` : insp.cycling_info.distance}</span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                      <span className="text-[9px] text-stone-400 font-black uppercase tracking-tighter">Převýšení</span>
+                                      <span className="text-xs font-black text-amber-600">{insp.cycling_info.elevation}</span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                      <span className="text-[9px] text-stone-400 font-black uppercase tracking-tighter">Obtížnost</span>
+                                      <span className="text-xs font-black text-emerald-600">{insp.cycling_info.difficulty || 'Střední'}</span>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="flex flex-col gap-2.5 relative z-10">
+                                  <button 
+                                    onClick={() => handleProposeBikeRoute(insp.id)}
+                                    className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white rounded-xl font-bold text-xs shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2 group/btn active:scale-95 cursor-pointer"
+                                  >
+                                    <Sparkles size={14} className="group-hover/btn:animate-pulse" />
+                                    Navrhnout jako rodinnou aktivitu
+                                  </button>
+                                  <div className="flex gap-2.5">
+                                    <a 
+                                      href={insp.url} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="flex-1 py-3 bg-white border border-stone-200 hover:border-amber-200 hover:bg-amber-50 text-stone-600 hover:text-amber-700 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-sm"
+                                    >
+                                      <MapPin size={14} /> Mapa
+                                    </a>
+                                    <button 
+                                      onClick={() => handleDeleteInspiration(insp.id)}
+                                      className="px-4 py-3 bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-xl font-bold text-xs transition-all flex items-center justify-center border border-rose-100 shadow-sm active:scale-90 cursor-pointer"
+                                      title="Smazat návrh"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            ))}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
 
           <div className="columns-1 md:columns-2 gap-4">
             <AnimatePresence mode="popLayout">
@@ -2107,6 +2403,15 @@ export default function App() {
                     }
                     if (boardFilter === "all") return true;
                     if (boardFilter === "ride") return suggestion.type === "ride";
+                    if (boardFilter === "bike") {
+                      const isBikeRoute = suggestion.cycling_info !== undefined || 
+                        (suggestion.url && suggestion.url.includes("mapy.cz")) ||
+                        /cykl|kolo|bike|cycling/i.test(suggestion.title + " " + suggestion.description);
+                      const isApprovedOrPending = suggestion.status === "approved" || 
+                        suggestion.status === "pending" || 
+                        suggestion.reconsiderationRequested;
+                      return isApprovedOrPending && isBikeRoute;
+                    }
                     if (boardFilter === "pending") return suggestion.status === "pending" || suggestion.reconsiderationRequested;
                     return suggestion.status === boardFilter;
                   })
@@ -2392,7 +2697,10 @@ export default function App() {
                               Schválit
                             </button>
                             <button 
-                              onClick={() => handleUpdateStatus(suggestion.id, "rejected")}
+                              onClick={() => {
+                                setRejectingActivity(suggestion);
+                                setRejectReasonText("");
+                              }}
                               className="px-4 py-2.5 rounded-xl bg-red-500 text-white font-bold text-xs hover:opacity-90 transition-opacity flex-1"
                             >
                               Zamítnout
@@ -2690,6 +2998,61 @@ export default function App() {
                   className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-red-600 transition-colors"
                 >
                   Zrušit událost
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Reject Reason Modal */}
+      <AnimatePresence>
+        {rejectingActivity && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setRejectingActivity(null)}
+              className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[80] pointer-events-auto"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20, x: "-50%" }}
+              animate={{ opacity: 1, scale: 1, y: "-50%", x: "-50%" }}
+              exit={{ opacity: 0, scale: 0.95, y: 20, x: "-50%" }}
+              className="fixed top-1/2 left-1/2 w-full max-w-sm bg-white rounded-[24px] shadow-2xl p-6 z-[90] pointer-events-auto flex flex-col gap-4"
+            >
+              <div className="flex justify-between items-center mb-2">
+                <h2 className="text-xl font-bold flex items-center gap-2">❌ Zamítnout aktivitu</h2>
+                <button onClick={() => setRejectingActivity(null)} className="p-2 bg-stone-50 hover:bg-stone-100 rounded-full transition-colors">
+                  <X size={20} className="text-stone-500" />
+                </button>
+              </div>
+              <p className="text-sm text-stone-600">
+                Uveďte prosím důvod zamítnutí pro aktivitu <strong>{rejectingActivity.title}</strong>, aby ostatní věděli, proč se nekoná.
+              </p>
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Důvod zamítnutí</label>
+                <textarea 
+                  value={rejectReasonText}
+                  onChange={e => setRejectReasonText(e.target.value)}
+                  placeholder="Např. Už tam tento víkend nemají volno..."
+                  className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-red-500 outline-none transition-all h-24 resize-none text-sm"
+                />
+              </div>
+              <div className="flex gap-3 mt-2">
+                <button 
+                  onClick={() => setRejectingActivity(null)}
+                  className="flex-1 py-3 text-stone-500 bg-stone-100 rounded-xl font-bold text-sm hover:bg-stone-200 transition-colors"
+                >
+                  Zpět
+                </button>
+                <button 
+                  disabled={!rejectReasonText.trim()}
+                  onClick={handleConfirmReject}
+                  className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Zamítnout
                 </button>
               </div>
             </motion.div>
@@ -3235,138 +3598,18 @@ export default function App() {
       </AnimatePresence>
       <input type="file" ref={commentFileInputRef} style={{ display: 'none' }} accept="image/*" onChange={handleCommentPhotoChange} />
 
-      {/* User Management Modal */}
       <AnimatePresence>
         {showUserManagement && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowUserManagement(false)}
-              className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] transition-opacity"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-2xl bg-white rounded-[24px] p-6 shadow-2xl z-[70] flex flex-col gap-6 border-2 border-stone-100 max-h-[85vh]"
-            >
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-extrabold text-stone-800 tracking-tight flex items-center gap-2">
-                  <span>👥</span> Správa uživatelů a práv
-                </h2>
-                <button onClick={() => setShowUserManagement(false)} className="text-stone-400 hover:text-stone-600 bg-stone-100 p-2 rounded-full cursor-pointer">
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="overflow-y-auto pr-1">
-                <div className="w-full text-left">
-                  <div className="grid grid-cols-[1fr_100px_180px] gap-4 border-b border-stone-100 pb-3 px-3 text-[11px] uppercase tracking-wider text-stone-400 font-bold">
-                    <div>Uživatel</div>
-                    <div className="text-center">Role</div>
-                    <div>Oprávnění</div>
-                  </div>
-                  <div className="flex flex-col mt-2 gap-1.5">
-                    {Object.values(userProfiles).map((profile) => (
-                      <div key={profile.id} className={cn(
-                        "grid gap-4 items-center px-3 py-3 transition-colors",
-                        profile.isBlocked 
-                          ? "grid-cols-[1fr_auto] bg-stone-100 rounded-2xl border border-stone-200 grayscale-[0.2]" 
-                          : "grid-cols-[1fr_100px_180px] border-b border-stone-50 hover:bg-stone-50"
-                      )}>
-                        <div>
-                          <div className="flex items-center gap-3">
-                            <div className={cn("w-8 h-8 rounded-full overflow-hidden bg-white flex items-center justify-center flex-shrink-0", profile.isBlocked ? "border-stone-300 opacity-70" : "border border-stone-200")}>
-                              {profile.avatar?.startsWith('http') || profile.avatar?.startsWith('data:') ? (
-                                <img src={profile.avatar} className="w-full h-full object-cover" />
-                              ) : (
-                                <span className="text-base leading-none">{profile.avatar || "👤"}</span>
-                              )}
-                            </div>
-                            <div className="flex flex-col">
-                              <input 
-                                type="text"
-                                defaultValue={profile.adminAlias || profile.displayName || profile.email?.split('@')[0]}
-                                onBlur={(e) => {
-                                  if (e.target.value !== (profile.adminAlias || profile.displayName || profile.email?.split('@')[0])) {
-                                    updateUserAdminAlias(profile.id!, e.target.value);
-                                  }
-                                }}
-                                className={cn("font-bold text-sm bg-transparent border-b border-transparent focus:outline-none transition-colors w-full", profile.isBlocked ? "text-stone-500" : "text-stone-700 hover:border-stone-300 focus:border-indigo-400")}
-                                title="Soukromé jméno pro admina"
-                                disabled={profile.isBlocked}
-                              />
-                              <span className="text-[10px] text-stone-400">{profile.email}</span>
-                            </div>
-                            {!profile.isBlocked && profile.id !== user?.uid && (
-                              <button
-                                onClick={() => toggleUserBlocked(profile.id!, false)}
-                                className="ml-auto p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors flex-shrink-0"
-                                title="Zablokovat uživatele"
-                              >
-                                <X size={18} strokeWidth={3} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        {profile.isBlocked ? (
-                          <div className="text-right">
-                            <button
-                              onClick={() => toggleUserBlocked(profile.id!, true)}
-                              className="px-5 py-2 bg-stone-600 text-white font-bold rounded-xl hover:bg-stone-700 transition-colors text-xs shadow-sm"
-                            >
-                              Odblokovat
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="text-center">
-                              <select 
-                                value={profile.role || 'viewer'} 
-                                onChange={(e) => updateUserRole(profile.id!, e.target.value as UserRole)}
-                                className="text-xs font-bold bg-stone-100 border-none rounded-xl px-2 py-2 focus:ring-2 focus:ring-rose-200 outline-none cursor-pointer w-full"
-                              >
-                                <option value="admin">Admin</option>
-                                <option value="parent">Rodič</option>
-                                <option value="child">Dítě</option>
-                                <option value="viewer">Divák</option>
-                              </select>
-                            </div>
-                            <div>
-                              <div className="flex flex-wrap gap-1.5">
-                                {profile.role === 'admin' && (
-                                  <span className="text-[9px] font-bold px-2 py-1 rounded bg-stone-100 text-stone-600 border border-stone-200 uppercase tracking-tighter">Administrátor</span>
-                                )}
-                                {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canSuggest && (
-                                  <span className="text-[9px] font-bold px-2 py-1 rounded bg-blue-50 text-blue-500 border border-blue-100">Navrhuje</span>
-                                )}
-                                {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canComment && (
-                                  <span className="text-[9px] font-bold px-2 py-1 rounded bg-emerald-50 text-emerald-500 border border-emerald-100">Komentuje</span>
-                                )}
-                                {(profile.permissions || ROLE_DEFAULTS[profile.role || 'viewer']).canApprove && (
-                                  <span className="text-[9px] font-bold px-2 py-1 rounded bg-rose-50 text-rose-500 border border-rose-100">Schvaluje</span>
-                                )}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3 items-start">
-                <AlertCircle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                <div className="text-xs text-amber-800 leading-relaxed">
-                  <strong>Tip:</strong> Role automaticky nastavují balíček oprávnění. 
-                  Admin může spravovat uživatele, Rodič schvalovat výlety, Dítě jen navrhovat a Divák pouze sledovat dění.
-                </div>
-              </div>
-            </motion.div>
-          </>
+          <AdminPanel 
+            onClose={() => setShowUserManagement(false)}
+            userProfiles={userProfiles}
+            updateUserRole={updateUserRole}
+            updateUserAdminAlias={updateUserAdminAlias}
+            toggleUserBlocked={toggleUserBlocked}
+            handleGenerateInspirations={handleGenerateInspirations}
+            isGeneratingInspiration={isGeneratingInspiration}
+            handleApproveBikeRoute={handleApproveBikeRoute}
+          />
         )}
       </AnimatePresence>
 
@@ -3499,6 +3742,38 @@ export default function App() {
             onClose={() => setShowGameHub(false)}
             getAvatarForChild={getAvatarForChild}
           />
+        )}
+      </AnimatePresence>
+
+      {/* SSE Status Pill */}
+      <AnimatePresence>
+        {loadingStep && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-stone-900/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10"
+          >
+            <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+            <span className="text-sm font-bold tracking-tight">{loadingStep}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Toast */}
+      <AnimatePresence>
+        {showSuccessToast && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, x: '-50%' }}
+            animate={{ opacity: 1, scale: 1, x: '-50%' }}
+            exit={{ opacity: 0, scale: 0.9, x: '-50%' }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-emerald-500 text-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 border border-emerald-400/20"
+          >
+            <div className="bg-white/20 p-1 rounded-full">
+              <Check size={18} strokeWidth={3} />
+            </div>
+            <span className="font-bold">Hotovo!</span>
+          </motion.div>
         )}
       </AnimatePresence>
 

@@ -1,0 +1,67 @@
+  const handleGenerateInspirations = () => {
+    setIsGeneratingInspiration(true);
+    setLoadingStep('Inicializuji generování...');
+
+    const location = weather?.city ? `?location=${encodeURIComponent(weather.city)}` : '';
+    const es = new EventSource(`/api/agent/generate/stream${location}`);
+
+    es.addEventListener('status', (e: MessageEvent) => {
+      try {
+        const { message } = JSON.parse(e.data);
+        setLoadingStep(message);
+      } catch { /* ignoruj malé chyby parsování */ }
+    });
+
+    es.addEventListener('done', (e: MessageEvent) => {
+      es.close();
+      try {
+        const data = JSON.parse(e.data);
+        if (data.isFallback) {
+          setAiResetTime(data.resetTime || null);
+        } else {
+          setAiResetTime(null);
+          setShowSuccessToast(true);
+          setTimeout(() => setShowSuccessToast(false), 3000);
+        }
+      } catch { /* ignoruj */ }
+      setIsGeneratingInspiration(false);
+      setLoadingStep('');
+    });
+
+    es.addEventListener('error', (_e: Event) => {
+      es.close();
+      setError('Chyba při generování tipů. Zkuste to znovu.');
+      setIsGeneratingInspiration(false);
+      setLoadingStep('');
+    });
+  };
+
+  const handleGenerateBikeRoute = () => {
+    setIsGeneratingBike(true);
+    setLoadingStep('Příprava cyklovýletu...');
+
+    const location = weather?.city ? `?location=${encodeURIComponent(weather.city)}` : '';
+    const es = new EventSource(`/api/agent/generate-bike/stream${location}`);
+
+    es.addEventListener('status', (e: MessageEvent) => {
+      try {
+        const { message } = JSON.parse(e.data);
+        setLoadingStep(message);
+      } catch { /* ignoruj */ }
+    });
+
+    es.addEventListener('done', (e: MessageEvent) => {
+      es.close();
+      setShowSuccessToast(true);
+      setTimeout(() => setShowSuccessToast(false), 3000);
+      setIsGeneratingBike(false);
+      setLoadingStep('');
+    });
+
+    es.addEventListener('error', (_e: Event) => {
+      es.close();
+      setError('Chyba při generování cyklotrasy.');
+      setIsGeneratingBike(false);
+      setLoadingStep('');
+    });
+  };

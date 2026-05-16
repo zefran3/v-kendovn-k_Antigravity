@@ -1,0 +1,23 @@
+                                if (insp.status === 'draft') {
+                                  return (
+                                    <button 
+                                      onClick={() => handleProposeBikeRoute(insp.id)}
+                                      className="mt-4 w-full py-3 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 transition-colors shadow-sm flex items-center justify-center gap-2 text-xs"
+                                    >
+                                      🚀 Navrhnout rodině
+                                    </button>
+                                  );
+                                }
+
+                                if (insp.status === 'proposed' && userProfiles[user?.uid || '']?.role === 'parent') {
+                                  return (
+                                    <button 
+                                      onClick={() => handleApproveBikeRoute(insp.id)}
+                                      className="mt-4 w-full py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-colors shadow-sm flex items-center justify-center gap-2 text-xs"
+                                    >
+                                      ✅ Schválit pro všechny
+                                    </button>
+                                  );
+                                }
+
+                                if (userProfiles[user?.uid || '']?.role === 'child') return null;

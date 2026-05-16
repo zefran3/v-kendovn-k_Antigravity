@@ -68,6 +68,21 @@ export interface CinemaListing {
   url?: string;
 }
 
+// Agregovaný formát pro CineStar scraper (1 záznam = 1 film + všechny časy)
+export interface CineStarListing {
+  film_title: string;
+  showtimes: string;   // např. "14:00, 16:30, 20:15"
+  url?: string;
+}
+
+export interface CineStarEvent {
+  title: string;
+  location: string;
+  source_url: string;
+  cinema_listings: CineStarListing[];
+  date: string;       // YYYY-MM-DD
+}
+
 export interface Inspiration {
   id: string;
   title: string;
@@ -83,7 +98,10 @@ export interface Inspiration {
   url?: string;
   indoor?: boolean;
   age_recommendation?: string;
-  cinema_listings?: CinemaListing[];
+  // cinema_listings podporuje obě varianty:
+  // - CinemaListing: { film, time } — starší formát (AI halucinované názvy)
+  // - CineStarListing: { film_title, showtimes } — nový agregovaný formát ze scraperů
+  cinema_listings?: (CinemaListing | CineStarListing)[];
   ticket_url?: string;
   cycling_info?: {
     distance: string;
@@ -91,6 +109,8 @@ export interface Inspiration {
     duration: string;
   };
   is_vyskov?: boolean;
+  userId?: string; // ID uživatele, který tip vygeneroval (pro drafty)
+  status?: 'draft' | 'proposed' | 'approved' | 'confirmed';
   createdAt?: any;
 }
 

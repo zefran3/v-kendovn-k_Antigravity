@@ -107,6 +107,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /admin_logs/{logId} {
+      // Pouze admini mohou číst logy z aplikace
+      allow read: if isAdmin();
+      // Zápis dělá pouze náš backend
+      allow write: if false;
+    }
+
     match /wishlists/{wishId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
