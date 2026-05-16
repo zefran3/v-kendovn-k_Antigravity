@@ -39,7 +39,7 @@ export default function AdminPanel({
   const [logs, setLogs] = useState<AdminLog[]>([]);
 
   useEffect(() => {
-    const q = query(collection(db, 'admin_logs'), orderBy('timestamp', 'desc'), limit(50));
+    const q = query(collection(db, 'admin_logs'), orderBy('timestamp', 'desc'), limit(15));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -79,7 +79,7 @@ export default function AdminPanel({
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-4xl bg-white rounded-[24px] p-6 shadow-2xl z-[70] flex flex-col gap-6 border-2 border-stone-100 max-h-[85vh]"
+        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-2xl h-[600px] bg-white rounded-[24px] p-6 shadow-2xl z-[70] flex flex-col gap-4 border-2 border-stone-100"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-extrabold text-stone-800 tracking-tight flex items-center gap-2">
@@ -111,7 +111,7 @@ export default function AdminPanel({
           </button>
         </div>
 
-        <div className="overflow-y-auto pr-1 flex-1 min-h-[300px]">
+        <div className="flex-1 overflow-y-auto px-2 min-h-[300px] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {activeTab === "logs" && (
             <div className="flex flex-col gap-2">
               {(logs || []).length === 0 ? (
@@ -175,89 +175,103 @@ export default function AdminPanel({
 
           {activeTab === "users" && (
             <div className="w-full text-left">
-              <div className="grid grid-cols-[1fr_100px_180px] gap-4 border-b border-stone-100 pb-3 px-3 text-[11px] uppercase tracking-wider text-stone-400 font-bold">
+              <div className="hidden md:grid grid-cols-[1fr_120px_180px] gap-4 border-b border-stone-100 pb-3 px-3 text-[11px] uppercase tracking-wider text-stone-400 font-bold">
                 <div>Uživatel</div>
                 <div className="text-center">Role</div>
-                <div>Oprávnění</div>
+                <div>Oprávnění a akce</div>
               </div>
-              <div className="flex flex-col mt-2 gap-1.5">
+              
+              <div className="flex flex-col mt-2 gap-3">
                 {Object.values(userProfiles || {}).map((profile) => (
-                  <div key={profile.id} className={cn(
-                    "grid gap-4 items-center px-3 py-3 transition-colors",
-                    profile.isBlocked 
-                      ? "grid-cols-[1fr_auto] bg-stone-100 rounded-2xl border border-stone-200 grayscale-[0.2]" 
-                      : "grid-cols-[1fr_100px_180px] border-b border-stone-50 hover:bg-stone-50"
-                  )}>
-                    <div>
-                      <div className="flex items-center gap-3">
-                        <div className={cn("w-8 h-8 rounded-full overflow-hidden bg-white flex items-center justify-center flex-shrink-0", profile.isBlocked ? "border-stone-300 opacity-70" : "border border-stone-200")}>
-                          {profile.avatar?.startsWith('http') || profile.avatar?.startsWith('data:') ? (
-                            <img src={profile.avatar} className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="text-base leading-none">{profile.avatar || "👤"}</span>
+                  <div 
+                    key={profile.id} 
+                    className={cn(
+                      "flex flex-col gap-3 p-4 border border-stone-100 rounded-2xl transition-all shadow-sm bg-white hover:shadow-md",
+                      "md:flex-row md:items-center md:justify-between md:py-3 md:px-3 md:gap-4 md:border-b md:border-t-0 md:border-x-0 md:rounded-none md:shadow-none md:hover:bg-stone-50/50",
+                      profile.isBlocked && "bg-stone-50 border-stone-200 grayscale-[0.2]"
+                    )}
+                  >
+                    {/* 1. Profilová vizitka (Avatar + Jméno + Email) */}
+                    <div className="flex items-center gap-3 min-w-[200px] flex-1">
+                      <div className={cn(
+                        "w-10 h-10 rounded-full overflow-hidden bg-stone-100 flex items-center justify-center flex-shrink-0 border",
+                        profile.isBlocked ? "border-stone-300 opacity-70" : "border-stone-200"
+                      )}>
+                        {profile.avatar?.startsWith('http') || profile.avatar?.startsWith('data:') ? (
+                          <img src={profile.avatar} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-lg leading-none">{profile.avatar || "👤"}</span>
+                        )}
+                      </div>
+                      <div className="flex flex-col w-full min-w-0">
+                        <input 
+                          type="text"
+                          defaultValue={profile.adminAlias || profile.displayName || profile.email?.split('@')[0]}
+                          onBlur={(e) => {
+                            if (e.target.value !== (profile.adminAlias || profile.displayName || profile.email?.split('@')[0])) {
+                              updateUserAdminAlias(profile.id!, e.target.value);
+                            }
+                          }}
+                          className={cn(
+                            "font-bold text-sm bg-transparent border-b border-transparent focus:outline-none transition-colors w-full focus:border-indigo-400 focus:bg-stone-50 px-1 rounded",
+                            profile.isBlocked ? "text-stone-500" : "text-stone-700 hover:border-stone-200"
                           )}
-                        </div>
-                        <div className="flex flex-col w-full">
-                          <input 
-                            type="text"
-                            defaultValue={profile.adminAlias || profile.displayName || profile.email?.split('@')[0]}
-                            onBlur={(e) => {
-                              if (e.target.value !== (profile.adminAlias || profile.displayName || profile.email?.split('@')[0])) {
-                                updateUserAdminAlias(profile.id!, e.target.value);
-                              }
-                            }}
-                            className={cn("font-bold text-sm bg-transparent border-b border-transparent focus:outline-none transition-colors w-full", profile.isBlocked ? "text-stone-500" : "text-stone-700 hover:border-stone-300 focus:border-indigo-400")}
-                            title="Soukromé jméno pro admina"
-                            disabled={profile.isBlocked}
-                          />
-                          <div className={cn("text-[10px] truncate max-w-[150px]", profile.isBlocked ? "text-stone-400" : "text-stone-400")}>
-                            {profile.email}
-                          </div>
+                          title="Soukromé jméno pro admina"
+                          disabled={profile.isBlocked}
+                        />
+                        <div className="text-[10px] text-stone-400 truncate px-1">
+                          {profile.email}
                         </div>
                       </div>
                     </div>
 
+                    {/* 2. Volba Role */}
                     {!profile.isBlocked ? (
-                      <>
-                        <div className="flex justify-center">
-                          <select
-                            value={profile.role || 'viewer'}
-                            onChange={(e) => updateUserRole(profile.id!, e.target.value as UserRole)}
-                            className="text-xs font-bold bg-stone-100 text-stone-700 border-none rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-100 cursor-pointer"
-                          >
-                            <option value="admin">Admin</option>
-                            <option value="parent">Rodič</option>
-                            <option value="child">Dítě</option>
-                            <option value="viewer">Divák</option>
-                          </select>
+                      <div className="flex flex-col md:items-center w-full md:w-[120px]">
+                        <span className="text-[9px] uppercase font-black text-stone-400 tracking-wider mb-1 md:hidden">Role</span>
+                        <select
+                          value={profile.role || 'viewer'}
+                          onChange={(e) => updateUserRole(profile.id!, e.target.value as UserRole)}
+                          className="w-full text-xs font-bold bg-stone-100 text-stone-700 border-none rounded-xl px-3 py-2.5 md:py-1.5 focus:ring-2 focus:ring-indigo-100 cursor-pointer"
+                        >
+                          <option value="admin">Admin</option>
+                          <option value="parent">Rodič</option>
+                          <option value="child">Dítě</option>
+                          <option value="viewer">Divák</option>
+                        </select>
+                      </div>
+                    ) : null}
+
+                    {/* 3. Oprávnění & Akce */}
+                    {!profile.isBlocked ? (
+                      <div className="flex flex-col gap-2 w-full md:w-[180px]">
+                        <span className="text-[9px] uppercase font-black text-stone-400 tracking-wider md:hidden">Oprávnění</span>
+                        <div className="flex gap-1 flex-wrap">
+                          {profile.permissions?.canSuggest && <span className="text-[9px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded font-bold border border-green-100">Tvořit</span>}
+                          {profile.permissions?.canComment && <span className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold border border-blue-100">Komentovat</span>}
+                          {profile.permissions?.canApprove && <span className="text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-bold border border-purple-100">Schvalovat</span>}
                         </div>
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex gap-1 flex-wrap">
-                            {profile.permissions?.canSuggest && <span className="text-[9px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded font-bold">Tvořit</span>}
-                            {profile.permissions?.canComment && <span className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold">Komentáře</span>}
-                            {profile.permissions?.canApprove && <span className="text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-bold">Schvalovat</span>}
-                          </div>
-                          <button 
-                            onClick={() => toggleUserBlocked(profile.id!, !!profile.isBlocked)}
-                            className="text-[10px] font-bold text-rose-500 hover:text-rose-600 self-start px-1 border border-transparent hover:border-rose-200 rounded transition-colors"
-                          >
-                            Zablokovat přístup
-                          </button>
-                        </div>
-                      </>
+                        <button 
+                          onClick={() => toggleUserBlocked(profile.id!, !!profile.isBlocked)}
+                          className="text-[10px] font-bold text-rose-500 hover:text-rose-600 self-start px-2 py-1 border border-rose-100 hover:bg-rose-50 rounded-lg transition-colors mt-1 md:mt-0 cursor-pointer"
+                        >
+                          Zablokovat přístup
+                        </button>
+                      </div>
                     ) : (
-                      <div className="flex items-center justify-end gap-3 pr-2">
-                        <span className="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded-md">
+                      <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-[316px] border-t border-stone-100 pt-2.5 md:border-none md:pt-0">
+                        <span className="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded-md border border-rose-100">
                           Zablokováno
                         </span>
                         <button 
                           onClick={() => toggleUserBlocked(profile.id!, !!profile.isBlocked)}
-                          className="text-xs font-bold text-indigo-500 hover:text-indigo-600 bg-white border border-stone-200 px-3 py-1.5 rounded-lg shadow-sm hover:shadow transition-all"
+                          className="text-xs font-bold text-indigo-500 hover:text-indigo-600 bg-white border border-stone-200 px-3 py-1.5 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer"
                         >
                           Odblokovat
                         </button>
                       </div>
                     )}
+
                   </div>
                 ))}
               </div>
