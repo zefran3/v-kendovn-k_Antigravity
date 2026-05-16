@@ -35,20 +35,8 @@ export default function AdminPanel({
   isGeneratingInspiration,
   handleApproveBikeRoute
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions" | "approval">("logs");
+  const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions">("logs");
   const [logs, setLogs] = useState<AdminLog[]>([]);
-  const [proposedRoutes, setProposedRoutes] = useState<any[]>([]);
-
-  useEffect(() => {
-    const q = query(collection(db, 'inspirations'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter((item: any) => item.status === 'proposed');
-      setProposedRoutes(data);
-    });
-    return () => unsubscribe();
-  }, []);
 
   useEffect(() => {
     const q = query(collection(db, 'admin_logs'), orderBy('timestamp', 'desc'), limit(50));
@@ -121,12 +109,6 @@ export default function AdminPanel({
           >
             Akce
           </button>
-          <button 
-            onClick={() => setActiveTab("approval")}
-            className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "approval" ? "bg-amber-50 text-amber-600" : "text-stone-500 hover:bg-stone-50")}
-          >
-            Schvalování {proposedRoutes.length > 0 && <span className="ml-1 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{proposedRoutes.length}</span>}
-          </button>
         </div>
 
         <div className="overflow-y-auto pr-1 flex-1 min-h-[300px]">
@@ -166,9 +148,15 @@ export default function AdminPanel({
                 </p>
                 <div className="flex flex-wrap gap-3">
                   <button 
-                    onClick={handleGenerateInspirations}
-                    disabled={isGeneratingInspiration || isGeneratingBike}
-                    className="mt-2 px-6 py-3 rounded-xl bg-indigo-500 text-white font-bold text-sm shadow-sm hover:bg-indigo-600 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 transition-all"
+                    onClick={() => {
+                      try {
+                        handleGenerateInspirations();
+                      } catch (err) {
+                        console.error("Chyba při spouštění AI generátoru:", err);
+                      }
+                    }}
+                    disabled={!!isGeneratingInspiration}
+                    className="mt-2 px-6 py-3 rounded-xl bg-indigo-500 text-white font-bold text-sm shadow-sm hover:bg-indigo-600 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 transition-all cursor-pointer"
                   >
                     {isGeneratingInspiration ? (
                       <>
@@ -182,50 +170,6 @@ export default function AdminPanel({
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-
-          {activeTab === "approval" && (
-            <div className="flex flex-col gap-3">
-              {(proposedRoutes || []).length === 0 ? (
-                <div className="text-stone-400 text-center py-12 flex flex-col items-center gap-3">
-                  <div className="bg-stone-50 p-4 rounded-full">
-                    <CheckCircle className="text-stone-200" size={32} />
-                  </div>
-                  <span>Žádné trasy k schválení.</span>
-                </div>
-              ) : (
-                (proposedRoutes || []).map(route => (
-                  <div key={route.id} className="bg-white border border-stone-100 p-5 rounded-2xl shadow-sm flex flex-col gap-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h4 className="font-bold text-stone-800">{route.title}</h4>
-                        <p className="text-xs text-stone-500">{route.location}</p>
-                      </div>
-                      <span className="text-[10px] font-black bg-indigo-50 text-indigo-600 px-2 py-1 rounded-md uppercase">
-                        🚴 Cyklotrasa
-                      </span>
-                    </div>
-                    <p className="text-sm text-stone-600 line-clamp-2">{route.description}</p>
-                    <div className="flex gap-2 mt-2">
-                      <button 
-                        onClick={() => handleApproveBikeRoute(route.id)}
-                        className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-xs transition-colors"
-                      >
-                        ✅ Schválit pro všechny
-                      </button>
-                      <a 
-                        href={route.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="px-4 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl font-bold text-xs transition-colors"
-                      >
-                        🔍 Zobrazit mapu
-                      </a>
-                    </div>
-                  </div>
-                ))
-              )}
             </div>
           )}
 
