@@ -101,6 +101,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const [rejectingWish, setRejectingWish] = useState<WishlistItem | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [localView, setLocalView] = useState(view);
+  const normalizedCurrentUserName = (currentUserName || "").toLowerCase() === "zefran3" || (currentUserName || "").toLowerCase() === "táta" ? "Táta" : currentUserName;
 
   // ─── Firestore listenery ─────────────────────────────
   useEffect(() => {
@@ -121,7 +122,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const handleAddWish = async () => {
     if (!wishName.trim()) return;
     await addDoc(collection(db, 'wishlists'), {
-      childName: currentUserName,
+      childName: normalizedCurrentUserName,
       authorId: currentUserId,
       name: wishName.trim(),
       url: wishUrl.trim() || null,
@@ -185,7 +186,10 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     const activeNames = new Set<string>();
     Object.values(userProfiles).forEach(profile => {
       if (!profile.isBlocked) {
-        const name = profile.adminAlias || profile.displayName || profile.email?.split('@')[0] || "Neznámý";
+        let name = profile.adminAlias || profile.displayName || profile.email?.split('@')[0] || "Neznámý";
+        if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
+          name = "Táta";
+        }
         activeNames.add(name);
         if (!stats[name]) {
           stats[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
@@ -195,7 +199,10 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
     suggestions.forEach(s => {
       if (s.type === "ride") return;
-      const name = s.childName || "Neznámý";
+      let name = s.childName || "Neznámý";
+      if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
+        name = "Táta";
+      }
       
       // Do žebříčku započítáváme jen aktivní uživatele přihlášené do aplikace
       if (!activeNames.has(name)) return;
@@ -235,11 +242,14 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       .sort((a, b) => b.totalZB - a.totalZB);
   }, [playerStats, getAvatarForChild]);
 
-  const activePlayer = selectedPlayer || currentUserName;
+  const activePlayer = selectedPlayer || normalizedCurrentUserName;
   const activeStats = playerStats[activePlayer] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
   const activeTitle = getTitle(activeStats.totalZB);
   const nextTitle = getNextTitle(activeStats.totalZB);
-  const activeWishlist = wishlists.filter(w => w.childName === activePlayer);
+  const activeWishlist = wishlists.filter(w => {
+    const wName = (w.childName || "").toLowerCase() === "zefran3" || (w.childName || "").toLowerCase() === "táta" ? "Táta" : w.childName;
+    return wName === activePlayer;
+  });
   const activeQuests = quests.filter(q => q.active);
 
   return (
@@ -361,7 +371,10 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   </div>
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     {suggestions
-                      .filter(s => s.type !== "ride" && (s.childName || "Neznámý") === activePlayer && s.status !== "cancelled")
+                      .filter(s => {
+                        const sName = (s.childName || "Neznámý").toLowerCase() === "zefran3" || (s.childName || "Neznámý").toLowerCase() === "táta" ? "Táta" : (s.childName || "Neznámý");
+                        return s.type !== "ride" && sName === activePlayer && s.status !== "cancelled";
+                      })
                       .map(s => {
                         const today = new Date(); today.setHours(0,0,0,0);
                         const realized = s.status === "approved" && s.eventDate && new Date(s.eventDate) < today;
@@ -586,10 +599,10 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                         <span className="text-[8px] text-white font-bold">✓</span>
                       </div>
                     )}
-                    <span className="text-xl">{badge.icon}</span>
-                    <span className="text-[10px] font-bold text-white leading-tight">{badge.name}</span>
-                    <span className={cn("text-[9px] font-black", unlocked ? "text-amber-400" : "text-zinc-600")}>+{badge.bonusZB} ZB</span>
-                    <span className="text-[9px] text-zinc-500 leading-tight">{badge.desc}</span>
+                    <span className="text-3xl">{badge.icon}</span>
+                    <span className="text-xs md:text-sm font-bold text-white leading-tight">{badge.name}</span>
+                    <span className={cn("text-[11px] md:text-xs font-black", unlocked ? "text-amber-400" : "text-zinc-600")}>+{badge.bonusZB} ZB</span>
+                    <span className="text-[11px] md:text-xs text-zinc-500 leading-tight mt-1">{badge.desc}</span>
                     {!unlocked && <Lock size={10} className="text-zinc-600 mt-0.5" />}
                   </div>
                 );
@@ -618,7 +631,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
               {showWishForm && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-3">
                   <div className="bg-zinc-800/50 border border-rose-500/10 rounded-xl p-4 space-y-3">
-                    <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Přání od: {currentUserName}</div>
+                    <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Přání od: {normalizedCurrentUserName}</div>
                     <input value={wishName} onChange={e => setWishName(e.target.value)} placeholder="Co si přeješ? (např. Steam kredit 500 Kč)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
                     <input value={wishUrl} onChange={e => setWishUrl(e.target.value)} placeholder="Odkaz (volitelné)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
                     <button onClick={handleAddWish} disabled={!wishName.trim()} className="w-full bg-rose-500 text-white font-bold text-xs py-2.5 rounded-lg hover:bg-rose-400 transition-colors disabled:opacity-30">Odeslat ke schválení</button>
@@ -635,7 +648,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   <div key={w.id} className="flex items-center justify-between bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
                     <div>
                       <span className="text-sm font-bold text-white">{w.name}</span>
-                      <span className="text-xs text-zinc-500 ml-2">od {w.childName}</span>
+                      <span className="text-xs text-zinc-500 ml-2">od {w.childName?.toLowerCase() === "zefran3" || w.childName?.toLowerCase() === "táta" ? "Táta" : w.childName}</span>
                       {w.url && <a href={w.url} target="_blank" rel="noopener" className="text-[10px] text-cyan-400 ml-2 hover:underline">🔗</a>}
                     </div>
                     <div className="flex gap-1.5">
