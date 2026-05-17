@@ -207,6 +207,7 @@ export default function App() {
   const [commentPhoto, setCommentPhoto] = useState<string | null>(null);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
   const inspirationsRef = useRef<HTMLDivElement>(null);
+  const draftsRef = useRef<HTMLDivElement>(null);
   const [forecast, setForecast] = useState<any[]>([]);
   const [inspirations, setInspirations] = useState<Inspiration[]>([]);
   const [isGeneratingInspiration, setIsGeneratingInspiration] = useState(false);
@@ -238,6 +239,18 @@ export default function App() {
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (draftsRef.current && !draftsRef.current.contains(event.target as Node)) {
+        setIsDraftsExpanded(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, []);
 
   const scrollToTop = () => {
@@ -1586,12 +1599,13 @@ export default function App() {
               </button>
             )}
             {view === "parent" && (
-              <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setShowUserManagement(true)}
-                  className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-lg hover:-translate-y-0.5"
+                  className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-indigo-600 text-white font-bold text-xs w-full hover:bg-indigo-700 transition-all shadow-lg hover:-translate-y-0.5"
                 >
-                  <Shield size={16} /> 🛡️ Admin HUB
+                  <Shield size={24} />
+                  <span>Admin HUB</span>
                 </button>
                 {(userProfiles[user?.uid || '']?.role === 'admin' || userProfiles[user?.uid || '']?.role === 'parent') && (
                   <button
@@ -1603,24 +1617,35 @@ export default function App() {
                       else { setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100); }
                       setShowInspirationsView(!showInspirationsView); 
                     }}
-                    className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
+                    className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-indigo-500 text-white font-bold text-xs w-full hover:bg-indigo-600 transition-colors shadow-sm"
                   >
-                    {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
+                    {showInspirationsView ? (
+                      <>
+                        <span className="text-xl">🏠</span>
+                        <span>Zpět na nástěnku</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xl">✨</span>
+                        <span>Inspirace na víkend</span>
+                      </>
+                    )}
                   </button>
                 )}
               </div>
             )}
             {view === "child" && (
-              <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <button 
                   onClick={() => {
                     setFormType("activity");
                     setNewSuggestion(prev => ({ ...prev, childName: getLoggedInFamilyName() }));
                     setShowForm(true);
                   }}
-                  className="px-4 py-2.5 rounded-xl bg-rose-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-rose-600 transition-colors shadow-sm"
+                  className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-rose-500 text-white font-bold text-xs w-full hover:bg-rose-600 transition-colors shadow-sm"
                 >
-                  <Plus size={16} /> Přidat aktivitu
+                  <Plus size={24} />
+                  <span>Přidat aktivitu</span>
                 </button>
                 {userProfiles[user?.uid || '']?.role !== 'viewer' && (
                   <>
@@ -1630,9 +1655,10 @@ export default function App() {
                         setNewSuggestion(prev => ({ ...prev, childName: getLoggedInFamilyName() }));
                         setShowForm(true);
                       }}
-                      className="px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-orange-600 transition-colors shadow-sm"
+                      className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-orange-500 text-white font-bold text-xs w-full hover:bg-orange-600 transition-colors shadow-sm"
                     >
-                      🚗 Potřebuji odvézt
+                      <span className="text-xl">🚗</span>
+                      <span>Potřebuji odvézt</span>
                     </button>
                     <button
                       onClick={() => { 
@@ -1643,21 +1669,32 @@ export default function App() {
                         else { setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }
                         setShowInspirationsView(!showInspirationsView); 
                       }}
-                      className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs w-full flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-sm"
+                      className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-indigo-500 text-white font-bold text-xs w-full hover:bg-indigo-600 transition-colors shadow-sm"
                     >
-                      {showInspirationsView ? "Zpět na nástěnku" : "✨ Inspirace na víkend"}
+                      {showInspirationsView ? (
+                        <>
+                          <span className="text-xl">🏠</span>
+                          <span>Zpět na nástěnku</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-xl">✨</span>
+                          <span>Inspirace na víkend</span>
+                        </>
+                      )}
                     </button>
                     {showInspirationsView && (
                       <button 
                         onClick={() => setShowVyskovOnly(!showVyskovOnly)}
                         className={cn(
-                          "px-4 py-2.5 rounded-xl font-bold text-xs w-full flex items-center justify-center gap-2 transition-all shadow-sm border-2",
+                          "flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl font-bold text-xs w-full transition-all shadow-sm border-2",
                           showVyskovOnly 
                             ? "bg-amber-400 border-amber-500 text-amber-950" 
                             : "bg-white border-indigo-100 text-indigo-500 hover:border-indigo-200"
                         )}
                       >
-                        🏰 {showVyskovOnly ? "Všechny tipy" : "Akce ve Vyškově"}
+                        <span className="text-xl">🏰</span>
+                        <span>{showVyskovOnly ? "Všechny tipy" : "Akce ve Vyškově"}</span>
                       </button>
                     )}
                   </>
@@ -2266,7 +2303,7 @@ export default function App() {
 
             {/* Moje rozpracované cyklotrasy (Návrhy) — dostupné jen autorovi */}
             {suggestions.some(insp => (insp as any).status === 'draft' && (insp as any).authorId === user?.uid) && (
-              <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-orange-50 overflow-hidden shadow-sm mb-10">
+              <div ref={draftsRef} className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-orange-50 overflow-hidden shadow-sm mb-10">
                 {/* Hlavička — kliknutím rozbalí/sbalí */}
                 <button
                   onClick={() => setIsDraftsExpanded(v => !v)}
