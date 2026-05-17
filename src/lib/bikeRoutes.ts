@@ -134,21 +134,26 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
 
   // HYBRIDNÍ MODEL: Přitažení bodů z Gemini k realitě přes Overpass
   const geminiWaypoints = bikeData.waypoints || [];
-  const snappedWaypoints = [];
+  const snappedWaypoints: any[] = [];
   
   for (const wp of geminiWaypoints) {
     emit?.(`Hledám reálné místo: ${wp.name}...`);
     const snapped = await snapToRealPlace(wp.lat, wp.lon);
-    if (snapped) {
-      snappedWaypoints.push({
-        ...wp,
-        lat: snapped.lat,
-        lon: snapped.lon,
-        name: snapped.name
-      });
-    } else {
-      snappedWaypoints.push(wp); // Fallback na původní Gemini bod
+    
+    // Nový bod - buď reálně přitažený z Overpass, nebo fallback na původní bod
+    const candidate = snapped
+      ? { ...wp, lat: snapped.lat, lon: snapped.lon, name: snapped.name }
+      : wp;
+
+    // Pokud už pole snappedWaypoints něco obsahuje, porovnej lat a lon posledního bodu s kandidátem
+    if (snappedWaypoints.length > 0) {
+      const last = snappedWaypoints[snappedWaypoints.length - 1];
+      if (last.lat === candidate.lat && last.lon === candidate.lon) {
+        continue; // Duplicitní souřadnice po sobě jdoucích bodů by crashly Mapy.cz
+      }
     }
+
+    snappedWaypoints.push(candidate);
   }
 
   // Příprava souřadnic pro ORS: Start -> Snapped Waypoints -> Cíl

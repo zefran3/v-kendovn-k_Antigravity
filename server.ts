@@ -34,12 +34,24 @@ try {
 
     const db = admin.firestore();
     const startTime = admin.firestore.Timestamp.now();
+    const suggestionsStatusMap = new Map<string, string>();
 
     db.collection('suggestions').where('createdAt', '>', startTime).onSnapshot(snapshot => {
       snapshot.docChanges().forEach(change => {
+        const docId = change.doc.id;
+        const newData = change.doc.data();
+
         if (change.type === 'added') {
-          const suggestion = change.doc.data();
-          sendPushNotification(suggestion);
+          suggestionsStatusMap.set(docId, newData.status);
+          sendPushNotification(newData);
+        } else if (change.type === 'modified') {
+          const prevStatus = suggestionsStatusMap.get(docId);
+          suggestionsStatusMap.set(docId, newData.status);
+
+          // Pokud se stav dokumentu změnil z draft na cokoliv jiného, notifikaci odešli teprve teď
+          if (prevStatus === 'draft' && newData.status !== 'draft') {
+            sendPushNotification(newData);
+          }
         }
       });
     }, (error) => {
@@ -52,7 +64,8 @@ try {
   console.error("Failed to initialize Firebase Admin", error);
 }
 
-async function sendPushNotification(suggestion: any) {
+async function sendPushNotification(newData: any) {
+  if (newData.status === 'draft') return; // Neupozorňovat na soukromé návrhy
   try {
     const db = admin.firestore();
     const usersSnapshot = await db.collection('users').get();
@@ -68,8 +81,8 @@ async function sendPushNotification(suggestion: any) {
     });
 
     if (tokens.length > 0) {
-      const title = suggestion.type === 'ride' ? 'Nová žádost o odvoz 🚗' : 'Nový návrh aktivity 🎉';
-      const body = `${suggestion.childName}: ${suggestion.title}`;
+      const title = newData.type === 'ride' ? 'Nová žádost o odvoz 🚗' : 'Nový návrh aktivity 🎉';
+      const body = `${newData.childName}: ${newData.title}`;
 
       const message = {
         data: {
