@@ -36,7 +36,8 @@ import {
   ArrowLeft,
   Shield,
   AlertTriangle,
-  Bike
+  Bike,
+  Zap
 } from "lucide-react";
 import AdminPanel from "./components/AdminPanel";
 import BikeRouteGenerator from "./components/BikeRouteGenerator";
@@ -1740,6 +1741,20 @@ export default function App() {
               }}
             />
           </motion.div>
+          {/* Game Hub Entry Button */}
+          {leaderboard.length > 0 && (
+            <motion.button
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              onClick={() => setShowGameHub(true)}
+              className="w-full bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 text-white rounded-2xl p-4 flex items-center justify-center gap-3 font-bold text-sm shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 transition-all hover:-translate-y-0.5 active:scale-[0.98]"
+            >
+              <span className="text-lg">⚡</span>
+              Game Hub
+              <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">XP</span>
+            </motion.button>
+          )}
+
           {leaderboard.length > 0 && (
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
@@ -1774,20 +1789,6 @@ export default function App() {
                 ))}
               </div>
             </motion.div>
-          )}
-
-          {/* Game Hub Entry Button */}
-          {leaderboard.length > 0 && (
-            <motion.button
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              onClick={() => setShowGameHub(true)}
-              className="w-full bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 text-white rounded-2xl p-4 flex items-center justify-center gap-3 font-bold text-sm shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 transition-all hover:-translate-y-0.5 active:scale-[0.98]"
-            >
-              <span className="text-lg">⚡</span>
-              Game Hub – Zážitkové body
-              <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">ZB</span>
-            </motion.button>
           )}
 
           {/* Calendar Events Section */}
@@ -3670,16 +3671,30 @@ export default function App() {
       {/* Scroll to Top Mobile Button */}
       <AnimatePresence>
         {showScrollToTop && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.8, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.8, y: 20 }}
-            onClick={scrollToTop}
-            className="md:hidden fixed bottom-6 right-6 z-40 bg-blue-500 hover:bg-blue-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-colors border-2 border-white/20 active:scale-95"
-            title="Nahoru"
-          >
-            <ArrowUp size={24} />
-          </motion.button>
+          <>
+            {/* Plovoucí tlačítko pro mobil na Game Hub */}
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 20 }}
+              onClick={() => setShowGameHub(true)}
+              className="md:hidden fixed bottom-6 left-6 z-40 w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all border-2 border-white/20 active:scale-95 bg-gradient-to-r from-violet-600 to-cyan-600"
+              title="Game Hub"
+            >
+              <Zap className="text-white" size={24} />
+            </motion.button>
+
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 20 }}
+              onClick={scrollToTop}
+              className="md:hidden fixed bottom-6 right-6 z-40 bg-blue-500 hover:bg-blue-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-colors border-2 border-white/20 active:scale-95"
+              title="Nahoru"
+            >
+              <ArrowUp size={24} />
+            </motion.button>
+          </>
         )}
       </AnimatePresence>
 
