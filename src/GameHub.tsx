@@ -244,8 +244,11 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
   const activePlayer = selectedPlayer || normalizedCurrentUserName;
   const activeStats = playerStats[activePlayer] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
-  const activeTitle = getTitle(activeStats.totalZB);
-  const nextTitle = getNextTitle(activeStats.totalZB);
+  const unlockedBadges = BADGES.filter(b => b.check(activeStats));
+  const activeBadgeBonus = unlockedBadges.reduce((sum, b) => sum + b.bonusZB, 0);
+  const activeTotalXP = activeStats.totalZB + activeBadgeBonus; // Skutečné celkové XP
+  const activeTitle = getTitle(activeTotalXP);
+  const nextTitle = getNextTitle(activeTotalXP);
   const activeWishlist = wishlists.filter(w => {
     const wName = (w.childName || "").toLowerCase() === "zefran3" || (w.childName || "").toLowerCase() === "táta" ? "Táta" : w.childName;
     return wName === activePlayer;
@@ -283,7 +286,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             </div>
             <div>
               <h1 className="text-base font-black text-white tracking-tight">GAME HUB</h1>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Zážitkové body</p>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest">XP Body</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -325,18 +328,19 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
               </button>
               <div className="flex-1 min-w-0">
                 <h2 className="text-xl font-black text-white truncate">{activePlayer}</h2>
-                <div className={cn("text-sm font-bold", activeTitle.color)}>{activeTitle.title}</div>
+                <div className={cn("text-3xl md:text-4xl font-black tracking-tight", activeTitle.color)}>{activeTitle.title}</div>
                 <div className="flex items-center gap-2 mt-1">
                   <Zap size={14} className="text-amber-400" />
-                  <span className="text-lg font-black text-amber-400">{activeStats.totalZB + BADGES.filter(b => b.check(activeStats)).reduce((s, b) => s + b.bonusZB, 0)}</span>
-                  <span className="text-xs text-zinc-500">ZB</span>
+                  <span className="text-lg font-black text-amber-400">{activeTotalXP}</span>
+                  <span className="text-xs text-zinc-500">XP</span>
                 </div>
               </div>
               <div className="text-right flex-shrink-0">
-                <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Statistiky</div>
+                <div className="text-sm font-bold text-zinc-500 uppercase tracking-widest mb-1">Statistiky</div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                   <span className="text-zinc-400">Nápady:</span><span className="text-white font-bold">{activeStats.totalIdeas}</span>
                   <span className="text-zinc-400">Realizace:</span><span className="text-emerald-400 font-bold">{activeStats.realized}</span>
+                  <span className="text-zinc-400 flex items-center gap-1"><Shield size={14} /> Odznaky:</span><span className="text-cyan-400 font-bold">{unlockedBadges.length}</span>
                 </div>
               </div>
             </div>
@@ -344,14 +348,14 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             {/* Progress k dalšímu titulu */}
             {nextTitle && (
               <div className="mt-4 relative">
-                <div className="flex justify-between text-[10px] text-zinc-500 mb-1.5">
+                <div className="flex justify-between text-xs md:text-sm font-bold text-zinc-500 mb-1.5">
                   <span>{activeTitle.title}</span>
-                  <span className={nextTitle.color}>{nextTitle.title} ({nextTitle.min} ZB)</span>
+                  <span className={nextTitle.color}>{nextTitle.title} ({nextTitle.min} XP)</span>
                 </div>
                 <div className="h-2 bg-zinc-700/50 rounded-full overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
-                    animate={{ width: `${Math.min(100, ((activeStats.totalZB - activeTitle.min) / (nextTitle.min - activeTitle.min)) * 100)}%` }}
+                    animate={{ width: `${Math.min(100, ((activeTotalXP - activeTitle.min) / (nextTitle.min - activeTitle.min)) * 100)}%` }}
                     transition={{ duration: 1, ease: "easeOut", delay: 0.3 }}
                     className="h-full bg-gradient-to-r from-violet-500 to-cyan-400 rounded-full shadow-sm shadow-violet-500/50"
                   />
@@ -367,7 +371,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                 <div className="bg-zinc-800/50 border border-violet-500/10 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="text-xs font-bold text-violet-400 uppercase tracking-wider">Rozpis bodů – {activePlayer}</h4>
-                    <span className="text-xs font-black text-amber-400">{activeStats.totalZB + BADGES.filter(b => b.check(activeStats)).reduce((s, b) => s + b.bonusZB, 0)} ZB celkem</span>
+                    <span className="text-xs font-black text-amber-400">{activeTotalXP} XP celkem</span>
                   </div>
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     {suggestions
@@ -601,7 +605,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                     )}
                     <span className="text-3xl">{badge.icon}</span>
                     <span className="text-xs md:text-sm font-bold text-white leading-tight">{badge.name}</span>
-                    <span className={cn("text-[11px] md:text-xs font-black", unlocked ? "text-amber-400" : "text-zinc-600")}>+{badge.bonusZB} ZB</span>
+                    <span className={cn("text-[11px] md:text-xs font-black", unlocked ? "text-amber-400" : "text-zinc-600")}>+{badge.bonusZB} XP</span>
                     <span className="text-[11px] md:text-xs text-zinc-500 leading-tight mt-1">{badge.desc}</span>
                     {!unlocked && <Lock size={10} className="text-zinc-600 mt-0.5" />}
                   </div>
@@ -681,14 +685,14 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             {/* Approved wishes with progress */}
             <div className="grid gap-3">
               {activeWishlist.filter(w => w.status === 'approved' && w.targetZB > 0).map(wish => {
-                const progress = Math.min(100, (activeStats.totalZB / wish.targetZB) * 100);
-                const completed = activeStats.totalZB >= wish.targetZB;
+                const progress = Math.min(100, (activeTotalXP / wish.targetZB) * 100);
+                const completed = activeTotalXP >= wish.targetZB;
                 return (
                   <div key={wish.id} className={cn("rounded-xl border p-4 transition-all", completed ? "bg-emerald-500/10 border-emerald-500/20" : "bg-zinc-800/50 border-white/5")}>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-bold text-white">{wish.name}</span>
                       <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full", completed ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-700 text-zinc-400")}>
-                        {completed ? "✓ Splněno!" : `${activeStats.totalZB} / ${wish.targetZB} ZB`}
+                        {completed ? "✓ Splněno!" : `${activeTotalXP} / ${wish.targetZB} XP`}
                       </span>
                     </div>
                     <div className="h-2 bg-zinc-700/50 rounded-full overflow-hidden">
@@ -713,7 +717,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
           >
             <div className="flex items-center gap-2 mb-3">
               <TrendingUp size={16} className="text-violet-400" />
-              <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Jak získat ZB</h3>
+              <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Jak získat XP</h3>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               {[
@@ -724,7 +728,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
               ].map((rule, i) => (
                 <div key={i} className="flex items-center justify-between bg-zinc-900/50 rounded-lg px-3 py-2">
                   <span className="text-zinc-400">{rule.label}</span>
-                  <span className={cn("font-black", rule.color)}>{rule.zb} ZB</span>
+                  <span className={cn("font-black", rule.color)}>{rule.zb} XP</span>
                 </div>
               ))}
             </div>
@@ -746,12 +750,12 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
               <h3 className="text-sm font-black text-white">Schválit přání</h3>
               <p className="text-xs text-zinc-400">„{approvingWish.name}" od {approvingWish.childName}</p>
               <div>
-                <label className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1 block">Cena v Zážitkových bodech (ZB)</label>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1 block">Cena v XP</label>
                 <input value={approveZB} onChange={e => setApproveZB(e.target.value)} type="number" className="w-full bg-zinc-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-emerald-500/30" />
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setApprovingWish(null)} className="flex-1 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold hover:bg-zinc-700">Zrušit</button>
-                <button onClick={handleApproveWish} className="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-400">Schválit za {approveZB} ZB</button>
+                <button onClick={handleApproveWish} className="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-400">Schválit za {approveZB} XP</button>
               </div>
             </motion.div>
           </>
