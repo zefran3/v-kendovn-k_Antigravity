@@ -127,7 +127,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       url: wishUrl.trim() || null,
       targetZB: 0,
       status: 'pending',
-      createdAt: Date.now()
+      createdAt: serverTimestamp()
     });
     setWishName(""); setWishUrl(""); setShowWishForm(false);
   };
@@ -163,7 +163,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       bonusMultiplier: parseFloat(questMultiplier) || 2,
       deadlineHours: parseInt(questHours) || 48,
       active: true,
-      createdAt: Date.now()
+      createdAt: serverTimestamp()
     });
     setQuestTitle(""); setQuestDesc(""); setShowQuestForm(false);
   };
@@ -182,20 +182,10 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     const sixMonthsAgo = new Date(today);
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    const getFamilyNameFromEmail = (email?: string): string | undefined => {
-      if (!email) return undefined;
-      const lower = email.toLowerCase();
-      if (lower === "zefran3@gmail.com") return "Táta";
-      if (lower === "eva.kubartova@gmail.com") return "Eva";
-      if (lower === "emasterba@gmail.com") return "Emma";
-      if (lower === "frantisek.sterba2010@gmail.com") return "František";
-      return undefined;
-    };
-
     const activeNames = new Set<string>();
     Object.values(userProfiles).forEach(profile => {
       if (!profile.isBlocked) {
-        const name = profile.adminAlias || profile.displayName || getFamilyNameFromEmail(profile.email) || profile.email?.split('@')[0] || "Neznámý";
+        const name = profile.adminAlias || profile.displayName || profile.email?.split('@')[0] || "Neznámý";
         activeNames.add(name);
         if (!stats[name]) {
           stats[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
@@ -453,101 +443,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             )}
           </AnimatePresence>
 
-          {/* ═══ WISHLIST (only in Liga mode) ═══ */}
-          {leaderboardMode === "liga" && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Gift size={16} className="text-rose-400" />
-                <h3 className="text-sm font-bold text-rose-300 uppercase tracking-wider">Přání (Půlroční Liga)</h3>
-              </div>
-              {localView === "child" && (
-                <button onClick={() => setShowWishForm(!showWishForm)}
-                  className="flex items-center gap-1 text-xs font-bold text-rose-400 hover:text-rose-300 transition-colors bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20"
-                >
-                  <Plus size={12} /> Přidat přání
-                </button>
-              )}
-            </div>
 
-            {/* Wish form */}
-            <AnimatePresence>
-              {showWishForm && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-3">
-                  <div className="bg-zinc-800/50 border border-rose-500/10 rounded-xl p-4 space-y-3">
-                    <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Přání od: {currentUserName}</div>
-                    <input value={wishName} onChange={e => setWishName(e.target.value)} placeholder="Co si přeješ? (např. Steam kredit 500 Kč)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
-                    <input value={wishUrl} onChange={e => setWishUrl(e.target.value)} placeholder="Odkaz (volitelné)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
-                    <button onClick={handleAddWish} disabled={!wishName.trim()} className="w-full bg-rose-500 text-white font-bold text-xs py-2.5 rounded-lg hover:bg-rose-400 transition-colors disabled:opacity-30">Odeslat ke schválení</button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Parent: pending wishes to approve */}
-            {localView === "parent" && wishlists.filter(w => w.status === 'pending').length > 0 && (
-              <div className="mb-3 space-y-2">
-                <div className="text-[10px] text-amber-400 uppercase tracking-wider font-bold">Čeká na schválení</div>
-                {wishlists.filter(w => w.status === 'pending').map(w => (
-                  <div key={w.id} className="flex items-center justify-between bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
-                    <div>
-                      <span className="text-sm font-bold text-white">{w.name}</span>
-                      <span className="text-xs text-zinc-500 ml-2">od {w.childName}</span>
-                      {w.url && <a href={w.url} target="_blank" rel="noopener" className="text-[10px] text-cyan-400 ml-2 hover:underline">🔗</a>}
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button onClick={() => { setApprovingWish(w); setApproveZB("500"); }} className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"><Check size={14} /></button>
-                      <button onClick={() => { setRejectingWish(w); setRejectReason(""); }} className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30"><X size={14} /></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Rejected wishes */}
-            {activeWishlist.filter(w => w.status === 'rejected').length > 0 && (
-              <div className="mb-3 space-y-2">
-                <div className="text-[10px] text-red-400 uppercase tracking-wider font-bold">Zamítnuté</div>
-                {activeWishlist.filter(w => w.status === 'rejected').map(w => (
-                  <div key={w.id} className="bg-red-500/5 border border-red-500/10 rounded-xl p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-zinc-400 line-through">{w.name}</span>
-                      <span className="text-[10px] text-red-400 font-bold">✕ Zamítnuto</span>
-                    </div>
-                    {w.rejectReason && (
-                      <p className="text-[10px] text-zinc-500 mt-1 italic">Důvod: {w.rejectReason}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Approved wishes with progress */}
-            <div className="grid gap-3">
-              {activeWishlist.filter(w => w.status === 'approved' && w.targetZB > 0).map(wish => {
-                const progress = Math.min(100, (activeStats.totalZB / wish.targetZB) * 100);
-                const completed = activeStats.totalZB >= wish.targetZB;
-                return (
-                  <div key={wish.id} className={cn("rounded-xl border p-4 transition-all", completed ? "bg-emerald-500/10 border-emerald-500/20" : "bg-zinc-800/50 border-white/5")}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-bold text-white">{wish.name}</span>
-                      <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full", completed ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-700 text-zinc-400")}>
-                        {completed ? "✓ Splněno!" : `${activeStats.totalZB} / ${wish.targetZB} ZB`}
-                      </span>
-                    </div>
-                    <div className="h-2 bg-zinc-700/50 rounded-full overflow-hidden">
-                      <motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 1.2, ease: "easeOut", delay: 0.4 }}
-                        className={cn("h-full rounded-full", completed ? "bg-gradient-to-r from-emerald-500 to-emerald-400" : "bg-gradient-to-r from-rose-500 to-amber-400")} />
-                    </div>
-                  </div>
-                );
-              })}
-              {activeWishlist.filter(w => w.status === 'approved' && w.targetZB > 0).length === 0 && (
-                <div className="text-center py-4 text-zinc-600 text-xs">Zatím žádná schválená přání.</div>
-              )}
-            </div>
-          </motion.div>
-          )}
 
           {/* ═══ ŽEBŘÍČEK ═══ */}
           <motion.div
@@ -672,7 +568,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                 {BADGES.filter(b => b.check(activeStats)).length}/{BADGES.length}
               </span>
             </div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {BADGES.map(badge => {
                 const unlocked = badge.check(activeStats);
                 return (
@@ -698,6 +594,100 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   </div>
                 );
               })}
+            </div>
+          </motion.div>
+
+          {/* ═══ WISHLIST (trvale dospod pod žebříček a odznaky) ═══ */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Gift size={16} className="text-rose-400" />
+                <h3 className="text-sm font-bold text-rose-300 uppercase tracking-wider">Přání (Půlroční Liga)</h3>
+              </div>
+              {localView === "child" && (
+                <button onClick={() => setShowWishForm(!showWishForm)}
+                  className="flex items-center gap-1 text-xs font-bold text-rose-400 hover:text-rose-300 transition-colors bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20"
+                >
+                  <Plus size={12} /> Přidat přání
+                </button>
+              )}
+            </div>
+
+            {/* Wish form */}
+            <AnimatePresence>
+              {showWishForm && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-3">
+                  <div className="bg-zinc-800/50 border border-rose-500/10 rounded-xl p-4 space-y-3">
+                    <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Přání od: {currentUserName}</div>
+                    <input value={wishName} onChange={e => setWishName(e.target.value)} placeholder="Co si přeješ? (např. Steam kredit 500 Kč)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
+                    <input value={wishUrl} onChange={e => setWishUrl(e.target.value)} placeholder="Odkaz (volitelné)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
+                    <button onClick={handleAddWish} disabled={!wishName.trim()} className="w-full bg-rose-500 text-white font-bold text-xs py-2.5 rounded-lg hover:bg-rose-400 transition-colors disabled:opacity-30">Odeslat ke schválení</button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Parent: pending wishes to approve */}
+            {localView === "parent" && wishlists.filter(w => w.status === 'pending').length > 0 && (
+              <div className="mb-3 space-y-2">
+                <div className="text-[10px] text-amber-400 uppercase tracking-wider font-bold">Čeká na schválení</div>
+                {wishlists.filter(w => w.status === 'pending').map(w => (
+                  <div key={w.id} className="flex items-center justify-between bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
+                    <div>
+                      <span className="text-sm font-bold text-white">{w.name}</span>
+                      <span className="text-xs text-zinc-500 ml-2">od {w.childName}</span>
+                      {w.url && <a href={w.url} target="_blank" rel="noopener" className="text-[10px] text-cyan-400 ml-2 hover:underline">🔗</a>}
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => { setApprovingWish(w); setApproveZB("500"); }} className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"><Check size={14} /></button>
+                      <button onClick={() => { setRejectingWish(w); setRejectReason(""); }} className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30"><X size={14} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Rejected wishes */}
+            {activeWishlist.filter(w => w.status === 'rejected').length > 0 && (
+              <div className="mb-3 space-y-2">
+                <div className="text-[10px] text-red-400 uppercase tracking-wider font-bold">Zamítnuté</div>
+                {activeWishlist.filter(w => w.status === 'rejected').map(w => (
+                  <div key={w.id} className="bg-red-500/5 border border-red-500/10 rounded-xl p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-zinc-400 line-through">{w.name}</span>
+                      <span className="text-[10px] text-red-400 font-bold">✕ Zamítnuto</span>
+                    </div>
+                    {w.rejectReason && (
+                      <p className="text-[10px] text-zinc-500 mt-1 italic">Důvod: {w.rejectReason}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Approved wishes with progress */}
+            <div className="grid gap-3">
+              {activeWishlist.filter(w => w.status === 'approved' && w.targetZB > 0).map(wish => {
+                const progress = Math.min(100, (activeStats.totalZB / wish.targetZB) * 100);
+                const completed = activeStats.totalZB >= wish.targetZB;
+                return (
+                  <div key={wish.id} className={cn("rounded-xl border p-4 transition-all", completed ? "bg-emerald-500/10 border-emerald-500/20" : "bg-zinc-800/50 border-white/5")}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-bold text-white">{wish.name}</span>
+                      <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full", completed ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-700 text-zinc-400")}>
+                        {completed ? "✓ Splněno!" : `${activeStats.totalZB} / ${wish.targetZB} ZB`}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-zinc-700/50 rounded-full overflow-hidden">
+                      <motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 1.2, ease: "easeOut", delay: 0.4 }}
+                        className={cn("h-full rounded-full", completed ? "bg-gradient-to-r from-emerald-500 to-emerald-400" : "bg-gradient-to-r from-rose-500 to-amber-400")} />
+                    </div>
+                  </div>
+                );
+              })}
+              {activeWishlist.filter(w => w.status === 'approved' && w.targetZB > 0).length === 0 && (
+                <div className="text-center py-4 text-zinc-600 text-xs">Zatím žádná schválená přání.</div>
+              )}
             </div>
           </motion.div>
 
