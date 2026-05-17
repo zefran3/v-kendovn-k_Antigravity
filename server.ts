@@ -43,7 +43,9 @@ try {
 
         if (change.type === 'added') {
           suggestionsStatusMap.set(docId, newData.status);
-          sendPushNotification(newData);
+          if (newData.status !== 'draft') {
+            sendPushNotification(newData);
+          }
         } else if (change.type === 'modified') {
           const prevStatus = suggestionsStatusMap.get(docId);
           suggestionsStatusMap.set(docId, newData.status);
@@ -65,6 +67,7 @@ try {
 }
 
 async function sendPushNotification(newData: any) {
+  console.log("[NOTIFIKACE] Pokus o odeslání. Status aktivity:", newData.status);
   if (newData.status === 'draft') return; // Neupozorňovat na soukromé návrhy
   try {
     const db = admin.firestore();
