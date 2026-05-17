@@ -94,7 +94,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const [wishUrl, setWishUrl] = useState("");
   const [approvingWish, setApprovingWish] = useState<WishlistItem | null>(null);
   const [approveZB, setApproveZB] = useState("500");
-  const [showQuestForm, setShowQuestForm] = useState(false);
+  const [showCreateQuest, setShowCreateQuest] = useState(false);
   const [questTitle, setQuestTitle] = useState("");
   const [questDesc, setQuestDesc] = useState("");
   const [questHours, setQuestHours] = useState("48");
@@ -179,7 +179,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       active: true,
       createdAt: serverTimestamp()
     });
-    setQuestTitle(""); setQuestDesc(""); setShowQuestForm(false);
+    setQuestTitle(""); setQuestDesc(""); setShowCreateQuest(false);
   };
 
   const handleDeactivateQuest = async (id: string) => {
@@ -522,11 +522,54 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                         </button>
                       </div>
                     )}
+                    {/* Dedikované tlačítko pro zadání Tajné mise */}
+                    <button
+                      onClick={() => setShowCreateQuest(!showCreateQuest)}
+                      className="w-full py-2.5 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-black text-xs rounded-xl shadow-lg shadow-amber-500/5 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 mt-1"
+                    >
+                      ➕ Zadat tajnou misi
+                    </button>
                   </div>
                 </div>
               </div>
             </motion.div>
           )}
+
+          {/* ═══ FORMULÁŘ PRO NOVOU TAJNOU MISI ═══ */}
+          <AnimatePresence>
+            {localView === "parent" && showCreateQuest && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="bg-zinc-800/50 border border-amber-500/10 rounded-xl p-4 space-y-3">
+                  <input value={questTitle} onChange={e => setQuestTitle(e.target.value)} placeholder="Název mise..." className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-amber-500/30" />
+                  <textarea value={questDesc} onChange={e => setQuestDesc(e.target.value)} placeholder="Popis výzvy..." className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-amber-500/30 h-16 resize-none" />
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] text-zinc-400 font-bold">Časový limit (v hodinách)</label>
+                      <input value={questHours} onChange={e => setQuestHours(e.target.value)} placeholder="Hodin (např. 48)" type="number" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-amber-500/30" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] text-zinc-400 font-bold">Základní odměna (XP)</label>
+                      <input value={questMultiplier} onChange={e => setQuestMultiplier(e.target.value)} placeholder="XP (např. 10)" type="number" step="1" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-amber-500/30" />
+                      <span 
+                        onClick={() => setQuestMultiplier(suggestedXP.toString())} 
+                        className="cursor-pointer text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1 mt-1 font-medium"
+                      >
+                        <Lightbulb size={12} /> Doporučená odměna: {suggestedXP} XP (Klikni pro vložení)
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <button onClick={handleAddQuest} className="w-full bg-amber-500 text-black font-bold text-xs py-2.5 rounded-lg hover:bg-amber-400 transition-colors mt-2">Aktivovat misi</button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* ═══ ADMIN PANEL: DETAILNÍ ANALYTIKA HRÁČŮ ═══ */}
           {localView === "parent" && (
@@ -798,44 +841,6 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
               </motion.div>
             );
           })()}
-          {localView === "parent" && (
-            <div className="flex gap-2">
-              <button onClick={() => setShowQuestForm(!showQuestForm)}
-                className="text-xs text-amber-400/60 hover:text-amber-400 transition-colors flex items-center gap-1"
-              >
-                <Plus size={12} /> Zadat tajnou misi
-              </button>
-            </div>
-          )}
-          <AnimatePresence>
-            {showQuestForm && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                <div className="bg-zinc-800/50 border border-amber-500/10 rounded-xl p-4 space-y-3">
-                  <input value={questTitle} onChange={e => setQuestTitle(e.target.value)} placeholder="Název mise..." className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-amber-500/30" />
-                  <textarea value={questDesc} onChange={e => setQuestDesc(e.target.value)} placeholder="Popis výzvy..." className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-amber-500/30 h-16 resize-none" />
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[11px] text-zinc-400 font-bold">Časový limit (v hodinách)</label>
-                      <input value={questHours} onChange={e => setQuestHours(e.target.value)} placeholder="Hodin (např. 48)" type="number" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-amber-500/30" />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[11px] text-zinc-400 font-bold">Základní odměna (XP)</label>
-                      <input value={questMultiplier} onChange={e => setQuestMultiplier(e.target.value)} placeholder="XP (např. 10)" type="number" step="1" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-amber-500/30" />
-                      <span 
-                        onClick={() => setQuestMultiplier(suggestedXP.toString())} 
-                        className="cursor-pointer text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1 mt-1 font-medium"
-                      >
-                        <Lightbulb size={12} /> Doporučená odměna: {suggestedXP} XP (Klikni pro vložení)
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <button onClick={handleAddQuest} className="w-full bg-amber-500 text-black font-bold text-xs py-2.5 rounded-lg hover:bg-amber-400 transition-colors mt-2">Aktivovat misi</button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
 
 
 
