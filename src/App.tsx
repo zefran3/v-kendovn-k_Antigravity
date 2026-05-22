@@ -2558,7 +2558,7 @@ export default function App() {
                               {expandedSuggestion === suggestion.id ? "Skrýt" : "Detail"}
                             </button>
                           )}
-                          {view === "parent" && (
+                          {canApproveActivities && (
                             <button
                               onClick={() => handleDeleteSuggestion(suggestion)}
                               className="p-1 text-stone-300 hover:text-red-500 transition-colors"
@@ -2718,7 +2718,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    {view === "parent" && suggestion.status === "pending" && (
+                    {canApproveActivities && suggestion.status === "pending" && (
                       <div className="mt-4 flex flex-col gap-2">
                         {approvingEvent?.id === suggestion.id ? (
                           <div className="p-3 bg-green-50 rounded-xl border border-green-200 space-y-3">
@@ -2836,7 +2836,7 @@ export default function App() {
                       </div>
                     )}
 
-                    {view === "parent" && (suggestion.status === "rejected" || suggestion.status === "cancelled") && (
+                    {canApproveActivities && (suggestion.status === "rejected" || suggestion.status === "cancelled") && (
                       <div className="mt-4 flex flex-col gap-2">
                         {suggestion.reconsiderationRequested && (
                           <div className="text-xs text-amber-600 font-bold bg-amber-100 p-2 rounded-lg text-center flex items-center justify-center gap-1 border border-amber-200">
