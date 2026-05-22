@@ -2491,6 +2491,7 @@ export default function App() {
             <AnimatePresence mode="popLayout">
                 {suggestions
                   .filter(suggestion => {
+                    if (suggestion.status === "draft") return false;
                     if (suggestion.hiddenFromBoard) return false;
                     if (suggestion.status === "approved" && suggestion.eventDate) {
                       const eventDate = new Date(suggestion.eventDate);

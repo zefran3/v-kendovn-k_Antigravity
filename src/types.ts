@@ -1,4 +1,4 @@
-export type SuggestionStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export type SuggestionStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'draft';
 
 export interface ActivityComment {
   id: string;
