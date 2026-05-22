@@ -165,7 +165,7 @@ export default function BikeRouteGenerator({ userCity, userId, authorName, onGen
           </div>
           <div>
             <div className="font-bold text-stone-800 text-sm leading-tight">Generátor cyklotras</div>
-            <div className="text-[11px] text-stone-500">Navrhni si trasu přesně na míru</div>
+            <div className="text-[11px] text-stone-505">Navrhni si trasu přesně na míru</div>
           </div>
         </div>
         <ChevronRight

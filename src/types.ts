@@ -37,6 +37,10 @@ export interface ActivitySuggestion {
   adminModifiedTime?: boolean;
   calendarError?: string;
   hiddenFromBoard?: boolean;
+  claimedDetails?: boolean;
+  claimedFree?: boolean;
+  approvedDetails?: boolean;
+  approvedFree?: boolean;
   createdAt: number;
   comments?: ActivityComment[];
 }

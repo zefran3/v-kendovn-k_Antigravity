@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { 
   X, Trophy, Target, Star, Lock, Zap, Gift, Shield, Plus,
   ChevronRight, Flame, Award, TrendingUp, Crown, Eye, EyeOff, Check, AlertTriangle,
-  Lightbulb
+  Lightbulb, HelpCircle
 } from "lucide-react";
 import { cn } from "./lib/utils";
 import { ActivitySuggestion, UserProfile, WishlistItem, MysteryQuest } from "./types";
@@ -12,10 +12,10 @@ import { collection, addDoc, updateDoc, setDoc, doc, onSnapshot, query, orderBy,
 
 // ─── ZB Bodovací systém ──────────────────────────────────
 const ZB_RULES = {
-  BASIC: 10,        // Zapsání nápadu
-  REALIZED: 50,     // Schválená + absolvovaná akce
-  LOGISTICS: 20,    // Dodány detaily (lokace + url)
-  FREE_DISCOUNT: 20 // Akce zdarma
+  BASIC: 5,         // Zapsání nápadu
+  REALIZED: 20,     // Schválená + absolvovaná akce
+  LOGISTICS: 5,     // Dodány detaily (lokace + url)
+  FREE_DISCOUNT: 10 // Akce zdarma
 };
 
 // ─── Tituly podle celkových ZB ───────────────────────────
@@ -103,7 +103,17 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const [rejectingWish, setRejectingWish] = useState<WishlistItem | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [localView, setLocalView] = useState(view);
+  const [showBonusInfo, setShowBonusInfo] = useState(false);
   const normalizedCurrentUserName = (currentUserName || "").toLowerCase() === "zefran3" || (currentUserName || "").toLowerCase() === "táta" ? "Táta" : currentUserName;
+  const currentUserRole = useMemo(() => userProfiles[currentUserId]?.role || 'viewer', [userProfiles, currentUserId]);
+  const canApproveActivities = useMemo(() => currentUserRole === 'admin' || currentUserRole === 'parent', [currentUserRole]);
+  const canManageSystem = useMemo(() => currentUserRole === 'admin', [currentUserRole]);
+
+  // Sprint odměny stavy
+  const [rewards, setRewards] = useState<any[]>([]);
+  const [claims, setClaims] = useState<any[]>([]);
+  const [claimingReward, setClaimingReward] = useState<any | null>(null);
+  const [isClaiming, setIsClaiming] = useState(false);
 
   // ─── Firestore listenery ─────────────────────────────
   useEffect(() => {
@@ -128,10 +138,39 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       },
       err => console.error("League config listen error:", err)
     );
-    return () => { unsubW(); unsubQ(); unsubL(); };
+    const unsubRewards = onSnapshot(
+      collection(db, 'sprintRewards'),
+      snap => setRewards(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      err => console.error("Rewards listen error:", err)
+    );
+    const unsubClaims = onSnapshot(
+      collection(db, 'rewardClaims'),
+      snap => setClaims(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      err => console.error("Claims listen error:", err)
+    );
+    return () => { unsubW(); unsubQ(); unsubL(); unsubRewards(); unsubClaims(); };
   }, []);
 
   // ─── Handlers ────────────────────────────────────────
+  const handleConfirmClaimReward = async () => {
+    if (!claimingReward || isClaiming) return;
+    setIsClaiming(true);
+    try {
+      await addDoc(collection(db, "rewardClaims"), {
+        userId: currentUserId,
+        userName: normalizedCurrentUserName,
+        rewardTitle: claimingReward.title,
+        sprintId: currentSprintId,
+        claimedAt: serverTimestamp()
+      });
+      setClaimingReward(null);
+    } catch (err) {
+      console.error("Failed to claim reward:", err);
+    } finally {
+      setIsClaiming(false);
+    }
+  };
+
   const handleAddWish = async () => {
     if (!wishName.trim()) return;
     await addDoc(collection(db, 'wishlists'), {
@@ -188,7 +227,21 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
   const handleCompleteQuest = async (questId: string) => {
     const completedBy = normalizedCurrentUserName || "Táta";
-    const appliedBonusXP = isUnderdog ? 5 : 0;
+    
+    // Dynamický výpočet dorovnávacího bonusu
+    const maxXP = leaderboardData.length > 0 ? Math.max(...leaderboardData.map(p => p.totalZB)) : 0;
+    const currentPlayerRecord = leaderboardData.find(p => p.name === completedBy);
+    const currentPlayerXP = currentPlayerRecord ? currentPlayerRecord.totalZB : 0;
+    const xpGap = Math.max(0, maxXP - currentPlayerXP);
+    
+    let appliedBonusXP = 0;
+    if (xpGap >= 100) {
+      appliedBonusXP = 15;
+    } else if (xpGap >= 50) {
+      appliedBonusXP = 10;
+    } else if (xpGap >= 20) {
+      appliedBonusXP = 5;
+    }
 
     await updateDoc(doc(db, 'quests', questId), {
       status: 'pending_approval',
@@ -314,10 +367,16 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
         stats[name].realized += 1;
         stats[name].totalZB += ZB_RULES.REALIZED;
 
-        // Logistický bonus (má lokaci A url)
-        if (s.location && s.url) {
+        // Logistický bonus (má lokaci A url NEBO Táta schválil detail)
+        if (s.approvedDetails || (s.location && s.url)) {
           stats[name].withDetails += 1;
           stats[name].totalZB += ZB_RULES.LOGISTICS;
+        }
+
+        // Bonus za akci zdarma / sleva
+        if (s.approvedFree) {
+          stats[name].freeActivities += 1;
+          stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
         }
       }
     });
@@ -348,6 +407,123 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     return stats;
   }, [suggestions, quests, userProfiles, leagueConfig, leaderboardMode]);
 
+  // Sprint odměny výpočty
+  const currentSprintId = useMemo(() => {
+    const startTimestamp = leagueConfig?.leagueStartDate
+      ? (leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : new Date(leagueConfig.leagueStartDate).getTime())
+      : null;
+    if (!startTimestamp) return "sprint_0";
+    const daysElapsed = (Date.now() - startTimestamp) / (1000 * 60 * 60 * 24);
+    const sprintLengthDays = 60;
+    const completedSprints = Math.floor(daysElapsed / sprintLengthDays);
+    return `sprint_${completedSprints}`;
+  }, [leagueConfig]);
+
+  const sprintStats = useMemo(() => {
+    const stats: Record<string, UserStats> = {};
+    const activeNames = new Set(Object.values(userProfiles || {}).map(p => p.adminAlias || p.displayName || p.email?.split('@')[0]));
+    
+    Object.values(userProfiles || {}).forEach(p => {
+      let name = p.adminAlias || p.displayName || p.email?.split('@')[0];
+      if (name) {
+        if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
+          name = "Táta";
+        }
+        activeNames.add(name);
+        if (!stats[name]) {
+          stats[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+        }
+      }
+    });
+
+    const startTimestamp = leagueConfig?.leagueStartDate
+      ? (leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : new Date(leagueConfig.leagueStartDate).getTime())
+      : null;
+
+    if (!startTimestamp || leagueConfig?.status === 'stopped') {
+      return stats;
+    }
+
+    const daysElapsed = (Date.now() - startTimestamp) / (1000 * 60 * 60 * 24);
+    const sprintLengthDays = 60;
+    const completedSprints = Math.floor(daysElapsed / sprintLengthDays);
+    const currentSprintStartDate = startTimestamp + (completedSprints * sprintLengthDays * 24 * 60 * 60 * 1000);
+
+    const getCreatedTime = (item: any) => {
+      if (!item.createdAt) return 0;
+      if (typeof item.createdAt === 'number') return item.createdAt;
+      if (item.createdAt.toMillis) return item.createdAt.toMillis();
+      return new Date(item.createdAt).getTime();
+    };
+
+    const today = new Date();
+
+    suggestions.forEach(s => {
+      if (s.type === "ride") return;
+      let name = s.childName || "Neznámý";
+      if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
+        name = "Táta";
+      }
+      if (!activeNames.has(name)) return;
+      if (getCreatedTime(s) < currentSprintStartDate) return;
+
+      if (s.status !== "cancelled") {
+        stats[name].totalIdeas += 1;
+        stats[name].totalZB += ZB_RULES.BASIC;
+      }
+
+      if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
+        stats[name].realized += 1;
+        stats[name].totalZB += ZB_RULES.REALIZED;
+
+        if (s.approvedDetails || (s.location && s.url)) {
+          stats[name].withDetails += 1;
+          stats[name].totalZB += ZB_RULES.LOGISTICS;
+        }
+
+        if (s.approvedFree) {
+          stats[name].freeActivities += 1;
+          stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+        }
+      }
+    });
+
+    quests.forEach(q => {
+      if (q.status === 'approved' && q.completedBy) {
+        let name = q.completedBy;
+        if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
+          name = "Táta";
+        }
+        if (activeNames.has(name)) {
+          if (!stats[name]) {
+            stats[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+          }
+          if (getCreatedTime(q) < currentSprintStartDate) return;
+          const baseXP = parseFloat(q.bonusMultiplier as any) || 0;
+          const bonusXP = parseFloat(q.appliedBonusXP as any) || 0;
+          stats[name].totalZB += (baseXP + bonusXP);
+        }
+      }
+    });
+
+    return stats;
+  }, [suggestions, quests, userProfiles, leagueConfig]);
+
+  const currentSprintXP = useMemo(() => {
+    const pStats = sprintStats?.[normalizedCurrentUserName] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+    const badgeBonus = BADGES.filter(b => b.check(pStats)).reduce((s, b) => s + b.bonusZB, 0);
+    return (pStats.totalZB || 0) + badgeBonus;
+  }, [sprintStats, normalizedCurrentUserName]);
+
+  const sprintXPThreshold = leagueConfig?.sprintXPThreshold !== undefined ? leagueConfig.sprintXPThreshold : 80;
+
+  const claimedRewardInCurrentSprint = useMemo(() => {
+    return (claims || []).find(c => c.userId === currentUserId && c.sprintId === currentSprintId);
+  }, [claims, currentUserId, currentSprintId]);
+
+  const hasClaimed = !!claimedRewardInCurrentSprint;
+  const isSprintRewardsLocked = currentUserRole === 'admin' || currentUserRole === 'parent' ? false : currentSprintXP < sprintXPThreshold;
+
   // ─── Žebříček ────────────────────────────────────────
   const leaderboardData = useMemo(() => {
     return Object.entries(playerStats)
@@ -366,7 +542,16 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const activeTitle = getTitle(activeTotalXP);
   const nextTitle = getNextTitle(activeTotalXP);
   const maxXP = leaderboardData.length > 0 ? Math.max(...leaderboardData.map(p => p.totalZB)) : 0;
-  const isUnderdog = maxXP - activeTotalXP > 30;
+  const xpGap = Math.max(0, maxXP - activeTotalXP);
+  let currentBonusXP = 0;
+  if (xpGap >= 100) {
+    currentBonusXP = 15;
+  } else if (xpGap >= 50) {
+    currentBonusXP = 10;
+  } else if (xpGap >= 20) {
+    currentBonusXP = 5;
+  }
+  const isUnderdog = currentBonusXP > 0;
   
   const kidsProfiles = leaderboardData.filter(p => p.name !== "Táta");
   const avgKidsXP = kidsProfiles.length > 0
@@ -416,12 +601,14 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
           </div>
           <div className="flex items-center gap-2">
             {/* View toggle */}
-            <button onClick={() => setLocalView(localView === 'parent' ? 'child' : 'parent')}
-              className={cn("px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all",
-                localView === 'parent' ? "bg-rose-500/20 text-rose-400 border-rose-500/20" : "bg-cyan-500/20 text-cyan-400 border-cyan-500/20"
-              )}>
-              {localView === 'parent' ? "👀 Zobrazit jako Hráč" : "👑 Přepnout na Admina"}
-            </button>
+            {canApproveActivities && (
+              <button onClick={() => setLocalView(localView === 'parent' ? 'child' : 'parent')}
+                className={cn("px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all",
+                  localView === 'parent' ? "bg-rose-500/20 text-rose-400 border-rose-500/20" : "bg-cyan-500/20 text-cyan-400 border-cyan-500/20"
+                )}>
+                {localView === 'parent' ? "👀 Zobrazit jako Hráč" : "👑 Přepnout na Admina"}
+              </button>
+            )}
             {/* Víkendovník logo → back */}
             <button onClick={onClose} className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600/20 to-teal-600/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-400 font-black text-xs tracking-tight transition-all hover:scale-105">
               🌿 Víkendovník
@@ -432,7 +619,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
         <div className="flex-1 p-4 md:p-6 max-w-4xl mx-auto w-full space-y-5">
 
           {/* ═══ ADMIN PANEL: SPRÁVA LIGY ═══ */}
-          {localView === "parent" && (
+          {localView === "parent" && canManageSystem && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -790,12 +977,18 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   <div className="flex flex-wrap gap-2 text-[10px] mb-1">
                     <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold">⏱ {currentQuest.deadlineHours}h limit</span>
                     {isUnderdog ? (
-                      <span className="bg-orange-500/20 text-orange-400 border border-orange-500/30 px-2 py-0.5 rounded-full font-bold flex items-center gap-1 animate-pulse">
-                        ⚡ Odměna: {currentQuest.bonusMultiplier} XP + 5 XP Dorovnávací bonus 🚀
+                      <span 
+                        onClick={() => setShowBonusInfo(true)}
+                        className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 cursor-pointer transition-colors animate-pulse"
+                      >
+                        ⚡ Odměna: {currentQuest.bonusMultiplier} XP + {currentBonusXP} XP Dorovnávací bonus <HelpCircle size={10} /> 🚀
                       </span>
                     ) : (
-                      <span className="bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded-full font-bold">
-                        ⚡ Odměna: {currentQuest.bonusMultiplier} XP
+                      <span 
+                        onClick={() => setShowBonusInfo(true)}
+                        className="bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        ⚡ Odměna: {currentQuest.bonusMultiplier} XP <HelpCircle size={10} />
                       </span>
                     )}
                   </div>
@@ -937,33 +1130,109 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
+              className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 space-y-3.5 shadow-xl relative overflow-hidden"
             >
+              <div className="absolute -top-10 -right-10 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl" />
               <button
+                type="button"
                 onClick={() => setShowRewards(!showRewards)}
-                className="flex items-center justify-between w-full mb-3"
+                className="flex items-center justify-between w-full relative z-10"
               >
                 <div className="flex items-center gap-2">
-                  <Award size={16} className="text-emerald-400" />
-                  <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Odměny pro vítěze Sprintu</h3>
+                  <Award size={16} className={isSprintRewardsLocked ? "text-zinc-500" : "text-emerald-400"} />
+                  <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Odměny za Sprint</h3>
+                  {isSprintRewardsLocked ? (
+                    <span className="text-[9px] bg-zinc-800/80 border border-white/5 text-zinc-500 px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1">
+                      🔒 Zamčeno
+                    </span>
+                  ) : (
+                    <span className="text-[9px] bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
+                      🔓 Odemčeno
+                    </span>
+                  )}
                 </div>
                 <ChevronRight size={16} className={cn("text-zinc-500 transition-transform", showRewards && "rotate-90")} />
               </button>
+
               <AnimatePresence>
                 {showRewards && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
+                    className="overflow-hidden space-y-3 relative z-10"
                   >
-                    <div className="grid grid-cols-2 gap-2">
-                      {SPRINT_REWARDS.map((r, i) => (
-                        <div key={i} className="bg-zinc-800/50 border border-white/5 rounded-xl p-3 flex flex-col items-center text-center gap-1.5 hover:border-emerald-500/20 transition-colors">
-                          <span className="text-2xl">{r.icon}</span>
-                          <span className="text-xs font-bold text-white">{r.title}</span>
-                          <span className="text-[10px] text-zinc-500">{r.desc}</span>
+                    {currentUserRole === 'admin' || currentUserRole === 'parent' ? (
+                      <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3 text-xs text-indigo-300 flex items-center gap-2 font-bold relative z-10">
+                        ℹ️ Jako administrátor / rodič si odměny nevybíráš. Zde vidíš přehled odměn pro děti.
+                      </div>
+                    ) : isSprintRewardsLocked ? (
+                      <div className="bg-zinc-950/40 border border-white/5 rounded-xl p-3.5 flex items-center gap-3 text-xs text-zinc-400">
+                        <Lock className="text-zinc-500 shrink-0" size={16} />
+                        <div className="w-full">
+                          Pro odemčení této sekce potřebuješ získat alespoň <span className="font-extrabold text-white">{sprintXPThreshold} XP</span> ve Sprintu.
+                          <div className="flex items-center gap-2 mt-2">
+                            <div className="flex-1 bg-zinc-800 h-2 rounded-full overflow-hidden">
+                              <div 
+                                className="bg-gradient-to-r from-emerald-600 to-teal-500 h-full rounded-full transition-all duration-500"
+                                style={{ width: `${Math.min(100, (currentSprintXP / sprintXPThreshold) * 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] font-black text-zinc-500 shrink-0">
+                              {currentSprintXP} / {sprintXPThreshold} XP
+                            </span>
+                          </div>
                         </div>
-                      ))}
+                      </div>
+                    ) : (
+                      hasClaimed && (
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-400 flex items-center gap-2 font-bold">
+                          🎉 Již máš vybranou odměnu pro tento Sprint: <span className="underline">{claimedRewardInCurrentSprint?.rewardTitle}</span>.
+                        </div>
+                      )
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {(rewards || []).length === 0 ? (
+                        <div className="text-zinc-500 text-center py-4 text-xs italic col-span-2">
+                          Zatím nebyly vloženy žádné odměny pro tento Sprint.
+                        </div>
+                      ) : (
+                        (rewards || []).map((r) => {
+                          const isChosen = claimedRewardInCurrentSprint?.rewardTitle === r.title;
+                          const isDisabled = currentUserRole === 'admin' || currentUserRole === 'parent' || isSprintRewardsLocked || (hasClaimed && !isChosen);
+
+                          return (
+                            <button
+                              type="button"
+                              key={r.id}
+                              disabled={isDisabled}
+                              onClick={() => !isDisabled && setClaimingReward(r)}
+                              className={cn(
+                                "p-3.5 rounded-xl flex flex-col items-center text-center gap-1.5 transition-all text-left w-full border relative overflow-hidden",
+                                isChosen 
+                                  ? "bg-emerald-500/15 border-emerald-500 text-emerald-400 shadow-lg shadow-emerald-500/5 hover:scale-100" 
+                                  : isDisabled
+                                    ? "bg-zinc-950/20 border-white/5 opacity-40 cursor-not-allowed"
+                                    : "bg-zinc-800/40 border-white/5 hover:border-emerald-500/30 hover:bg-zinc-800/80 hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                              )}
+                            >
+                              <span className="text-3xl filter drop-shadow">🎁</span>
+                              <span className={cn("text-xs font-black tracking-tight", isChosen ? "text-emerald-400" : "text-white")}>
+                                {r.title}
+                              </span>
+                              <span className="text-[10px] text-zinc-500 font-medium line-clamp-2">
+                                {r.description || "Tajuplná odměna."}
+                              </span>
+                              {isChosen && (
+                                <span className="absolute top-2 right-2 bg-emerald-500 text-zinc-950 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md shadow-sm">
+                                  Zvoleno
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -1167,16 +1436,23 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                 <TrendingUp size={16} className="text-violet-400" />
                 <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Jak získat XP</h3>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-2 gap-2.5 text-xs">
                 {[
-                  { label: "Nový nápad", zb: `+${ZB_RULES.BASIC}`, color: "text-zinc-300" },
-                  { label: "Realizovaná akce", zb: `+${ZB_RULES.REALIZED}`, color: "text-emerald-400" },
-                  { label: "Dodané detaily", zb: `+${ZB_RULES.LOGISTICS}`, color: "text-cyan-400" },
-                  { label: "Akce zdarma / sleva", zb: `+${ZB_RULES.FREE_DISCOUNT}`, color: "text-amber-400" },
+                  { label: "Nový nápad", zb: `+${ZB_RULES.BASIC} XP`, color: "text-zinc-300" },
+                  { label: "Realizovaná akce", zb: `+${ZB_RULES.REALIZED} XP`, color: "text-emerald-400" },
+                  { label: "Dodané detaily", zb: `+${ZB_RULES.LOGISTICS} XP`, color: "text-cyan-400" },
+                  { label: "Akce zdarma / sleva", zb: `+${ZB_RULES.FREE_DISCOUNT} XP`, color: "text-amber-400" },
+                  { label: "🎯 Tajné mise", zb: "Dle zadání", subtext: "Sleduj Nástěnku", color: "text-violet-400" },
+                  { label: "🚀 Dorovnávací bonus", zb: "+5 XP", subtext: "Získáš k misi, pokud ztrácíš na první místo", color: "text-rose-400" }
                 ].map((rule, i) => (
-                  <div key={i} className="flex items-center justify-between bg-zinc-900/50 rounded-lg px-3 py-2">
-                    <span className="text-zinc-400">{rule.label}</span>
-                    <span className={cn("font-black", rule.color)}>{rule.zb} XP</span>
+                  <div key={i} className="flex flex-col justify-between bg-zinc-900/50 rounded-xl px-3 py-2.5 hover:bg-zinc-900/80 hover:scale-[1.01] transition-all duration-200 border border-transparent hover:border-white/5">
+                    <div className="flex items-center justify-between gap-2 w-full">
+                      <span className="text-zinc-300 font-medium">{rule.label}</span>
+                      <span className={cn("font-black whitespace-nowrap", rule.color)}>{rule.zb}</span>
+                    </div>
+                    {rule.subtext && (
+                      <span className="text-[10px] text-zinc-500 mt-1 leading-normal font-normal text-left">{rule.subtext}</span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1228,6 +1504,85 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
               <div className="flex gap-2">
                 <button onClick={() => setRejectingWish(null)} className="flex-1 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold hover:bg-zinc-700">Zrušit</button>
                 <button onClick={handleRejectWishWithReason} className="flex-1 py-2 rounded-lg bg-red-500 text-white text-xs font-bold hover:bg-red-400">Zamítnout</button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ DOROVNÁVACÍ BONUS INFO MODAL ═══ */}
+      <AnimatePresence>
+        {showBonusInfo && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowBonusInfo(false)} className="fixed inset-0 bg-black/60 z-[110]" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-zinc-900 border border-white/10 rounded-2xl p-5 z-[110] space-y-4 shadow-2xl"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-white flex items-center gap-2">
+                  🚀 Jak funguje Dorovnávací bonus?
+                </h3>
+                <button type="button" onClick={() => setShowBonusInfo(false)} className="text-zinc-500 hover:text-white transition-colors">
+                  <X size={16} />
+                </button>
+              </div>
+              
+              <div className="text-xs text-zinc-400 leading-relaxed space-y-3">
+                <p>
+                  Dorovnávací bonus pomáhá vyrovnat šance v lize. Pokud ztrácíš na lídra, získáš k úspěšné Tajné misi extra odměnu:
+                </p>
+                <div className="space-y-2 pt-1">
+                  <div className="flex justify-between bg-zinc-800/40 rounded-lg p-2 border border-zinc-800">
+                    <span className="font-semibold text-zinc-300">Ztráta pod 20 XP</span>
+                    <span className="font-bold text-zinc-500">0 XP</span>
+                  </div>
+                  <div className="flex justify-between bg-orange-500/10 rounded-lg p-2 border border-orange-500/20">
+                    <span className="font-semibold text-orange-300">Ztráta 20–49 XP</span>
+                    <span className="font-bold text-orange-400">+5 XP</span>
+                  </div>
+                  <div className="flex justify-between bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
+                    <span className="font-semibold text-amber-300">Ztráta 50–99 XP</span>
+                    <span className="font-bold text-amber-400">+10 XP</span>
+                  </div>
+                  <div className="flex justify-between bg-rose-500/10 rounded-lg p-2 border border-rose-500/20">
+                    <span className="font-semibold text-rose-300">Ztráta 100+ XP</span>
+                    <span className="font-bold text-rose-400">+15 XP</span>
+                  </div>
+                </div>
+              </div>
+              
+              <button onClick={() => setShowBonusInfo(false)} className="w-full py-2 rounded-lg bg-zinc-800 text-zinc-300 text-xs font-bold hover:bg-zinc-700 transition-colors">
+                Rozumím
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ CLAIM REWARD MODAL ═══ */}
+      <AnimatePresence>
+        {claimingReward && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setClaimingReward(null)} className="fixed inset-0 bg-black/60 z-[110]" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85%] max-w-sm bg-zinc-900 border border-emerald-500/20 rounded-2xl p-5 z-[110] space-y-4"
+            >
+              <h3 className="text-sm font-black text-white flex items-center gap-2">
+                🎁 Vybrat odměnu za Sprint
+              </h3>
+              <p className="text-xs text-zinc-400">
+                Opravdu si chceš vybrat odměnu: <span className="font-extrabold text-white">„{claimingReward.title}“</span>?
+              </p>
+              <p className="text-[10px] text-zinc-500 italic leading-normal">
+                Poznámka: V každém Sprintu si můžeš vybrat pouze jednu odměnu. Tuto volbu již nelze vzít zpět!
+              </p>
+              <div className="flex gap-2">
+                <button disabled={isClaiming} onClick={() => setClaimingReward(null)} className="flex-1 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold hover:bg-zinc-700 disabled:opacity-50 transition-colors cursor-pointer">
+                  Zrušit
+                </button>
+                <button disabled={isClaiming} onClick={handleConfirmClaimReward} className="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-400 disabled:opacity-50 transition-colors cursor-pointer">
+                  {isClaiming ? "Ukládám..." : "Ano, vybrat!"}
+                </button>
               </div>
             </motion.div>
           </>

@@ -172,8 +172,13 @@ export default function App() {
     );
   }
 
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
+  
+  const currentUserRole = useMemo(() => userProfiles[user?.uid || '']?.role || 'viewer', [userProfiles, user]);
+  const canApproveActivities = useMemo(() => currentUserRole === 'admin' || currentUserRole === 'parent', [currentUserRole]);
+  const canManageSystem = useMemo(() => currentUserRole === 'admin', [currentUserRole]);
+
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<"parent" | "child">("child");
@@ -220,6 +225,8 @@ export default function App() {
   const [approvingEvent, setApprovingEvent] = useState<ActivitySuggestion | null>(null);
   const [approveDate, setApproveDate] = useState("");
   const [approveTime, setApproveTime] = useState("");
+  const [confirmDetails, setConfirmDetails] = useState(false);
+  const [confirmFree, setConfirmFree] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [rejectingActivity, setRejectingActivity] = useState<ActivitySuggestion | null>(null);
   const [rejectReasonText, setRejectReasonText] = useState("");
@@ -233,6 +240,7 @@ export default function App() {
   const [showNothingToDeleteModal, setShowNothingToDeleteModal] = useState(false);
   const [showGradeLimitModal, setShowGradeLimitModal] = useState(false);
   const [showGameHub, setShowGameHub] = useState(false);
+  const [showBikeGenerator, setShowBikeGenerator] = useState(false);
   useEffect(() => {
     const handleScroll = () => {
       setShowScrollToTop(window.scrollY > 300);
@@ -443,7 +451,9 @@ export default function App() {
     location: "",
     url: "",
     rideFrom: "",
-    rideTo: ""
+    rideTo: "",
+    claimedDetails: false,
+    claimedFree: false
   });
 
   const handleImageCompress = (file: File): Promise<string> => {
@@ -706,7 +716,9 @@ export default function App() {
       location: draft.location || "",
       url: draft.url || "",
       rideFrom: "",
-      rideTo: ""
+      rideTo: "",
+      claimedDetails: false,
+      claimedFree: false
     });
     setEditingId(id);
     setShowForm(true);
@@ -920,7 +932,9 @@ export default function App() {
           proposedBy: user.uid,
           ...(formType === "ride" ? { rideFrom: newSuggestion.rideFrom || "", rideTo: newSuggestion.rideTo || "" } : {}),
           ...(newSuggestion.url ? { url: newSuggestion.url } : {}),
-          updatedAt: serverTimestamp()
+          updatedAt: serverTimestamp(),
+          claimedDetails: !!newSuggestion.claimedDetails,
+          claimedFree: !!newSuggestion.claimedFree
         });
       } else {
         // Vytvoření nového návrhu
@@ -937,7 +951,9 @@ export default function App() {
           ...(formType === "ride" ? { rideFrom: newSuggestion.rideFrom || "", rideTo: newSuggestion.rideTo || "" } : {}),
           ...(newSuggestion.url ? { url: newSuggestion.url } : {}),
           likes: 0,
-          createdAt: serverTimestamp()
+          createdAt: serverTimestamp(),
+          claimedDetails: !!newSuggestion.claimedDetails,
+          claimedFree: !!newSuggestion.claimedFree
         });
       }
       handleCloseForm();
@@ -950,7 +966,7 @@ export default function App() {
     setShowForm(false);
     setFormType("activity");
     setEditingId(null);
-    setNewSuggestion({ title: "", description: "", eventDate: "", eventTime: "", location: "", url: "", childName: "", customChildName: "", rideFrom: "", rideTo: "" });
+    setNewSuggestion({ title: "", description: "", eventDate: "", eventTime: "", location: "", url: "", childName: "", customChildName: "", rideFrom: "", rideTo: "", claimedDetails: false, claimedFree: false });
     setError(null);
   };
 
@@ -1045,13 +1061,23 @@ export default function App() {
       location: suggestion.location || "",
       url: suggestion.url || "",
       rideFrom: suggestion.rideFrom || "",
-      rideTo: suggestion.rideTo || ""
+      rideTo: suggestion.rideTo || "",
+      claimedDetails: false,
+      claimedFree: false
     });
     setShowArchive(false);
     setShowForm(true);
   };
 
-  const handleUpdateStatus = async (id: string, status: "approved" | "rejected", overrideDate?: string, overrideTime?: string, reason?: string) => {
+  const handleUpdateStatus = async (
+    id: string, 
+    status: "approved" | "rejected", 
+    overrideDate?: string, 
+    overrideTime?: string, 
+    reason?: string, 
+    approvedDetails?: boolean, 
+    approvedFree?: boolean
+  ) => {
     // Ověření kalendáře vynucujeme jen pro Schválení, Zamítnout můžeme kdykoliv
     if (status === "approved" && !googleTokens) {
       setError("Než schválíte aktivitu, musíte se propojit s Google Kalendářem (modré tlačítko výše).");
@@ -1209,6 +1235,11 @@ export default function App() {
         if (overrideDate !== undefined) updateData.eventDate = overrideDate;
         if (overrideTime !== undefined) updateData.eventTime = overrideTime;
         updateData.adminModifiedTime = true;
+      }
+
+      if (status === "approved") {
+        if (approvedDetails !== undefined) updateData.approvedDetails = approvedDetails;
+        if (approvedFree !== undefined) updateData.approvedFree = approvedFree;
       }
       
       if (calendarEventId) {
@@ -1408,7 +1439,7 @@ export default function App() {
         <div className="flex items-center gap-3 ml-auto z-10">
           {user ? (
             <>
-              {["zefran3@gmail.com"].includes(user.email?.toLowerCase() || "") && (
+              {canApproveActivities && (
                 <button 
                   onClick={() => {
                     setView(view === "parent" ? "child" : "parent");
@@ -1600,15 +1631,17 @@ export default function App() {
               </button>
             )}
             {view === "parent" && (
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setShowUserManagement(true)}
-                  className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-indigo-600 text-white font-bold text-xs w-full hover:bg-indigo-700 transition-all shadow-lg hover:-translate-y-0.5"
-                >
-                  <Shield size={24} />
-                  <span>Admin HUB</span>
-                </button>
-                {(userProfiles[user?.uid || '']?.role === 'admin' || userProfiles[user?.uid || '']?.role === 'parent') && (
+              <div className={cn("grid gap-2", canManageSystem ? "grid-cols-2" : "grid-cols-1")}>
+                {canManageSystem && (
+                  <button
+                    onClick={() => setShowUserManagement(true)}
+                    className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-indigo-600 text-white font-bold text-xs w-full hover:bg-indigo-700 transition-all shadow-lg hover:-translate-y-0.5"
+                  >
+                    <Shield size={24} />
+                    <span>Admin HUB</span>
+                  </button>
+                )}
+                {canApproveActivities && (
                   <button
                     onClick={() => { 
                       if (showInspirationsView) { 
@@ -1741,6 +1774,7 @@ export default function App() {
               }}
             />
           </motion.div>
+
           {/* Game Hub Entry Button */}
           {leaderboard.length > 0 && (
             <motion.button
@@ -2096,7 +2130,7 @@ export default function App() {
                                   );
                                 }
 
-                                if (insp.status === 'proposed' && userProfiles[user?.uid || '']?.role === 'parent') {
+                                if (insp.status === 'proposed' && canApproveActivities) {
                                   return (
                                     <button 
                                       onClick={() => handleApproveBikeRoute(insp.id)}
@@ -2687,32 +2721,84 @@ export default function App() {
                     {view === "parent" && suggestion.status === "pending" && (
                       <div className="mt-4 flex flex-col gap-2">
                         {approvingEvent?.id === suggestion.id ? (
-                          <div className="p-3 bg-green-50 rounded-xl border border-green-200">
-                            <div className="text-[11px] font-bold text-green-700 mb-2 uppercase tracking-wider">Úprava data a času před schválením:</div>
-                            <div className="flex gap-2 mb-2">
-                              <input 
-                                type="date" 
-                                value={approveDate}
-                                onChange={e => setApproveDate(e.target.value)}
-                                className="w-full text-xs p-2 rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-green-400"
-                              />
-                              <input 
-                                type="time" 
-                                value={approveTime}
-                                onChange={e => setApproveTime(e.target.value)}
-                                className="w-full text-xs p-2 rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-green-400"
-                              />
+                          <div className="p-3 bg-green-50 rounded-xl border border-green-200 space-y-3">
+                            <div>
+                              <div className="text-[11px] font-bold text-green-700 mb-2 uppercase tracking-wider">Úprava data a času před schválením:</div>
+                              <div className="flex gap-2">
+                                <input 
+                                  type="date" 
+                                  value={approveDate}
+                                  onChange={e => setApproveDate(e.target.value)}
+                                  className="w-full text-xs p-2 rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-green-400 bg-white"
+                                />
+                                <input 
+                                  type="time" 
+                                  value={approveTime}
+                                  onChange={e => setApproveTime(e.target.value)}
+                                  className="w-full text-xs p-2 rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-green-400 bg-white"
+                                />
+                              </div>
                             </div>
+
+                            {/* Zobrazení nároků na bonusy a volba schválení/zamítnutí */}
+                            {(suggestion.claimedDetails || suggestion.claimedFree) && (
+                              <div className="space-y-2">
+                                <div className="text-[10px] font-bold text-stone-500 uppercase tracking-wider">Nárokované XP bonusy:</div>
+                                <div className="flex flex-col gap-2">
+                                  {suggestion.claimedDetails && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDetails(!confirmDetails)}
+                                      className={cn(
+                                        "flex items-center justify-between p-2.5 rounded-xl border text-left text-xs font-bold transition-all w-full cursor-pointer",
+                                        confirmDetails 
+                                          ? "bg-cyan-50 border-cyan-200 text-cyan-800" 
+                                          : "bg-stone-100 border-stone-200 text-stone-400 line-through"
+                                      )}
+                                    >
+                                      <span>📝 Logistické detaily (+5 XP)</span>
+                                      <span className={cn(
+                                        "text-[9px] uppercase font-black px-1.5 py-0.5 rounded-lg border",
+                                        confirmDetails ? "bg-cyan-500 border-cyan-500 text-white" : "bg-white border-stone-300 text-stone-500"
+                                      )}>
+                                        {confirmDetails ? "Schváleno" : "Odepřeno"}
+                                      </span>
+                                    </button>
+                                  )}
+                                  {suggestion.claimedFree && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmFree(!confirmFree)}
+                                      className={cn(
+                                        "flex items-center justify-between p-2.5 rounded-xl border text-left text-xs font-bold transition-all w-full cursor-pointer",
+                                        confirmFree 
+                                          ? "bg-amber-50 border-amber-200 text-amber-800" 
+                                          : "bg-stone-100 border-stone-200 text-stone-400 line-through"
+                                      )}
+                                    >
+                                      <span>💰 Akce zdarma / sleva (+10 XP)</span>
+                                      <span className={cn(
+                                        "text-[9px] uppercase font-black px-1.5 py-0.5 rounded-lg border",
+                                        confirmFree ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-stone-300 text-stone-500"
+                                      )}>
+                                        {confirmFree ? "Schváleno" : "Odepřeno"}
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
                             <div className="flex gap-2">
                               <button 
-                                onClick={() => handleUpdateStatus(suggestion.id, "approved", approveDate, approveTime)}
-                                className="px-4 py-2 rounded-lg bg-green-600 text-white font-bold text-xs hover:bg-green-700 transition-colors flex-1"
+                                onClick={() => handleUpdateStatus(suggestion.id, "approved", approveDate, approveTime, undefined, confirmDetails, confirmFree)}
+                                className="px-4 py-2.5 rounded-xl bg-green-600 text-white font-bold text-xs hover:bg-green-700 transition-colors flex-1"
                               >
                                 Potvrdit schválení
                               </button>
                               <button 
                                 onClick={() => setApprovingEvent(null)}
-                                className="px-4 py-2 rounded-lg bg-stone-200 text-stone-700 font-bold text-xs hover:bg-stone-300 transition-colors"
+                                className="px-4 py-2.5 rounded-xl bg-stone-200 text-stone-700 font-bold text-xs hover:bg-stone-300 transition-colors"
                               >
                                 Zrušit
                               </button>
@@ -2728,6 +2814,8 @@ export default function App() {
                                   setApprovingEvent(suggestion);
                                   setApproveDate(suggestion.eventDate || "");
                                   setApproveTime(suggestion.eventTime || "");
+                                  setConfirmDetails(!!suggestion.claimedDetails);
+                                  setConfirmFree(!!suggestion.claimedFree);
                                 }
                               }}
                               className="px-4 py-2.5 rounded-xl bg-green-500 text-white font-bold text-xs hover:opacity-90 transition-opacity flex-1"
@@ -2909,6 +2997,63 @@ export default function App() {
                           placeholder="Popiš nám to víc..."
                           className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-rose-500 outline-none transition-all h-24 resize-none text-sm"
                         />
+                      </div>
+
+                      <div className="space-y-3 pt-1">
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">XP Bonusy k nárokování</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setNewSuggestion(prev => ({ ...prev, claimedDetails: !prev.claimedDetails }))}
+                            className={cn(
+                              "flex flex-col gap-1.5 p-4 rounded-xl border text-left transition-all cursor-pointer w-full select-none",
+                              newSuggestion.claimedDetails 
+                                ? "bg-cyan-500/15 border-cyan-500 text-cyan-800" 
+                                : "bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100/50"
+                            )}
+                          >
+                            <div className="text-xs font-bold">Mám k tomu i detaily</div>
+                            <div className={cn(
+                              "text-[10px] mt-0.5 leading-normal font-medium",
+                              newSuggestion.claimedDetails ? "text-cyan-600" : "text-stone-400"
+                            )}>+5 XP pokud dodáš odkaz, časový plán a logistiku</div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setNewSuggestion(prev => ({ ...prev, claimedFree: !prev.claimedFree }))}
+                            className={cn(
+                              "flex flex-col gap-1.5 p-4 rounded-xl border text-left transition-all cursor-pointer w-full select-none",
+                              newSuggestion.claimedFree 
+                                ? "bg-amber-500/15 border-amber-500 text-amber-800" 
+                                : "bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100/50"
+                            )}
+                          >
+                            <div className="text-xs font-bold">Akce je zdarma / se slevou</div>
+                            <div className={cn(
+                              "text-[10px] mt-0.5 leading-normal font-medium",
+                              newSuggestion.claimedFree ? "text-amber-600" : "text-stone-400"
+                            )}>+10 XP za super rozpočet</div>
+                          </button>
+                        </div>
+
+                        {newSuggestion.claimedDetails && (
+                          <motion.div 
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="space-y-2 pt-1"
+                          >
+                            <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">Odkaz na stránky (URL)</label>
+                            <input 
+                              type="url"
+                              value={newSuggestion.url || ""}
+                              onChange={e => setNewSuggestion({...newSuggestion, url: e.target.value})}
+                              placeholder="Sem zadej odkaz na stránky akce..."
+                              className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-cyan-400 outline-none transition-all text-sm"
+                            />
+                          </motion.div>
+                        )}
                       </div>
                       <div>
                         <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block flex items-center gap-1">
@@ -3637,7 +3782,7 @@ export default function App() {
       <input type="file" ref={commentFileInputRef} style={{ display: 'none' }} accept="image/*" onChange={handleCommentPhotoChange} />
 
       <AnimatePresence>
-        {showUserManagement && (
+        {showUserManagement && canManageSystem && (
           <AdminPanel 
             onClose={() => setShowUserManagement(false)}
             userProfiles={userProfiles}
