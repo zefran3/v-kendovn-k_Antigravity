@@ -148,4 +148,8 @@ export interface MysteryQuest {
   deadlineHours: number;   // časový limit v hodinách
   active: boolean;
   createdAt: number;
+  startedAt?: number;
+  durationHours?: number;
+  status?: string;
 }
+

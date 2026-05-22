@@ -82,6 +82,209 @@ interface GameHubProps {
   getAvatarForChild: (name: string) => string;
 }
 
+interface ActiveQuestBannerProps {
+  currentQuest: MysteryQuest;
+  localView: string;
+  isUnderdog: boolean;
+  currentBonusXP: number;
+  setShowBonusInfo: (show: boolean) => void;
+  handleDeactivateQuest: (id: string) => Promise<void>;
+  handleApproveQuest: (id: string) => Promise<void>;
+  handleRejectQuest: (id: string) => Promise<void>;
+  handleCompleteQuest: (id: string) => Promise<void>;
+}
+
+const ActiveQuestBanner: React.FC<ActiveQuestBannerProps> = ({
+  currentQuest,
+  localView,
+  isUnderdog,
+  currentBonusXP,
+  setShowBonusInfo,
+  handleDeactivateQuest,
+  handleApproveQuest,
+  handleRejectQuest,
+  handleCompleteQuest,
+}) => {
+  const calculateTimeLeft = () => {
+    let start = currentQuest.startedAt;
+    if (!start && currentQuest.createdAt) {
+      if (typeof currentQuest.createdAt === 'object' && 'seconds' in currentQuest.createdAt) {
+        start = (currentQuest.createdAt as any).seconds * 1000;
+      } else {
+        start = Number(currentQuest.createdAt);
+      }
+    }
+    if (!start) start = Date.now();
+
+    const duration = currentQuest.durationHours || currentQuest.deadlineHours || 48;
+    const durationMs = duration * 3600 * 1000;
+    const endTime = start + durationMs;
+    return Math.max(0, endTime - Date.now());
+  };
+
+  const [timeLeft, setTimeLeft] = useState<number>(() => calculateTimeLeft());
+
+  useEffect(() => {
+    if (currentQuest.status === 'expired') {
+      setTimeLeft(0);
+      return;
+    }
+
+    const initialLeft = calculateTimeLeft();
+    setTimeLeft(initialLeft);
+
+    if (initialLeft <= 0) {
+      if (currentQuest.status !== 'pending_approval' && currentQuest.status !== 'approved') {
+        updateDoc(doc(db, 'quests', currentQuest.id), { status: 'expired' }).catch(err => 
+          console.error("Error setting quest to expired:", err)
+        );
+      }
+      return;
+    }
+
+    const timer = setInterval(() => {
+      const left = calculateTimeLeft();
+      setTimeLeft(left);
+      if (left <= 0) {
+        clearInterval(timer);
+        if (currentQuest.status !== 'pending_approval' && currentQuest.status !== 'approved') {
+          updateDoc(doc(db, 'quests', currentQuest.id), { status: 'expired' }).catch(err => 
+            console.error("Error setting quest to expired on interval:", err)
+          );
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [
+    currentQuest.id, 
+    currentQuest.status, 
+    currentQuest.startedAt, 
+    currentQuest.createdAt, 
+    currentQuest.durationHours, 
+    currentQuest.deadlineHours
+  ]);
+
+  const formatQuestTime = (ms: number): string => {
+    if (ms <= 0) return "00:00:00";
+    
+    const totalSeconds = Math.floor(ms / 1000);
+    const seconds = totalSeconds % 60;
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    const minutes = totalMinutes % 60;
+    const totalHours = Math.floor(totalMinutes / 60);
+    const hours = totalHours % 24;
+    const days = Math.floor(totalHours / 24);
+
+    const pad = (num: number) => String(num).padStart(2, '0');
+    const timeString = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+
+    if (days > 0) {
+      let dayWord = "dní";
+      if (days === 1) dayWord = "den";
+      else if (days >= 2 && days <= 4) dayWord = "dny";
+      return `${days} ${dayWord}, ${timeString}`;
+    }
+
+    return timeString;
+  };
+
+  const isPending = currentQuest.status === 'pending_approval';
+  const isExpired = currentQuest.status === 'expired' || (timeLeft <= 0 && !isPending && currentQuest.status !== 'approved');
+  const isUrgent = timeLeft > 0 && timeLeft < 3600 * 1000; // méně než 1 hodina
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+      className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-rose-500/10 border border-amber-500/20 p-4"
+    >
+      <div className="absolute -top-10 -right-10 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl" />
+      <div className="relative">
+        <div className="flex items-center gap-2 mb-2">
+          <AlertTriangle size={16} className="text-amber-400" />
+          <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Tajná mise</span>
+          {localView === "parent" && (
+            <button onClick={() => handleDeactivateQuest(currentQuest.id)} className="ml-auto text-[10px] text-zinc-500 hover:text-red-400">Ukončit</button>
+          )}
+        </div>
+        <h4 className="text-sm font-black text-white mb-1">{currentQuest.title}</h4>
+        <p className="text-xs text-zinc-400 mb-2">{currentQuest.description}</p>
+        
+        <div className="flex flex-wrap gap-2 text-[10px] mb-1">
+          {/* Živý odpočítávač času */}
+          <span className={cn(
+            "px-2 py-0.5 rounded-full font-bold transition-all duration-300 flex items-center gap-1",
+            isExpired 
+              ? "bg-red-500/20 text-red-400 border border-red-500/30"
+              : isUrgent
+                ? "bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse"
+                : "bg-amber-500/20 text-amber-300"
+          )}>
+            ⏱️ Zbývá: {formatQuestTime(timeLeft)}
+          </span>
+
+          {isUnderdog ? (
+            <span 
+              onClick={() => setShowBonusInfo(true)}
+              className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              ⚡ Odměna: {currentQuest.bonusMultiplier} XP + {currentBonusXP} XP Dorovnávací bonus <HelpCircle size={10} /> 🚀
+            </span>
+          ) : (
+            <span 
+              onClick={() => setShowBonusInfo(true)}
+              className="bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              ⚡ Odměna: {currentQuest.bonusMultiplier} XP <HelpCircle size={10} />
+            </span>
+          )}
+        </div>
+
+        {/* Interaktivní tlačítka na základě stavu a role */}
+        {isPending ? (
+          localView === "parent" ? (
+            <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-2">
+              <div className="text-xs font-extrabold text-amber-400">
+                ✨ Hráč <span className="underline">{currentQuest.completedBy}</span> hlásí splnění mise!
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleApproveQuest(currentQuest.id)}
+                  className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-colors shadow-md flex items-center justify-center gap-1"
+                >
+                  🏆 Schválit a vyplatit XP
+                </button>
+                <button
+                  onClick={() => handleRejectQuest(currentQuest.id)}
+                  className="py-1.5 px-3 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-lg transition-colors shadow-md flex items-center justify-center gap-1"
+                >
+                  ❌ Zamítnout
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 p-2 bg-zinc-800/40 border border-zinc-700/30 rounded-lg text-center text-xs text-cyan-400 font-bold animate-pulse">
+              ⏳ Čeká na schválení odměny administrátorem...
+            </div>
+          )
+        ) : isExpired ? (
+          <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-center text-xs text-red-400 font-bold">
+            ❌ Limity pro splnění této mise vypršel.
+          </div>
+        ) : (
+          localView !== "parent" && (
+            <button
+              onClick={() => handleCompleteQuest(currentQuest.id)}
+              className="w-full mt-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-lg hover:shadow-emerald-500/20 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+            >
+              ✅ Mám hotovo (Požádat o odměnu)
+            </button>
+          )
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
 export default function GameHub({ suggestions, userProfiles, currentUserName, currentUserId, view, onClose, getAvatarForChild }: GameHubProps) {
   const [leaderboardMode, setLeaderboardMode] = useState<"sprint" | "liga">("sprint");
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
@@ -210,12 +413,16 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
   const handleAddQuest = async () => {
     if (!questTitle.trim()) return;
+    const hours = parseInt(questHours) || 48;
     await addDoc(collection(db, 'quests'), {
       title: questTitle.trim(),
       description: questDesc.trim(),
       bonusMultiplier: parseFloat(questMultiplier) || 2,
-      deadlineHours: parseInt(questHours) || 48,
+      deadlineHours: hours,
+      durationHours: hours,
+      startedAt: Date.now(),
       active: true,
+      status: 'active',
       createdAt: serverTimestamp()
     });
     setQuestTitle(""); setQuestDesc(""); setShowCreateQuest(false);
@@ -954,86 +1161,19 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
           )}
 
           {/* ═══ TAJNÁ MISE (QUEST BANNER) ═══ */}
-          {activeQuests.length > 0 && (() => {
-            const currentQuest = activeQuests[0];
-            const isPending = currentQuest.status === 'pending_approval';
-            
-            return (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-                className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-rose-500/10 border border-amber-500/20 p-4"
-              >
-                <div className="absolute -top-10 -right-10 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl" />
-                <div className="relative">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertTriangle size={16} className="text-amber-400" />
-                    <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Tajná mise</span>
-                    {localView === "parent" && !isPending && (
-                      <button onClick={() => handleDeactivateQuest(currentQuest.id)} className="ml-auto text-[10px] text-zinc-500 hover:text-red-400">Ukončit</button>
-                    )}
-                  </div>
-                  <h4 className="text-sm font-black text-white mb-1">{currentQuest.title}</h4>
-                  <p className="text-xs text-zinc-400 mb-2">{currentQuest.description}</p>
-                  
-                  <div className="flex flex-wrap gap-2 text-[10px] mb-1">
-                    <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold">⏱ {currentQuest.deadlineHours}h limit</span>
-                    {isUnderdog ? (
-                      <span 
-                        onClick={() => setShowBonusInfo(true)}
-                        className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 cursor-pointer transition-colors animate-pulse"
-                      >
-                        ⚡ Odměna: {currentQuest.bonusMultiplier} XP + {currentBonusXP} XP Dorovnávací bonus <HelpCircle size={10} /> 🚀
-                      </span>
-                    ) : (
-                      <span 
-                        onClick={() => setShowBonusInfo(true)}
-                        className="bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                      >
-                        ⚡ Odměna: {currentQuest.bonusMultiplier} XP <HelpCircle size={10} />
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Interaktivní tlačítka na základě stavu a role */}
-                  {isPending ? (
-                    localView === "parent" ? (
-                      <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-2">
-                        <div className="text-xs font-extrabold text-amber-400">
-                          ✨ Hráč <span className="underline">{currentQuest.completedBy}</span> hlásí splnění mise!
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleApproveQuest(currentQuest.id)}
-                            className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-colors shadow-md flex items-center justify-center gap-1"
-                          >
-                            🏆 Schválit a vyplatit XP
-                          </button>
-                          <button
-                            onClick={() => handleRejectQuest(currentQuest.id)}
-                            className="py-1.5 px-3 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-lg transition-colors shadow-md flex items-center justify-center gap-1"
-                          >
-                            ❌ Zamítnout
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-3 p-2 bg-zinc-800/40 border border-zinc-700/30 rounded-lg text-center text-xs text-cyan-400 font-bold animate-pulse">
-                        ⏳ Čeká na schválení odměny administrátorem...
-                      </div>
-                    )
-                  ) : (
-                    localView !== "parent" && (
-                      <button
-                        onClick={() => handleCompleteQuest(currentQuest.id)}
-                        className="w-full mt-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-lg hover:shadow-emerald-500/20 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
-                      >
-                        ✅ Mám hotovo (Požádat o odměnu)
-                      </button>
-                    )
-                  )}
-                </div>
-              </motion.div>
-            );
-          })()}
+          {activeQuests.length > 0 && (
+            <ActiveQuestBanner
+              currentQuest={activeQuests[0]}
+              localView={localView}
+              isUnderdog={isUnderdog}
+              currentBonusXP={currentBonusXP}
+              setShowBonusInfo={setShowBonusInfo}
+              handleDeactivateQuest={handleDeactivateQuest}
+              handleApproveQuest={handleApproveQuest}
+              handleRejectQuest={handleRejectQuest}
+              handleCompleteQuest={handleCompleteQuest}
+            />
+          )}
 
 
 
