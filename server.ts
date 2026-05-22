@@ -5,7 +5,6 @@ import { google } from "googleapis";
 import dotenv from "dotenv";
 import fs from "fs";
 import admin from "firebase-admin";
-import cron from "node-cron";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { fetchMksVyskovProgram } from "./src/lib/cinemaScraper";
 import { scrapeCineStarOlomouc } from "./src/lib/cineStarOlomouc";
@@ -25,8 +24,15 @@ const oauth2Client = new google.auth.OAuth2(
 // Inicializace Firebase Admin pro push notifikace
 try {
   const serviceAccountPath = path.join(process.cwd(), 'vikendovnik-firebase-adminsdk-fbsvc-62ecb71cd3.json');
-  if (fs.existsSync(serviceAccountPath)) {
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
+  let serviceAccount;
+
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } else if (fs.existsSync(serviceAccountPath)) {
+    serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
+  }
+
+  if (serviceAccount) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
@@ -483,14 +489,37 @@ async function startServer() {
     } catch (error) { res.status(500).send("Chyba serveru"); }
   });
 
-  async function runAutomatedGeneration() {
-    try {
-      await generateInspirations();
-      sendBroadcastNotification("✨ Nové tipy na víkend!", "AI agent právě našel čerstvé nápady.");
-    } catch (error) { setTimeout(() => runAutomatedGeneration(), 60000); }
-  }
+  // POST – endpoint pro spouštění středečního generování z GitHub Actions
+  app.post("/api/cron/generate", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    const expectedToken = process.env.CRON_SECRET_TOKEN;
 
-  cron.schedule("0 3 * * 3", () => runAutomatedGeneration());
+    if (!expectedToken) {
+      console.error("[CRON ERROR] CRON_SECRET_TOKEN není nastaven v proměnných prostředí Renderu!");
+      return res.status(500).json({ error: "Chyba konfigurace serveru." });
+    }
+
+    if (!authHeader || authHeader !== `Bearer ${expectedToken}`) {
+      console.warn("[CRON WARNING] Pokus o neoprávněný přístup k plánovanému generování.");
+      return res.status(401).json({ error: "Nepovolený přístup (Unauthorized)." });
+    }
+
+    try {
+      console.log("[CRON] Generování inspirací spouštěno externím triggerem z GitHubu...");
+      
+      const suggestions = await generateInspirations();
+      
+      if (suggestions && suggestions.length > 0) {
+        await sendBroadcastNotification("✨ Nové tipy na víkend!", "AI agent právě našel čerstvé nápady.");
+        return res.json({ success: true, count: suggestions.length });
+      } else {
+        return res.status(500).json({ error: "Generování nevrátilo žádné inspirace." });
+      }
+    } catch (error: any) {
+      console.error("[CRON ERROR] Kritická chyba při spuštění generování:", error);
+      return res.status(500).json({ error: error.message || "Chyba generování" });
+    }
+  });
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });

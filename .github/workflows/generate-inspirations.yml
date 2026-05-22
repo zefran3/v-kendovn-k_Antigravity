@@ -1,0 +1,18 @@
+name: Generate Weekend Inspirations
+
+on:
+  schedule:
+    # Spouští se každou středu v 1:00 UTC (2:00 ráno SEČ / 3:00 ráno SELČ)
+    - cron: '0 1 * * 3'
+  workflow_dispatch: # Umožňuje spustit workflow ručně přes GitHub UI
+
+jobs:
+  trigger-generation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Automated Generation
+        run: |
+          curl -X POST "${{ secrets.RENDER_API_URL }}/api/cron/generate" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --fail
