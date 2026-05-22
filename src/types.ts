@@ -26,6 +26,7 @@ export interface ActivitySuggestion {
   reconsiderationRequested?: boolean;
   hasAppealed?: boolean;
   appealReason?: string;
+  finalRejectReason?: string;
   type?: 'activity' | 'ride';
   rideFrom?: string;
   rideTo?: string;

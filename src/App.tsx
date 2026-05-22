@@ -60,6 +60,7 @@ import {
   addDoc, 
   updateDoc, 
   deleteDoc,
+  deleteField,
   doc, 
   onSnapshot, 
   query, 
@@ -192,7 +193,7 @@ export default function App() {
   });
   const [showArchive, setShowArchive] = useState(false);
   const [archiveTab, setArchiveTab] = useState<"completed" | "cancelled">("completed");
-  const [boardFilter, setBoardFilter] = useState<"all" | "pending" | "approved" | "rejected" | "cancelled" | "ride" | "bike">("all");
+  const [boardFilter, setBoardFilter] = useState<"all" | "pending" | "approved" | "rejected" | "cancelled" | "ride" | "bike" | "trash">("all");
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const [likedSuggestions, setLikedSuggestions] = useState<string[]>(() => {
     const saved = localStorage.getItem('likedSuggestions');
@@ -1225,11 +1226,16 @@ export default function App() {
 
       // Pokud jsme zde, nedošlo k chybě (nebo se jen zamítá). 
       // Můžeme aktivitu finálně schválit a aktualizovat data.
-      const updateData: any = { status };
-      
-      if (status === "rejected" && reason) {
-        updateData.rejectReason = reason;
-      }
+       const updateData: any = { status };
+       
+       if (status === "rejected" && reason) {
+         if (suggestion.reconsiderationRequested || suggestion.appealReason) {
+           updateData.finalRejectReason = reason;
+           updateData.reconsiderationRequested = false;
+         } else {
+           updateData.rejectReason = reason;
+         }
+       }
       
       if (status === "approved" && (overrideDate !== undefined || overrideTime !== undefined)) {
         if (overrideDate !== undefined) updateData.eventDate = overrideDate;
@@ -1285,6 +1291,23 @@ export default function App() {
       });
     } catch (err: any) {
       console.error("Reopen failed", err);
+      handleFirestoreError(err, OperationType.UPDATE, path);
+    }
+  };
+
+  const handleRepeatCancelledActivity = async (id: string) => {
+    const path = `suggestions/${id}`;
+    try {
+      await updateDoc(doc(db, 'suggestions', id), { 
+        status: "pending",
+        reconsiderationRequested: deleteField(),
+        hasAppealed: deleteField(),
+        rejectReason: deleteField(),
+        appealReason: deleteField(),
+        finalRejectReason: deleteField()
+      } as any);
+    } catch (err: any) {
+      console.error("Repeat cancelled activity failed", err);
       handleFirestoreError(err, OperationType.UPDATE, path);
     }
   };
@@ -2268,7 +2291,8 @@ export default function App() {
                           { id: "rejected", label: "Zamítnuté" },
                           { id: "cancelled", label: "Zrušené" },
                           { id: "ride", label: "🚗 Odvoz" },
-                          { id: "bike", label: "🚴 Cyklotrasy" }
+                          { id: "bike", label: "🚴 Cyklotrasy" },
+                          { id: "trash", label: "Odpad" }
                         ]
                     ).map(f => (
                       <button
@@ -2314,7 +2338,10 @@ export default function App() {
                               : "bg-white text-stone-500 border border-stone-200 hover:border-stone-300 hover:text-stone-700"
                         )}
                       >
-                        {deleteFilterStatus === f.id ? `🗑️ ${f.label} — potvrdit smazání` : f.label}
+                        <span className="flex items-center gap-1">
+                          {f.id === "trash" && <Trash2 size={13} />}
+                          {deleteFilterStatus === f.id ? `🗑️ ${f.label} — potvrdit smazání` : f.label}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -2481,36 +2508,38 @@ export default function App() {
                         /cykl|kolo|bike|cycling/i.test(suggestion.title + " " + suggestion.description);
                       const isApprovedOrPending = suggestion.status === "approved" || 
                         suggestion.status === "pending" || 
-                        suggestion.reconsiderationRequested;
+                        (suggestion.status === "rejected" && suggestion.reconsiderationRequested);
                       return isApprovedOrPending && isBikeRoute;
                     }
-                    if (boardFilter === "pending") return suggestion.status === "pending" || suggestion.reconsiderationRequested;
+                    if (boardFilter === "pending") {
+                      return suggestion.status === "pending" || (suggestion.status === "rejected" && suggestion.reconsiderationRequested);
+                    }
+                    if (boardFilter === "rejected") {
+                      return suggestion.status === "rejected" && !suggestion.reconsiderationRequested && !suggestion.hasAppealed;
+                    }
+                    if (boardFilter === "trash") {
+                      return suggestion.status === "rejected" && suggestion.hasAppealed && !suggestion.reconsiderationRequested;
+                    }
                     return suggestion.status === boardFilter;
                   })
                   .sort((a, b) => {
-                    // Žádosti o přehodnocení primárně nahoru
-                    if (a.reconsiderationRequested && !b.reconsiderationRequested) return -1;
-                    if (!a.reconsiderationRequested && b.reconsiderationRequested) return 1;
+                    const reqA = a.status === "pending" || (a.status === "rejected" && a.reconsiderationRequested === true);
+                    const reqB = b.status === "pending" || (b.status === "rejected" && b.reconsiderationRequested === true);
 
-                    // Priorita stavů
-                    const getPriority = (status: string) => {
-                      if (status === "pending") return 1;
-                      if (status === "approved") return 2;
-                      return 3;
+                    if (reqA && !reqB) return -1;
+                    if (!reqA && reqB) return 1;
+
+                    // Pro obě skupiny řadíme podle času vytvoření (novější nahoře)
+                    const getMillis = (ts: any) => {
+                      if (!ts) return 0;
+                      if (typeof ts === 'number') return ts;
+                      if (typeof ts.toMillis === 'function') return ts.toMillis();
+                      if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+                      return 0;
                     };
-                    const pA = getPriority(a.status);
-                    const pB = getPriority(b.status);
-                    if (pA !== pB) return pA - pB;
-
-                    // Pokud jsou obě schválené, řadit podle nejbližšího data eventDate
-                    if (a.status === "approved" && b.status === "approved") {
-                      const dateA = a.eventDate ? new Date(a.eventDate).getTime() : Infinity;
-                      const dateB = b.eventDate ? new Date(b.eventDate).getTime() : Infinity;
-                      if (dateA !== dateB) return dateA - dateB;
-                    }
-
-                    // Jinak řadit podle času vytvoření (novější nahoře)
-                    return b.createdAt - a.createdAt;
+                    const timeA = getMillis(a.createdAt);
+                    const timeB = getMillis(b.createdAt);
+                    return timeB - timeA;
                   })
                   .map((suggestion) => (
                   <motion.div
@@ -2534,12 +2563,12 @@ export default function App() {
                           <div className={cn(
                             "text-[10px] uppercase px-2 py-1 rounded-full font-extrabold w-fit mb-2",
                             suggestion.status === "approved" ? "bg-green-500 text-white" :
-                            suggestion.status === "rejected" ? "bg-red-500 text-white" :
+                            (suggestion.status === "rejected" && !suggestion.reconsiderationRequested) ? "bg-red-500 text-white" :
                             suggestion.status === "cancelled" ? "bg-stone-500 text-white" :
                             "bg-amber-500 text-white"
                           )}>
                             {suggestion.status === "approved" ? "Schváleno" :
-                             suggestion.status === "rejected" ? "Zamítnuto" :
+                             (suggestion.status === "rejected" && !suggestion.reconsiderationRequested) ? "Zamítnuto" :
                              suggestion.status === "cancelled" ? "Zrušeno" : "Čeká na schválení"}
                           </div>
                           {suggestion.type === "ride" && (
@@ -2654,11 +2683,7 @@ export default function App() {
                         </>
                       )}
                       
-                      {suggestion.rejectReason && (
-                        <div className="mt-3 p-3 bg-white/60 rounded-lg text-sm text-stone-700 italic border border-stone-200/50">
-                          <strong>{suggestion.status === "cancelled" ? "Důvod zrušení:" : "Důvod zamítnutí:"}</strong> {suggestion.rejectReason}
-                        </div>
-                      )}
+
                       
                       {suggestion.calendarError && (
                         <div className="mt-3 p-3 bg-red-50 rounded-lg text-sm text-red-700 border border-red-200">
@@ -2720,6 +2745,33 @@ export default function App() {
 
                     {canApproveActivities && suggestion.status === "pending" && (
                       <div className="mt-4 flex flex-col gap-2">
+                        {/* Čistý textový výpis historie posuzování - řazeno od nejstaršího */}
+                        {(suggestion.rejectReason || suggestion.appealReason || suggestion.finalRejectReason) && (
+                          <div className="mt-2 mb-3 p-4 bg-stone-50 rounded-2xl border border-stone-200 text-left flex flex-col gap-3">
+                            <div className="text-xs text-stone-700 space-y-2">
+                              {/* 1. Položka: Vždy přítomný původní důvod */}
+                              {suggestion.rejectReason && (
+                                <div>
+                                  <span className="font-bold">Důvod zamítnutí:</span> {suggestion.rejectReason}
+                                </div>
+                              )}
+
+                              {/* 2. Položka: Zobrazí se, pokud dítě zažádalo o přehodnocení */}
+                              {suggestion.appealReason && (
+                                <div>
+                                  <span className="font-bold">Důvod přehodnocení:</span> {suggestion.appealReason}
+                                </div>
+                              )}
+
+                              {/* 3. Položka: Zobrazí se až na konci při definitivním zamítnutí */}
+                              {suggestion.finalRejectReason && (
+                                <div>
+                                  <span className="font-bold">Důvod zamítnutí přehodnocení:</span> {suggestion.finalRejectReason}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                         {approvingEvent?.id === suggestion.id ? (
                           <div className="p-3 bg-green-50 rounded-xl border border-green-200 space-y-3">
                             <div>
@@ -2836,53 +2888,94 @@ export default function App() {
                       </div>
                     )}
 
-                    {canApproveActivities && (suggestion.status === "rejected" || suggestion.status === "cancelled") && (
-                      <div className="mt-4 flex flex-col gap-2">
-                        {suggestion.reconsiderationRequested && (
-                          <div className="text-xs text-amber-600 font-bold bg-amber-100 p-2 rounded-lg text-center flex items-center justify-center gap-1 border border-amber-200">
-                            <span>⚠️</span> Dítě žádá o přehodnocení!
-                          </div>
-                        )}
-                        {suggestion.appealReason && (
-                          <div className="text-xs text-stone-700 bg-amber-50 p-3 rounded-lg border border-amber-100 italic">
-                            <strong>Důvod:</strong> {suggestion.appealReason}
-                          </div>
-                        )}
-                        {suggestion.hasAppealed && !suggestion.reconsiderationRequested ? (
-                          <div className="text-xs text-center text-stone-500 font-serif italic bg-stone-50 rounded-lg p-3 border border-stone-200">
-                             Tento ortel je vytesán do chladné skály,<br/>a všechny dřívější prosby už podzimní vítr svál.
-                          </div>
-                        ) : suggestion.reconsiderationRequested ? (
-                          <button 
-                            onClick={() => handleReopen(suggestion.id)}
-                            className="px-4 py-2.5 rounded-xl bg-stone-800 text-white font-bold text-xs hover:opacity-90 transition-opacity w-full"
-                          >
-                            Znovu otevřít k posouzení
-                          </button>
-                        ) : null}
+                    {suggestion.status === "rejected" && (
+                      <div className="mt-4 p-4 bg-stone-50 rounded-2xl border border-stone-200 text-left flex flex-col gap-3">
+                        
+                        {/* Čistý textový výpis historie posuzování - řazeno od nejstaršího */}
+                        <div className="text-xs text-stone-700 space-y-2">
+                          
+                          {/* 1. Položka: Vždy přítomný původní důvod */}
+                          {suggestion.rejectReason && (
+                            <div>
+                              <span className="font-bold">Důvod zamítnutí:</span> {suggestion.rejectReason}
+                            </div>
+                          )}
+
+                          {/* 2. Položka: Zobrazí se, pokud dítě zažádalo o přehodnocení */}
+                          {suggestion.appealReason && (
+                            <div>
+                              <span className="font-bold">Důvod přehodnocení:</span> {suggestion.appealReason}
+                            </div>
+                          )}
+
+                          {/* 3. Položka: Zobrazí se až na konci při definitivním zamítnutí */}
+                          {suggestion.finalRejectReason && (
+                            <div>
+                              <span className="font-bold">Důvod zamítnutí přehodnocení:</span> {suggestion.finalRejectReason}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Spodní akční část / Definitivní text */}
+                        <div className="pt-2 border-t border-stone-200/60">
+                          {suggestion.reconsiderationRequested ? (
+                            <>
+                              {canApproveActivities ? (
+                                <div className="space-y-2">
+                                  <div className="text-[11px] text-amber-700 font-bold bg-amber-50 rounded-lg p-2 text-center border border-amber-200">
+                                    ⚠️ Dítě žádá o přehodnocení
+                                  </div>
+                                  <button 
+                                    onClick={() => handleReopen(suggestion.id)}
+                                    className="px-4 py-2.5 rounded-xl bg-stone-950 text-white font-bold text-xs hover:bg-stone-800 transition-colors w-full cursor-pointer"
+                                  >
+                                    Znovu otevřít k posouzení
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-center text-stone-500 bg-stone-100 rounded-lg p-2">
+                                  ⏳ Žádost o přehodnocení odeslána rodičům.
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {suggestion.hasAppealed ? (
+                                <div className="text-[11px] text-center text-stone-400 font-serif italic pt-1 leading-relaxed">
+                                  „Tento ortel je vytesán do chladné skály,<br/>
+                                  a všechny dřívější prosby už podzimní vítr svál.“
+                                </div>
+                              ) : (
+                                view === "child" && user && user.uid === suggestion.authorId && suggestion.type !== "ride" && (
+                                  <button 
+                                    onClick={() => handleOpenAppeal(suggestion)}
+                                    className="px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-xs hover:bg-orange-600 transition-colors w-full cursor-pointer"
+                                  >
+                                    Požádat o přehodnocení
+                                  </button>
+                                )
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
                     )}
 
-                    {view === "child" && user && user.uid === suggestion.authorId && (suggestion.status === "rejected" || suggestion.status === "cancelled") && !suggestion.reconsiderationRequested && !suggestion.hasAppealed && suggestion.type !== "ride" && (
-                       <div className="mt-4">
-                        <button 
-                          onClick={() => handleOpenAppeal(suggestion)}
-                          className="px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-xs hover:opacity-90 transition-opacity w-full"
-                        >
-                          Požádat o přehodnocení
-                        </button>
-                      </div>
-                    )}
-
-                    {view === "child" && (suggestion.status === "rejected" || suggestion.status === "cancelled") && suggestion.hasAppealed && !suggestion.reconsiderationRequested && suggestion.type !== "ride" && (
-                       <div className="mt-4 text-xs text-center text-stone-500 font-serif italic bg-stone-50 rounded-lg p-3 border border-stone-200">
-                         Tento ortel je vytesán do chladné skály,<br/>a všechny dřívější prosby už podzimní vítr svál.
-                       </div>
-                    )}
-
-                    {view === "child" && suggestion.reconsiderationRequested && suggestion.type !== "ride" && (
-                      <div className="mt-4 text-xs text-center text-orange-600 font-bold bg-orange-50 rounded-lg p-2 border border-orange-100">
-                        Žádost o přehodnocení odeslána.
+                    {suggestion.status === "cancelled" && (
+                      <div className="mt-4 p-4 bg-stone-50 rounded-2xl border border-stone-200 text-left flex flex-col gap-3">
+                        <div className="text-xs text-stone-700">
+                          <span className="font-bold">Důvod zrušení:</span> {suggestion.rejectReason}
+                        </div>
+                        {(view === "parent" || (view === "child" && user && user.uid === suggestion.authorId)) && (
+                          <div className="pt-2 border-t border-stone-200/60">
+                            <button 
+                              onClick={() => handleRepeatCancelledActivity(suggestion.id)}
+                              className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-colors w-full cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              🔄 Zopakovat aktivitu
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
