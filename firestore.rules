@@ -3,39 +3,31 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: suggestions
-    // Document ID: auto-generated
-    // Fields:
-    //   - title: string (required, 1-100 chars)
-    //   - description: string (optional, 0-500 chars)
-    //   - childName: string (required, 1-50 chars)
-    //   - suggestedTime: string (deprecated, optional)
-    //   - eventDate: string (optional, YYYY-MM-DD)
-    //   - eventTime: string (optional, HH:MM)
-    //   - status: string (required, choices: 'pending', 'approved', 'rejected')
-    //   - createdAt: timestamp (required)
-    //
-    // ===============================================================
-
-    // ===============================================================
-    // Helper Functions
+    // Assumed Data Model & Helper Functions
     // ===============================================================
 
     function isAuthenticated() {
       return request.auth != null;
     }
 
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
     function isAdmin() {
       return isAuthenticated() &&
         (
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+           getUserData().role == 'admin') ||
           (request.auth.token.email.lower() == "zefran3@gmail.com" && request.auth.token.email_verified == true) ||
           (request.auth.token.email == "zeFRAN3@gmail.com" && request.auth.token.email_verified == true)
         );
+    }
+
+    function isParent() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserData().role == 'parent';
     }
 
     function isValidSuggestion(data) {
@@ -124,6 +116,24 @@ service cloud.firestore {
     match /quests/{questId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    // --- Nově přidaná pravidla pro Nastavení a Sprinty ---
+
+    match /settings/league_config {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /sprintRewards/{rewardId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /rewardClaims/{claimId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
     }
   }
 }
