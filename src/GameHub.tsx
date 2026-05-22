@@ -6,7 +6,7 @@ import {
   Lightbulb, HelpCircle
 } from "lucide-react";
 import { cn } from "./lib/utils";
-import { ActivitySuggestion, UserProfile, WishlistItem, MysteryQuest } from "./types";
+import { ActivitySuggestion, UserProfile, WishlistItem, MysteryQuest, BattlePassMilestone, BattlePassClaim } from "./types";
 import { db } from "./firebase";
 import { collection, addDoc, updateDoc, setDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "firebase/firestore";
 
@@ -307,15 +307,16 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const [rejectReason, setRejectReason] = useState("");
   const [localView, setLocalView] = useState(view);
   const [showBonusInfo, setShowBonusInfo] = useState(false);
-  const normalizedCurrentUserName = (currentUserName || "").toLowerCase() === "zefran3" || (currentUserName || "").toLowerCase() === "táta" ? "Táta" : currentUserName;
+  const normalizedCurrentUserName = ((currentUserName || "").toLowerCase() === "zefran3" || (currentUserName || "").toLowerCase() === "táta" ? "Táta" : currentUserName) || "";
+  const activePlayer = (selectedPlayer || normalizedCurrentUserName || "") || "";
   const currentUserRole = useMemo(() => userProfiles[currentUserId]?.role || 'viewer', [userProfiles, currentUserId]);
   const canApproveActivities = useMemo(() => currentUserRole === 'admin' || currentUserRole === 'parent', [currentUserRole]);
   const canManageSystem = useMemo(() => currentUserRole === 'admin', [currentUserRole]);
 
-  // Sprint odměny stavy
-  const [rewards, setRewards] = useState<any[]>([]);
-  const [claims, setClaims] = useState<any[]>([]);
-  const [claimingReward, setClaimingReward] = useState<any | null>(null);
+  // Battle Pass stavy
+  const [milestones, setMilestones] = useState<BattlePassMilestone[]>([]);
+  const [claims, setClaims] = useState<BattlePassClaim[]>([]);
+  const [claimingMilestone, setClaimingMilestone] = useState<BattlePassMilestone | null>(null);
   const [isClaiming, setIsClaiming] = useState(false);
 
   // ─── Firestore listenery ─────────────────────────────
@@ -341,34 +342,61 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       },
       err => console.error("League config listen error:", err)
     );
-    const unsubRewards = onSnapshot(
-      collection(db, 'sprintRewards'),
-      snap => setRewards(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-      err => console.error("Rewards listen error:", err)
+    const unsubBP = onSnapshot(
+      doc(db, 'settings', 'battle_pass'),
+      docSnap => {
+        const defaultMilestones: BattlePassMilestone[] = [
+          { id: "bp_1", pointsRequired: 15, title: "Popcorn k filmu", icon: "🍿", description: "Křupavý popcorn k vybranému rodinnému filmu.", order: 1 },
+          { id: "bp_2", pointsRequired: 30, title: "Výběr nedělního menu", icon: "🍽️", description: "Rozhodneš, co se bude vařit v neděli k obědu.", order: 2 },
+          { id: "bp_3", pointsRequired: 45, title: "Prodloužená večerka", icon: "🌙", description: "Můžeš jít spát o 1 hodinu později.", order: 3 },
+          { id: "bp_4", pointsRequired: 60, title: "Hodina na PC navíc", icon: "🎮", description: "1 hodina času na počítači nebo konzoli navíc.", order: 4 },
+          { id: "bp_5", pointsRequired: 75, title: "Večeře na přání", icon: "🍕", description: "Mamka s tátem ti uvaří tvoje nejoblíbenější jídlo.", order: 5 },
+          { id: "bp_6", pointsRequired: 95, title: "Fast Food Feast", icon: "🍔", description: "Výlet do tvého oblíbeného fast foodu na účet rodičů!", order: 6 },
+        ];
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const list = (data.milestones || []) as BattlePassMilestone[];
+          if (list.length === 0) {
+            setDoc(doc(db, 'settings', 'battle_pass'), { milestones: defaultMilestones })
+              .catch(err => console.error("Error initializing milestones in Firestore:", err));
+            setMilestones(defaultMilestones);
+          } else {
+            setMilestones([...list].sort((a, b) => a.order - b.order));
+          }
+        } else {
+          setDoc(doc(db, 'settings', 'battle_pass'), { milestones: defaultMilestones })
+            .catch(err => console.error("Error initializing milestones in Firestore:", err));
+          setMilestones(defaultMilestones);
+        }
+      },
+      err => console.error("Battle pass listen error:", err)
     );
     const unsubClaims = onSnapshot(
-      collection(db, 'rewardClaims'),
-      snap => setClaims(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      collection(db, 'battlePassClaims'),
+      snap => setClaims(snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[]),
       err => console.error("Claims listen error:", err)
     );
-    return () => { unsubW(); unsubQ(); unsubL(); unsubRewards(); unsubClaims(); };
+    return () => { unsubW(); unsubQ(); unsubL(); unsubBP(); unsubClaims(); };
   }, []);
 
   // ─── Handlers ────────────────────────────────────────
-  const handleConfirmClaimReward = async () => {
-    if (!claimingReward || isClaiming) return;
+  const handleConfirmClaimBattlePass = async () => {
+    if (!claimingMilestone || isClaiming) return;
     setIsClaiming(true);
     try {
-      await addDoc(collection(db, "rewardClaims"), {
+      const docRef = doc(db, "battlePassClaims", `${currentUserId}_${currentSprintId}`);
+      await setDoc(docRef, {
         userId: currentUserId,
         userName: normalizedCurrentUserName,
-        rewardTitle: claimingReward.title,
         sprintId: currentSprintId,
+        rewardId: claimingMilestone.id,
+        rewardTitle: claimingMilestone.title,
         claimedAt: serverTimestamp()
       });
-      setClaimingReward(null);
+      setClaimingMilestone(null);
     } catch (err) {
-      console.error("Failed to claim reward:", err);
+      console.error("Failed to claim Battle Pass reward:", err);
     } finally {
       setIsClaiming(false);
     }
@@ -716,33 +744,73 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     return stats;
   }, [suggestions, quests, userProfiles, leagueConfig]);
 
+  const playerNameToIdMap = useMemo(() => {
+    const mapping: Record<string, string> = {};
+    Object.entries(userProfiles || {}).forEach(([uid, p]) => {
+      let name = p.adminAlias || p.displayName || p.email?.split('@')[0];
+      if (name) {
+        if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
+          name = "Táta";
+        }
+        mapping[name] = uid;
+      }
+    });
+    return mapping;
+  }, [userProfiles]);
+
+  const activePlayerId = useMemo(() => {
+    return playerNameToIdMap[activePlayer || ""] || "";
+  }, [playerNameToIdMap, activePlayer]);
+
   const currentSprintXP = useMemo(() => {
-    const pStats = sprintStats?.[normalizedCurrentUserName] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+    const pStats = sprintStats?.[normalizedCurrentUserName || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
     const badgeBonus = BADGES.filter(b => b.check(pStats)).reduce((s, b) => s + b.bonusZB, 0);
     return (pStats.totalZB || 0) + badgeBonus;
   }, [sprintStats, normalizedCurrentUserName]);
 
-  const sprintXPThreshold = leagueConfig?.sprintXPThreshold !== undefined ? leagueConfig.sprintXPThreshold : 80;
+  const activeSprintXP = useMemo(() => {
+    const pStats = sprintStats?.[activePlayer || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+    const badgeBonus = BADGES.filter(b => b.check(pStats)).reduce((s, b) => s + b.bonusZB, 0);
+    return (pStats.totalZB || 0) + badgeBonus;
+  }, [sprintStats, activePlayer]);
 
   const claimedRewardInCurrentSprint = useMemo(() => {
-    return (claims || []).find(c => c.userId === currentUserId && c.sprintId === currentSprintId);
-  }, [claims, currentUserId, currentSprintId]);
+    const idToFind = activePlayerId || currentUserId || "";
+    return (claims || []).find(c => c.userId === idToFind && c.sprintId === currentSprintId);
+  }, [claims, activePlayerId, currentUserId, currentSprintId]);
 
   const hasClaimed = !!claimedRewardInCurrentSprint;
-  const isSprintRewardsLocked = currentUserRole === 'admin' || currentUserRole === 'parent' ? false : currentSprintXP < sprintXPThreshold;
+  const selectedReward = claimedRewardInCurrentSprint?.rewardTitle || "";
+
+  // 1. Bezpečné seřazení a výpočet milníků:
+  const sortedMilestones = milestones ? [...milestones].sort((a, b) => a.order - b.order) : [];
+
+  const eligibleMilestones = sortedMilestones.filter(m => (activeSprintXP || 0) >= m.pointsRequired);
+
+  const highestEligibleMilestone = eligibleMilestones.length > 0 
+    ? eligibleMilestones[eligibleMilestones.length - 1] 
+    : null;
+
+  // 2. Přidej globální komponentovou pojistku (Záchranná brzda):
+  if (!milestones) {
+    return (
+      <div className="flex items-center justify-center min-h-[200px] text-zinc-500 text-xs italic">
+        ⏳ Načítám data herního Battle Passu...
+      </div>
+    );
+  }
 
   // ─── Žebříček ────────────────────────────────────────
   const leaderboardData = useMemo(() => {
     return Object.entries(playerStats)
       .map(([name, stats]) => {
         const badgeBonus = BADGES.filter(b => b.check(stats)).reduce((s, b) => s + b.bonusZB, 0);
-        return { name, ...stats, totalZB: stats.totalZB + badgeBonus, avatar: getAvatarForChild(name) };
+        return { name: name || "", ...stats, totalZB: stats.totalZB + badgeBonus, avatar: getAvatarForChild(name || "") };
       })
       .sort((a, b) => b.totalZB - a.totalZB);
   }, [playerStats, getAvatarForChild]);
 
-  const activePlayer = selectedPlayer || normalizedCurrentUserName;
-  const activeStats = playerStats[activePlayer] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+  const activeStats = playerStats[activePlayer || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
   const unlockedBadges = BADGES.filter(b => b.check(activeStats));
   const activeBadgeBonus = unlockedBadges.reduce((sum, b) => sum + b.bonusZB, 0);
   const activeTotalXP = activeStats.totalZB + activeBadgeBonus; // Skutečné celkové XP
@@ -760,15 +828,15 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   }
   const isUnderdog = currentBonusXP > 0;
   
-  const kidsProfiles = leaderboardData.filter(p => p.name !== "Táta");
+  const kidsProfiles = leaderboardData.filter(p => (p.name || "") !== "Táta");
   const avgKidsXP = kidsProfiles.length > 0
     ? kidsProfiles.reduce((sum, p) => sum + p.totalZB, 0) / kidsProfiles.length
     : 0;
   const calculatedXP = Math.round((400 - avgKidsXP) / 25);
   const suggestedXP = Math.max(5, Math.min(15, calculatedXP));
   const activeWishlist = wishlists.filter(w => {
-    const wName = (w.childName || "").toLowerCase() === "zefran3" || (w.childName || "").toLowerCase() === "táta" ? "Táta" : w.childName;
-    return wName === activePlayer;
+    const wName = (w.childName || "").toLowerCase() === "zefran3" || (w.childName || "").toLowerCase() === "táta" ? "Táta" : w.childName || "";
+    return (wName || "").toLowerCase() === (activePlayer || "").toLowerCase();
   });
   const activeQuests = quests.filter(q => q.active);
 
@@ -1264,34 +1332,41 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             )}
           </motion.div>
 
-          {/* ═══ SPRINT ODMĚNY ═══ */}
-          {localView !== "parent" && (
+          {/* ═══ BATTLE PASS MAPA ODMĚN ═══ */}
+          {localView !== "parent" && leaderboardMode === "sprint" && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 space-y-3.5 shadow-xl relative overflow-hidden"
+              className="bg-zinc-900/40 border border-white/5 rounded-2xl p-5 space-y-4 shadow-xl relative overflow-hidden"
             >
               <div className="absolute -top-10 -right-10 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl" />
               <button
                 type="button"
                 onClick={() => setShowRewards(!showRewards)}
-                className="flex items-center justify-between w-full relative z-10"
+                className="flex items-center justify-between w-full relative z-10 text-left"
               >
-                <div className="flex items-center gap-2">
-                  <Award size={16} className={isSprintRewardsLocked ? "text-zinc-500" : "text-emerald-400"} />
-                  <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Odměny za Sprint</h3>
-                  {isSprintRewardsLocked ? (
-                    <span className="text-[9px] bg-zinc-800/80 border border-white/5 text-zinc-500 px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1">
-                      🔒 Zamčeno
+                <div className="flex items-center gap-2.5">
+                  <Award size={18} className={activeSprintXP < 15 ? "text-zinc-500" : "text-emerald-400"} />
+                  <div className="text-left">
+                    <h3 className="text-sm font-black text-zinc-200 tracking-wider uppercase">Battle Pass</h3>
+                    <p className="text-[10px] text-zinc-500 font-medium">Sprintová mapa odměn • Hráč: <span className="text-zinc-300 font-bold">{activePlayer}</span></p>
+                  </div>
+                  {hasClaimed ? (
+                    <span className="text-[9px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
+                      Uplatněno
+                    </span>
+                  ) : activeSprintXP >= 15 ? (
+                    <span className="text-[9px] bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
+                      Aktivní
                     </span>
                   ) : (
-                    <span className="text-[9px] bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
-                      🔓 Odemčeno
+                    <span className="text-[9px] bg-zinc-800/80 border border-white/5 text-zinc-500 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
+                      Zamčeno (&lt; 15 XP)
                     </span>
                   )}
                 </div>
-                <ChevronRight size={16} className={cn("text-zinc-500 transition-transform", showRewards && "rotate-90")} />
+                <ChevronRight size={18} className={cn("text-zinc-500 transition-transform duration-300", showRewards && "rotate-90")} />
               </button>
 
               <AnimatePresence>
@@ -1300,79 +1375,148 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden space-y-3 relative z-10"
+                    className="overflow-hidden space-y-4 relative z-10"
                   >
+                    {/* Status Info pro rodiče nebo info zprávu */}
                     {currentUserRole === 'admin' || currentUserRole === 'parent' ? (
-                      <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3 text-xs text-indigo-300 flex items-center gap-2 font-bold relative z-10">
-                        ℹ️ Jako administrátor / rodič si odměny nevybíráš. Zde vidíš přehled odměn pro děti.
-                      </div>
-                    ) : isSprintRewardsLocked ? (
-                      <div className="bg-zinc-950/40 border border-white/5 rounded-xl p-3.5 flex items-center gap-3 text-xs text-zinc-400">
-                        <Lock className="text-zinc-500 shrink-0" size={16} />
-                        <div className="w-full">
-                          Pro odemčení této sekce potřebuješ získat alespoň <span className="font-extrabold text-white">{sprintXPThreshold} XP</span> ve Sprintu.
-                          <div className="flex items-center gap-2 mt-2">
-                            <div className="flex-1 bg-zinc-800 h-2 rounded-full overflow-hidden">
-                              <div 
-                                className="bg-gradient-to-r from-emerald-600 to-teal-500 h-full rounded-full transition-all duration-500"
-                                style={{ width: `${Math.min(100, (currentSprintXP / sprintXPThreshold) * 100)}%` }}
-                              />
-                            </div>
-                            <span className="text-[10px] font-black text-zinc-500 shrink-0">
-                              {currentSprintXP} / {sprintXPThreshold} XP
-                            </span>
-                          </div>
-                        </div>
+                      <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3 text-xs text-indigo-300 flex items-center gap-2 font-bold">
+                        <span>ℹ️</span>
+                        <span>Jako rodič prohlížíš Battle Pass pro: <strong className="text-white">{activePlayer}</strong> ({activeSprintXP} XP).</span>
                       </div>
                     ) : (
-                      hasClaimed && (
-                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-400 flex items-center gap-2 font-bold">
-                          🎉 Již máš vybranou odměnu pro tento Sprint: <span className="underline">{claimedRewardInCurrentSprint?.rewardTitle}</span>.
+                      activePlayer !== normalizedCurrentUserName ? (
+                        <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3 text-xs text-indigo-300 flex items-center gap-2 font-bold">
+                          <span>ℹ️</span>
+                          <span>Prohlížíš Battle Pass hráče <strong className="text-white">{activePlayer}</strong>. Nemůžeš mu vybírat odměny.</span>
                         </div>
-                      )
+                      ) : null
                     )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {(rewards || []).length === 0 ? (
-                        <div className="text-zinc-500 text-center py-4 text-xs italic col-span-2">
-                          Zatím nebyly vloženy žádné odměny pro tento Sprint.
+                    {hasClaimed && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-400 flex items-center gap-2.5 font-bold shadow-inner">
+                        <span className="text-lg">🎉</span>
+                        <div>
+                          Uplatněná odměna pro tento Sprint: <span className="underline font-extrabold text-white">{selectedReward}</span>
+                          <p className="text-[10px] text-zinc-500 font-normal mt-0.5">Výběr pro tento Sprint byl tímto úspěšně uzavřen.</p>
                         </div>
-                      ) : (
-                        (rewards || []).map((r) => {
-                          const isChosen = claimedRewardInCurrentSprint?.rewardTitle === r.title;
-                          const isDisabled = currentUserRole === 'admin' || currentUserRole === 'parent' || isSprintRewardsLocked || (hasClaimed && !isChosen);
+                      </div>
+                    )}
+
+                    {/* Vertikální časová osa (Battle Pass) */}
+                    <div className="relative pl-8 pr-2 py-4 space-y-6">
+                      {/* Čára na pozadí osy */}
+                      <div className="absolute left-[15px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-emerald-500/10 via-zinc-800 to-zinc-900" />
+                      
+                      {/* Dynamická čára pokroku */}
+                      <div 
+                        className="absolute left-[15px] top-0 w-[2px] bg-gradient-to-b from-emerald-500 to-teal-400 transition-all duration-1000"
+                        style={{
+                          height: (() => {
+                            if (!sortedMilestones || sortedMilestones.length === 0) return '0%';
+                            const maxVal = sortedMilestones[sortedMilestones.length - 1]?.pointsRequired || 1;
+                            const pct = Math.min(100, (activeSprintXP / maxVal) * 100);
+                            return `${pct}%`;
+                          })()
+                        }}
+                      />
+
+                      {(() => {
+                        if (sortedMilestones.length === 0) {
+                          return (
+                            <div className="text-zinc-500 text-center py-4 text-xs italic">
+                              Zatím nebyly nastaveny žádné milníky Battle Passu.
+                            </div>
+                          );
+                        }
+                        return sortedMilestones.map((m) => {
+                          const isUnlocked = activeSprintXP >= m.pointsRequired;
+                          const isHighestUnlocked = highestEligibleMilestone?.id === m.id;
+                          const isClaimedThis = claimedRewardInCurrentSprint?.rewardId === m.id;
+                          
+                          // Může aktuálně přihlášený uživatel vybrat tento milník?
+                          const isClaimable = isHighestUnlocked && !hasClaimed && activePlayer === normalizedCurrentUserName && currentUserRole !== 'admin' && currentUserRole !== 'parent';
+                          
+                          // Stav milníku
+                          let statusBg = "bg-zinc-950 border-zinc-800 text-zinc-600";
+                          let ringColor = "";
+                          if (isClaimedThis) {
+                            statusBg = "bg-emerald-500 border-emerald-400 text-zinc-950 scale-110 shadow-lg shadow-emerald-500/20";
+                          } else if (hasClaimed) {
+                            statusBg = "bg-zinc-950/40 border-zinc-900 text-zinc-700 opacity-40";
+                          } else if (isUnlocked) {
+                            statusBg = "bg-zinc-800 border-emerald-500/50 text-emerald-400";
+                            if (isHighestUnlocked) {
+                              ringColor = "ring-4 ring-emerald-500/20 animate-pulse";
+                            }
+                          }
 
                           return (
-                            <button
-                              type="button"
-                              key={r.id}
-                              disabled={isDisabled}
-                              onClick={() => !isDisabled && setClaimingReward(r)}
-                              className={cn(
-                                "p-3.5 rounded-xl flex flex-col items-center text-center gap-1.5 transition-all text-left w-full border relative overflow-hidden",
-                                isChosen 
-                                  ? "bg-emerald-500/15 border-emerald-500 text-emerald-400 shadow-lg shadow-emerald-500/5 hover:scale-100" 
-                                  : isDisabled
-                                    ? "bg-zinc-950/20 border-white/5 opacity-40 cursor-not-allowed"
-                                    : "bg-zinc-800/40 border-white/5 hover:border-emerald-500/30 hover:bg-zinc-800/80 hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-                              )}
-                            >
-                              <span className="text-3xl filter drop-shadow">🎁</span>
-                              <span className={cn("text-xs font-black tracking-tight", isChosen ? "text-emerald-400" : "text-white")}>
-                                {r.title}
-                              </span>
-                              <span className="text-[10px] text-zinc-500 font-medium line-clamp-2">
-                                {r.description || "Tajuplná odměna."}
-                              </span>
-                              {isChosen && (
-                                <span className="absolute top-2 right-2 bg-emerald-500 text-zinc-950 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md shadow-sm">
-                                  Zvoleno
-                                </span>
-                              )}
-                            </button>
+                            <div key={m.id} className={cn("relative flex items-start gap-4 transition-all duration-300", hasClaimed && !isClaimedThis && "opacity-65")}>
+                              {/* Kolečko na časové ose */}
+                              <div className={cn("absolute -left-10 w-8 h-8 rounded-full border flex items-center justify-center z-10 transition-all font-bold text-sm", statusBg, ringColor)}>
+                                {isClaimedThis ? (
+                                  "✓"
+                                ) : (
+                                  <span className="text-xs">{m.pointsRequired}</span>
+                                )}
+                              </div>
+
+                              {/* Box s milníkem */}
+                              <div className={cn(
+                                "flex-1 p-3.5 rounded-xl border transition-all relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-3",
+                                isClaimedThis 
+                                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                                  : isClaimable
+                                    ? "bg-zinc-800/80 border-emerald-500/30 hover:border-emerald-500/50 hover:bg-zinc-800 shadow-md shadow-emerald-500/5"
+                                    : isUnlocked
+                                      ? "bg-zinc-800/40 border-white/5"
+                                      : "bg-zinc-950/20 border-white/5 opacity-50"
+                              )}>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-3xl filter drop-shadow select-none">{m.icon || "🎁"}</span>
+                                  <div>
+                                    <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+                                      {m.title}
+                                      {isClaimedThis && (
+                                        <span className="text-[8px] bg-emerald-500 text-zinc-950 px-1 rounded uppercase font-black">
+                                          Vybráno
+                                        </span>
+                                      )}
+                                      {!hasClaimed && isUnlocked && !isHighestUnlocked && (
+                                        <span className="text-[8px] bg-zinc-700 text-zinc-300 px-1 rounded font-bold">
+                                          Splněno
+                                        </span>
+                                      )}
+                                    </h4>
+                                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5 leading-relaxed">
+                                      {m.description || "Tajuplná odměna."}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Akční tlačítko pro výběr */}
+                                {isClaimable && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setClaimingMilestone(m)}
+                                    className="shrink-0 w-full sm:w-auto px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-white text-[11px] font-black uppercase tracking-wider shadow-md hover:shadow-emerald-500/20 hover:scale-[1.03] active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                                  >
+                                    <span>Zvolit odměnu</span>
+                                    <span className="text-xs">➔</span>
+                                  </button>
+                                )}
+
+                                {!isUnlocked && (
+                                  <div className="shrink-0 flex items-center gap-1 text-[10px] text-zinc-600 font-bold uppercase tracking-wider">
+                                    <Lock size={10} />
+                                    <span>Zamčeno</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           );
-                        })
-                      )}
+                        });
+                      })()}
                     </div>
                   </motion.div>
                 )}
@@ -1699,29 +1843,29 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
         )}
       </AnimatePresence>
 
-      {/* ═══ CLAIM REWARD MODAL ═══ */}
+      {/* ═══ CLAIM BATTLE PASS REWARD MODAL ═══ */}
       <AnimatePresence>
-        {claimingReward && (
+        {claimingMilestone && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setClaimingReward(null)} className="fixed inset-0 bg-black/60 z-[110]" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setClaimingMilestone(null)} className="fixed inset-0 bg-black/60 z-[110]" />
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
               className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85%] max-w-sm bg-zinc-900 border border-emerald-500/20 rounded-2xl p-5 z-[110] space-y-4"
             >
               <h3 className="text-sm font-black text-white flex items-center gap-2">
-                🎁 Vybrat odměnu za Sprint
+                {claimingMilestone.icon || "🎁"} Zvolit odměnu z Battle Passu
               </h3>
               <p className="text-xs text-zinc-400">
-                Opravdu si chceš vybrat odměnu: <span className="font-extrabold text-white">„{claimingReward.title}“</span>?
+                Opravdu si chceš vybrat odměnu: <span className="font-extrabold text-white">„{claimingMilestone.title}“</span>?
               </p>
               <p className="text-[10px] text-zinc-500 italic leading-normal">
-                Poznámka: V každém Sprintu si můžeš vybrat pouze jednu odměnu. Tuto volbu již nelze vzít zpět!
+                Důležité upozornění: Výběrem této odměny se tvůj Battle Pass pro tento Sprint uzavře a již nebudeš moci čerpat další ani vyšší odměny. Tuto akci nelze vzít zpět!
               </p>
               <div className="flex gap-2">
-                <button disabled={isClaiming} onClick={() => setClaimingReward(null)} className="flex-1 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold hover:bg-zinc-700 disabled:opacity-50 transition-colors cursor-pointer">
+                <button disabled={isClaiming} onClick={() => setClaimingMilestone(null)} className="flex-1 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold hover:bg-zinc-700 disabled:opacity-50 transition-colors cursor-pointer">
                   Zrušit
                 </button>
-                <button disabled={isClaiming} onClick={handleConfirmClaimReward} className="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-400 disabled:opacity-50 transition-colors cursor-pointer">
-                  {isClaiming ? "Ukládám..." : "Ano, vybrat!"}
+                <button disabled={isClaiming} onClick={handleConfirmClaimBattlePass} className="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-400 disabled:opacity-50 transition-colors cursor-pointer">
+                  {isClaiming ? "Ukládám..." : "Potvrdit výběr"}
                 </button>
               </div>
             </motion.div>

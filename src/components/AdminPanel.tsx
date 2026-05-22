@@ -4,7 +4,7 @@ import { X, Bot, Shield, AlertCircle, CheckCircle, Database, Bike } from "lucide
 import { db } from "../firebase";
 import { collection, query, orderBy, limit, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { cn } from "../lib/utils";
-import { UserProfile, UserRole } from "../types";
+import { UserProfile, UserRole, BattlePassMilestone, BattlePassClaim } from "../types";
 
 interface AdminLog {
   id: string;
@@ -37,12 +37,15 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions" | "rewards">("logs");
   const [logs, setLogs] = useState<AdminLog[]>([]);
-  const [rewards, setRewards] = useState<any[]>([]);
-  const [claims, setClaims] = useState<any[]>([]);
-  const [sprintXPThreshold, setSprintXPThreshold] = useState<number>(80);
-  const [rewardTitle, setRewardTitle] = useState("");
-  const [rewardDesc, setRewardDesc] = useState("");
-  const [editingRewardId, setEditingRewardId] = useState<string | null>(null);
+  const [milestones, setMilestones] = useState<BattlePassMilestone[]>([]);
+  const [claims, setClaims] = useState<BattlePassClaim[]>([]);
+  
+  const [milestoneTitle, setMilestoneTitle] = useState("");
+  const [milestoneDesc, setMilestoneDesc] = useState("");
+  const [milestonePoints, setMilestonePoints] = useState<number>(15);
+  const [milestoneIcon, setMilestoneIcon] = useState("🎁");
+  const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, 'admin_logs'), orderBy('timestamp', 'desc'), limit(15));
@@ -54,84 +57,133 @@ export default function AdminPanel({
       setLogs(data);
     });
 
-    const unsubRewards = onSnapshot(
-      collection(db, 'sprintRewards'),
-      (snap) => {
-        setRewards(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    const unsubBP = onSnapshot(
+      doc(db, 'settings', 'battle_pass'),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const list = (data.milestones || []) as BattlePassMilestone[];
+          setMilestones(prev => {
+            return prev.length === 0 || !hasUnsavedChanges
+              ? [...list].sort((a, b) => a.order - b.order)
+              : prev;
+          });
+        } else {
+          setMilestones(prev => {
+            if (prev.length === 0 || !hasUnsavedChanges) {
+              return [
+                { id: "bp_1", pointsRequired: 15, title: "Popcorn k filmu", icon: "🍿", description: "Křupavý popcorn k vybranému rodinnému filmu.", order: 1 },
+                { id: "bp_2", pointsRequired: 30, title: "Výběr nedělního menu", icon: "🍽️", description: "Rozhodneš, co se bude vařit v neděli k obědu.", order: 2 },
+                { id: "bp_3", pointsRequired: 45, title: "Prodloužená večerka", icon: "🌙", description: "Můžeš jít spát o 1 hodinu později.", order: 3 },
+                { id: "bp_4", pointsRequired: 60, title: "Hodina na PC navíc", icon: "🎮", description: "1 hodina času na počítači nebo konzoli navíc.", order: 4 },
+                { id: "bp_5", pointsRequired: 75, title: "Večeře na přání", icon: "🍕", description: "Mamka s tátem ti uvaří tvoje nejoblíbenější jídlo.", order: 5 },
+                { id: "bp_6", pointsRequired: 95, title: "Fast Food Feast", icon: "🍔", description: "Výlet do tvého oblíbeného fast foodu na účet rodičů!", order: 6 },
+              ];
+            }
+            return prev;
+          });
+        }
       }
     );
 
     const unsubClaims = onSnapshot(
-      query(collection(db, 'rewardClaims'), orderBy('claimedAt', 'desc')),
+      query(collection(db, 'battlePassClaims'), orderBy('claimedAt', 'desc')),
       (snap) => {
-        setClaims(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      }
-    );
-
-    const unsubConfig = onSnapshot(
-      doc(db, 'settings', 'league_config'),
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setSprintXPThreshold(data.sprintXPThreshold !== undefined ? data.sprintXPThreshold : 80);
-        }
+        setClaims(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[]);
       }
     );
 
     return () => {
       unsubscribe();
-      unsubRewards();
+      unsubBP();
       unsubClaims();
-      unsubConfig();
     };
-  }, []);
+  }, [hasUnsavedChanges]);
 
-  const handleSaveThreshold = async (val: number) => {
-    setSprintXPThreshold(val);
-    try {
-      await setDoc(doc(db, 'settings', 'league_config'), { sprintXPThreshold: val }, { merge: true });
-    } catch (err) {
-      console.error("Failed to save threshold:", err);
-    }
-  };
-
-  const handleSaveReward = async (e: React.FormEvent) => {
+  const handleSaveMilestone = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rewardTitle.trim()) return;
+    if (!milestoneTitle.trim()) return;
 
-    try {
-      if (editingRewardId) {
-        await updateDoc(doc(db, 'sprintRewards', editingRewardId), {
-          title: rewardTitle.trim(),
-          description: rewardDesc.trim()
-        });
-        setEditingRewardId(null);
-      } else {
-        await addDoc(collection(db, 'sprintRewards'), {
-          title: rewardTitle.trim(),
-          description: rewardDesc.trim(),
-          createdAt: serverTimestamp()
-        });
-      }
-      setRewardTitle("");
-      setRewardDesc("");
-    } catch (err) {
-      console.error("Failed to save reward:", err);
+    if (editingMilestoneId) {
+      setMilestones(prev => prev.map(m => m.id === editingMilestoneId ? {
+        ...m,
+        title: milestoneTitle.trim(),
+        description: milestoneDesc.trim(),
+        pointsRequired: milestonePoints,
+        icon: milestoneIcon.trim() || "🎁"
+      } : m));
+      setEditingMilestoneId(null);
+    } else {
+      const newId = "bp_" + Date.now();
+      const nextOrder = milestones.length > 0 ? Math.max(...milestones.map(m => m.order)) + 1 : 1;
+      const newMilestone: BattlePassMilestone = {
+        id: newId,
+        title: milestoneTitle.trim(),
+        description: milestoneDesc.trim(),
+        pointsRequired: milestonePoints,
+        icon: milestoneIcon.trim() || "🎁",
+        order: nextOrder
+      };
+      setMilestones(prev => [...prev, newMilestone].sort((a, b) => a.order - b.order));
+    }
+
+    setMilestoneTitle("");
+    setMilestoneDesc("");
+    setMilestonePoints(15);
+    setMilestoneIcon("🎁");
+    setHasUnsavedChanges(true);
+  };
+
+  const handleEditMilestone = (m: BattlePassMilestone) => {
+    setEditingMilestoneId(m.id);
+    setMilestoneTitle(m.title);
+    setMilestoneDesc(m.description);
+    setMilestonePoints(m.pointsRequired);
+    setMilestoneIcon(m.icon);
+  };
+
+  const handleDeleteMilestone = (id: string) => {
+    if (!window.confirm("Opravdu chceš smazat tento milník?")) return;
+    setMilestones(prev => {
+      const filtered = prev.filter(m => m.id !== id);
+      return filtered.map((m, idx) => ({ ...m, order: idx + 1 }));
+    });
+    setHasUnsavedChanges(true);
+    if (editingMilestoneId === id) {
+      setEditingMilestoneId(null);
+      setMilestoneTitle("");
+      setMilestoneDesc("");
+      setMilestonePoints(15);
+      setMilestoneIcon("🎁");
     }
   };
 
-  const handleEditReward = (reward: any) => {
-    setEditingRewardId(reward.id);
-    setRewardTitle(reward.title);
-    setRewardDesc(reward.description || "");
+  const handleMoveMilestone = (idx: number, direction: 'up' | 'down') => {
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= milestones.length) return;
+
+    const list = [...milestones];
+    const temp = list[idx];
+    list[idx] = list[targetIdx];
+    list[targetIdx] = temp;
+
+    const updated = list.map((m, index) => ({
+      ...m,
+      order: index + 1
+    }));
+
+    setMilestones(updated);
+    setHasUnsavedChanges(true);
   };
 
-  const handleDeleteReward = async (id: string) => {
-    if (!window.confirm("Opravdu chceš smazat tuto odměnu?")) return;
+  const handleSaveBPConfig = async () => {
     try {
-      await deleteDoc(doc(db, 'sprintRewards', id));
+      await setDoc(doc(db, 'settings', 'battle_pass'), { milestones });
+      setHasUnsavedChanges(false);
+      alert("Konfigurace Battle Passu byla úspěšně uložena!");
     } catch (err) {
-      console.error("Failed to delete reward:", err);
+      console.error("Failed to save battle pass config:", err);
+      alert("Chyba při ukládání konfigurace: " + (err as Error).message);
     }
   };
 
@@ -383,52 +435,80 @@ export default function AdminPanel({
 
           {activeTab === "rewards" && (
             <div className="space-y-6">
-              {/* Nastavení Hranice XP */}
-              <div className="bg-zinc-50 p-4 rounded-xl border border-stone-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                  <h4 className="font-bold text-stone-800 text-sm">Hranice XP pro Sprint</h4>
-                  <p className="text-xs text-stone-500">Kolik XP musí dítě v aktuálním Sprintu získat, aby si mohlo vybrat odměnu.</p>
+              {/* Upozornění na neuložené změny */}
+              {hasUnsavedChanges && (
+                <div className="bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
+                  <div>
+                    <h5 className="font-bold text-xs">⚠️ Máš neuložené změny v Battle Passu!</h5>
+                    <p className="text-[10px] text-stone-500">Změny se projeví u dětí až po kliknutí na tlačítko "Uložit konfiguraci".</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveBPConfig}
+                    className="px-4 py-2 text-xs font-black text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 rounded-lg shadow transition-all active:scale-[0.98] cursor-pointer shrink-0"
+                  >
+                    💾 Uložit konfiguraci
+                  </button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={sprintXPThreshold}
-                    onChange={(e) => handleSaveThreshold(parseInt(e.target.value) || 0)}
-                    className="w-20 px-3 py-1.5 text-center font-bold text-sm bg-white border border-stone-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 focus:bg-stone-50"
-                  />
-                  <span className="text-xs font-black text-stone-500">XP</span>
-                </div>
-              </div>
+              )}
 
-              {/* Formulář pro Přidání / Úpravu */}
-              <form onSubmit={handleSaveReward} className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100/50 space-y-3">
+              {/* Formulář pro Přidání / Úpravu Milníku */}
+              <form onSubmit={handleSaveMilestone} className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100/50 space-y-3 text-left">
                 <h4 className="font-bold text-indigo-900 text-xs uppercase tracking-wider">
-                  {editingRewardId ? "✏️ Upravit odměnu" : "➕ Přidat novou odměnu"}
+                  {editingMilestoneId ? "✏️ Upravit milník Battle Passu" : "➕ Přidat nový milník Battle Passu"}
                 </h4>
-                <div className="grid grid-cols-1 gap-2.5">
-                  <input
-                    type="text"
-                    value={rewardTitle}
-                    onChange={(e) => setRewardTitle(e.target.value)}
-                    placeholder="Název odměny (např. Týden bez mytí nádobí)..."
-                    className="w-full bg-white border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-800 outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-stone-50"
-                    required
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="sm:col-span-2">
+                    <input
+                      type="text"
+                      value={milestoneTitle}
+                      onChange={(e) => setMilestoneTitle(e.target.value)}
+                      placeholder="Název milníku (např. Popcorn k filmu)..."
+                      className="w-full bg-white border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-800 outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-stone-50"
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={milestoneIcon}
+                      onChange={(e) => setMilestoneIcon(e.target.value)}
+                      placeholder="Ikona (např. 🍿)..."
+                      className="w-16 text-center bg-white border border-stone-200 rounded-lg px-2 py-2 text-xs text-stone-800 outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-stone-50"
+                      required
+                    />
+                    <div className="flex-1 flex items-center gap-1.5 bg-white border border-stone-200 rounded-lg px-2 py-1">
+                      <input
+                        type="number"
+                        value={milestonePoints}
+                        onChange={(e) => setMilestonePoints(parseInt(e.target.value) || 0)}
+                        placeholder="XP"
+                        className="w-full text-center font-bold text-xs border-none outline-none focus:ring-0"
+                        min="0"
+                        required
+                      />
+                      <span className="text-[10px] font-bold text-stone-400 pr-1">XP</span>
+                    </div>
+                  </div>
+                </div>
+                <div>
                   <textarea
-                    value={rewardDesc}
-                    onChange={(e) => setRewardDesc(e.target.value)}
-                    placeholder="Stručný popis nebo pravidla odměny..."
+                    value={milestoneDesc}
+                    onChange={(e) => setMilestoneDesc(e.target.value)}
+                    placeholder="Stručný popis milníku pro dítě..."
                     className="w-full bg-white border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-800 outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-stone-50 h-16 resize-none"
                   />
                 </div>
                 <div className="flex gap-2 justify-end">
-                  {editingRewardId && (
+                  {editingMilestoneId && (
                     <button
                       type="button"
                       onClick={() => {
-                        setEditingRewardId(null);
-                        setRewardTitle("");
-                        setRewardDesc("");
+                        setEditingMilestoneId(null);
+                        setMilestoneTitle("");
+                        setMilestoneDesc("");
+                        setMilestonePoints(15);
+                        setMilestoneIcon("🎁");
                       }}
                       className="px-3 py-1.5 text-xs font-bold text-stone-500 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 cursor-pointer"
                     >
@@ -439,30 +519,61 @@ export default function AdminPanel({
                     type="submit"
                     className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 shadow-sm cursor-pointer"
                   >
-                    {editingRewardId ? "Uložit změny" : "Přidat odměnu"}
+                    {editingMilestoneId ? "Aktualizovat milník" : "Přidat milník"}
                   </button>
                 </div>
               </form>
 
-              {/* Seznam Odměn */}
-              <div className="space-y-2">
-                <h4 className="font-bold text-stone-700 text-xs uppercase tracking-wider">Seznam vytvořených odměn ({rewards.length})</h4>
-                {rewards.length === 0 ? (
-                  <div className="text-stone-400 text-center py-4 text-xs italic">Zatím nebyly vytvořeny žádné sprint odměny.</div>
+              {/* Seznam Milníků */}
+              <div className="space-y-2 text-left">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-bold text-stone-700 text-xs uppercase tracking-wider">Milníky Battle Passu ({milestones.length})</h4>
+                  {!hasUnsavedChanges && (
+                    <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-100 font-bold px-2 py-0.5 rounded-full">
+                      Vše uloženo
+                    </span>
+                  )}
+                </div>
+                {milestones.length === 0 ? (
+                  <div className="text-stone-400 text-center py-4 text-xs italic">Zatím nebyly vytvořeny žádné milníky pro Battle Pass.</div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {rewards.map((r) => (
-                      <div key={r.id} className="bg-white p-3 rounded-xl border border-stone-200 flex justify-between items-start gap-2 shadow-sm">
-                        <div className="min-w-0 flex-1">
-                          <div className="font-bold text-xs text-stone-800 truncate flex items-center gap-1.5">
-                            <span>🎁</span> {r.title}
+                  <div className="flex flex-col gap-2">
+                    {milestones.map((m, idx) => (
+                      <div key={m.id} className="bg-white p-3 rounded-xl border border-stone-200 flex justify-between items-center gap-3 shadow-sm">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="text-2xl shrink-0 filter drop-shadow">{m.icon}</span>
+                          <div className="min-w-0 flex-1 text-left">
+                            <div className="font-bold text-xs text-stone-800 flex items-center gap-2">
+                              <span className="truncate">{m.title}</span>
+                              <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded shrink-0">
+                                {m.pointsRequired} XP
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-stone-500 mt-0.5 truncate">{m.description || "Bez popisu."}</p>
                           </div>
-                          <p className="text-[10px] text-stone-500 mt-0.5 line-clamp-2">{r.description || "Bez popisu."}</p>
                         </div>
                         <div className="flex gap-1 shrink-0">
                           <button
                             type="button"
-                            onClick={() => handleEditReward(r)}
+                            onClick={() => handleMoveMilestone(idx, 'up')}
+                            disabled={idx === 0}
+                            className="p-1 text-stone-400 hover:text-stone-700 hover:bg-stone-50 rounded disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+                            title="Posunout nahoru"
+                          >
+                            ⬆️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveMilestone(idx, 'down')}
+                            disabled={idx === milestones.length - 1}
+                            className="p-1 text-stone-400 hover:text-stone-700 hover:bg-stone-50 rounded disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+                            title="Posunout dolů"
+                          >
+                            ⬇️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditMilestone(m)}
                             className="p-1 text-stone-400 hover:text-indigo-600 hover:bg-stone-50 rounded cursor-pointer"
                             title="Upravit"
                           >
@@ -470,7 +581,7 @@ export default function AdminPanel({
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDeleteReward(r.id)}
+                            onClick={() => handleDeleteMilestone(m.id)}
                             className="p-1 text-stone-400 hover:text-rose-600 hover:bg-stone-50 rounded cursor-pointer"
                             title="Smazat"
                           >
@@ -484,15 +595,15 @@ export default function AdminPanel({
               </div>
 
               {/* Log uplatněných odměn */}
-              <div className="space-y-2 pt-4 border-t border-stone-100">
-                <h4 className="font-bold text-stone-700 text-xs uppercase tracking-wider">Uplatněné odměny dětí</h4>
+              <div className="space-y-2 pt-4 border-t border-stone-100 text-left">
+                <h4 className="font-bold text-stone-700 text-xs uppercase tracking-wider">Uplatněné odměny dětí (Battle Pass)</h4>
                 {claims.length === 0 ? (
-                  <div className="text-stone-400 text-center py-4 text-xs italic">Zatím nikdo neuplatnil žádnou odměnu.</div>
+                  <div className="text-stone-400 text-center py-4 text-xs italic">Zatím nikdo neuplatnil žádnou odměnu z Battle Passu.</div>
                 ) : (
                   <div className="flex flex-col gap-2 max-h-40 overflow-y-auto pr-1">
                     {claims.map((c) => (
                       <div key={c.id} className="bg-stone-50/50 p-2.5 rounded-xl border border-stone-100 flex items-center justify-between text-xs">
-                        <div>
+                        <div className="text-left">
                           <span className="font-bold text-stone-800">{c.userName}</span>
                           <span className="text-stone-500"> si vybral(a) </span>
                           <span className="font-bold text-indigo-600">{c.rewardTitle}</span>

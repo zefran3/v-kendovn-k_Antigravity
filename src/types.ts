@@ -153,3 +153,23 @@ export interface MysteryQuest {
   status?: string;
 }
 
+export interface BattlePassMilestone {
+  id: string;
+  pointsRequired: number;
+  title: string;
+  icon: string;
+  description: string;
+  order: number;
+}
+
+export interface BattlePassClaim {
+  id?: string;
+  userId: string;
+  userName: string;
+  sprintId: string;
+  rewardId: string;
+  rewardTitle: string;
+  claimedAt: any;
+}
+
+
