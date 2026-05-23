@@ -2870,7 +2870,7 @@ export default function App() {
                                       <select
                                         value={approveHour}
                                         onChange={e => handleApproveTimeChange(e.target.value, approveMin)}
-                                        className="bg-zinc-900 border border-white/5 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
+                                        className="bg-white border border-zinc-200 text-zinc-800 rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
                                       >
                                         <option value="">-- Hod</option>
                                         {HOURS.map(h => (
@@ -2880,7 +2880,7 @@ export default function App() {
                                       <select
                                         value={approveMin}
                                         onChange={e => handleApproveTimeChange(approveHour, e.target.value)}
-                                        className="bg-zinc-900 border border-white/5 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
+                                        className="bg-white border border-zinc-200 text-zinc-800 rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
                                       >
                                         <option value="">-- Min</option>
                                         {MINUTES.map(m => (
@@ -3129,7 +3129,7 @@ export default function App() {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[32px] p-8 z-[70] shadow-2xl max-w-2xl mx-auto border-t border-stone-200"
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[32px] p-8 z-[70] shadow-2xl max-w-2xl mx-auto border-t border-stone-200 max-h-[90vh] overflow-y-auto"
             >
               <div className="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mb-8" />
               <div className="flex justify-between items-center mb-6">
@@ -3286,8 +3286,8 @@ export default function App() {
                     </>
                   )}
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
+                  <div className="flex flex-col sm:flex-row items-end gap-3">
+                    <div className="w-full">
                       <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">
                         {formType === "ride" ? "Kdy?" : "Kdy to bude?"}
                       </label>
@@ -3300,7 +3300,7 @@ export default function App() {
                         className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-rose-500 outline-none transition-all text-sm"
                       />
                     </div>
-                    <div>
+                    <div className="w-full">
                       <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block flex justify-between items-center">
                         {formType === "ride" ? "V kolik?" : "V kolik hodin?"} <span className="text-[9px] text-stone-400 font-normal normal-case opacity-70">({formType === "ride" ? "nutné" : "volitelné"})</span>
                       </label>
@@ -3332,7 +3332,7 @@ export default function App() {
                               required={formType === "ride"}
                               value={hour}
                               onChange={e => handleFormTimeChange(e.target.value, minute)}
-                              className="bg-zinc-900 border border-white/5 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
+                              className="bg-white border border-zinc-200 text-zinc-800 rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
                             >
                               <option value="">-- Hod</option>
                               {HOURS.map(h => (
@@ -3343,7 +3343,7 @@ export default function App() {
                               required={formType === "ride"}
                               value={minute}
                               onChange={e => handleFormTimeChange(hour, e.target.value)}
-                              className="bg-zinc-900 border border-white/5 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
+                              className="bg-white border border-zinc-200 text-zinc-800 rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
                             >
                               <option value="">-- Min</option>
                               {MINUTES.map(m => (
