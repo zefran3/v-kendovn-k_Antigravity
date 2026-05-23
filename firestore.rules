@@ -69,16 +69,18 @@ service cloud.firestore {
                     request.resource.data.status == 'pending' &&
                     request.resource.data.createdAt == request.time;
 
-      // Admins can update anything. Users can ONLY update the likes counter OR their own reconsideration!
+      // Admins can update anything. Users can ONLY update the likes counter OR their own reconsideration,
+      // or convert a draft to pending (where they become the author).
       allow update: if isAuthenticated() && (isAdmin() || (
         isValidSuggestion(request.resource.data) && (
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'grade', 'userGrades', 'averageGrade', 'comments']) ||
-          (request.auth.uid == resource.data.authorId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reconsiderationRequested', 'hasAppealed', 'appealReason', 'grade', 'userGrades', 'averageGrade', 'comments']))
+          (request.auth.uid == resource.data.authorId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reconsiderationRequested', 'hasAppealed', 'appealReason', 'grade', 'userGrades', 'averageGrade', 'comments'])) ||
+          (resource.data.status == 'draft' && request.resource.data.status == 'pending' && request.resource.data.authorId == request.auth.uid)
         )
       ));
 
-      // Only admins can delete/clean up
-      allow delete: if isAdmin();
+      // Only admins can delete, or users can delete their own drafts
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.status == 'draft' && resource.data.authorId == request.auth.uid);
     }
 
     match /users/{userId} {

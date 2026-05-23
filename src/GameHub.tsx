@@ -308,7 +308,6 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const [localView, setLocalView] = useState(view);
   const [showBonusInfo, setShowBonusInfo] = useState(false);
   const normalizedCurrentUserName = ((currentUserName || "").toLowerCase() === "zefran3" || (currentUserName || "").toLowerCase() === "táta" ? "Táta" : currentUserName) || "";
-  const activePlayer = (selectedPlayer || normalizedCurrentUserName || "") || "";
   const currentUserRole = useMemo(() => userProfiles[currentUserId]?.role || 'viewer', [userProfiles, currentUserId]);
   const canApproveActivities = useMemo(() => currentUserRole === 'admin' || currentUserRole === 'parent', [currentUserRole]);
   const canManageSystem = useMemo(() => currentUserRole === 'admin', [currentUserRole]);
@@ -591,27 +590,39 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       // Filter by dynamic time window
       if (getCreatedTime(s) < filterStartDate) return;
 
-      // Základní body za nápad
-      if (s.status !== "cancelled") {
+      // Anti-spam ochrana: body se přičtou pouze pokud má aktivita status "pending", "approved" nebo "cancelled"
+      if (s.status === "pending" || s.status === "approved" || s.status === "cancelled") {
+        // Základní body za nápad
         stats[name].totalIdeas += 1;
         stats[name].totalZB += ZB_RULES.BASIC;
-      }
 
-      // Body za realizaci
-      if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
-        stats[name].realized += 1;
-        stats[name].totalZB += ZB_RULES.REALIZED;
+        // Body za realizaci
+        if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
+          stats[name].realized += 1;
+          stats[name].totalZB += ZB_RULES.REALIZED;
 
-        // Logistický bonus (má lokaci A url NEBO Táta schválil detail)
-        if (s.approvedDetails || (s.location && s.url)) {
-          stats[name].withDetails += 1;
-          stats[name].totalZB += ZB_RULES.LOGISTICS;
-        }
+          // Logistický bonus (má lokaci A url NEBO Táta schválil detail)
+          if (s.approvedDetails || (s.location && s.url)) {
+            stats[name].withDetails += 1;
+            stats[name].totalZB += ZB_RULES.LOGISTICS;
+          }
 
-        // Bonus za akci zdarma / sleva
-        if (s.approvedFree) {
-          stats[name].freeActivities += 1;
-          stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+          // Bonus za akci zdarma / sleva
+          if (s.approvedFree) {
+            stats[name].freeActivities += 1;
+            stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+          }
+        } else if (s.status === "cancelled") {
+          // Zrušená aktivita - bonus za plánování a přípravu bez realizace
+          if (s.approvedDetails || (s.location && s.url)) {
+            stats[name].withDetails += 1;
+            stats[name].totalZB += ZB_RULES.LOGISTICS;
+          }
+
+          if (s.approvedFree) {
+            stats[name].freeActivities += 1;
+            stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+          }
         }
       }
     });
@@ -641,6 +652,48 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
     return stats;
   }, [suggestions, quests, userProfiles, leagueConfig, leaderboardMode]);
+
+  const playerNameToIdMap = useMemo(() => {
+    const mapping: Record<string, string> = {};
+    Object.entries(userProfiles || {}).forEach(([uid, p]) => {
+      let name = p.adminAlias || p.displayName || p.email?.split('@')[0];
+      if (name) {
+        if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
+          name = "Táta";
+        }
+        mapping[name] = uid;
+      }
+    });
+    return mapping;
+  }, [userProfiles]);
+
+  // ─── Žebříček (Vyloučení rodiče/admina podle rolí) ───────────────
+  const leaderboardData = useMemo(() => {
+    return Object.entries(playerStats)
+      .map(([name, stats]) => {
+        const badgeBonus = BADGES.filter(b => b.check(stats)).reduce((s, b) => s + b.bonusZB, 0);
+        return { name: name || "", ...stats, totalZB: stats.totalZB + badgeBonus, avatar: getAvatarForChild(name || "") };
+      })
+      .filter(p => {
+        const uid = playerNameToIdMap[p.name];
+        const role = userProfiles[uid]?.role || 'viewer';
+        return role === 'child';
+      })
+      .sort((a, b) => b.totalZB - a.totalZB);
+  }, [playerStats, getAvatarForChild, playerNameToIdMap, userProfiles]);
+
+  // ─── Aktivní hráč (Pokud je přihlášen rodič/admin, výchozí je první dítě v žebříčku) ───
+  const activePlayer = useMemo(() => {
+    if (selectedPlayer) return selectedPlayer;
+    if (currentUserRole === "admin" || currentUserRole === "parent") {
+      return leaderboardData[0]?.name || "";
+    }
+    return normalizedCurrentUserName || "";
+  }, [selectedPlayer, normalizedCurrentUserName, leaderboardData, currentUserRole]);
+
+  const activePlayerId = useMemo(() => {
+    return playerNameToIdMap[activePlayer || ""] || "";
+  }, [playerNameToIdMap, activePlayer]);
 
   // Sprint odměny výpočty
   const currentSprintId = useMemo(() => {
@@ -702,23 +755,35 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       if (!activeNames.has(name)) return;
       if (getCreatedTime(s) < currentSprintStartDate) return;
 
-      if (s.status !== "cancelled") {
+      // Anti-spam ochrana: body se přičtou pouze pokud má aktivita status "pending", "approved" nebo "cancelled"
+      if (s.status === "pending" || s.status === "approved" || s.status === "cancelled") {
         stats[name].totalIdeas += 1;
         stats[name].totalZB += ZB_RULES.BASIC;
-      }
 
-      if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
-        stats[name].realized += 1;
-        stats[name].totalZB += ZB_RULES.REALIZED;
+        if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
+          stats[name].realized += 1;
+          stats[name].totalZB += ZB_RULES.REALIZED;
 
-        if (s.approvedDetails || (s.location && s.url)) {
-          stats[name].withDetails += 1;
-          stats[name].totalZB += ZB_RULES.LOGISTICS;
-        }
+          if (s.approvedDetails || (s.location && s.url)) {
+            stats[name].withDetails += 1;
+            stats[name].totalZB += ZB_RULES.LOGISTICS;
+          }
 
-        if (s.approvedFree) {
-          stats[name].freeActivities += 1;
-          stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+          if (s.approvedFree) {
+            stats[name].freeActivities += 1;
+            stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+          }
+        } else if (s.status === "cancelled") {
+          // Zrušená aktivita - bonus za plánování a přípravu bez realizace
+          if (s.approvedDetails || (s.location && s.url)) {
+            stats[name].withDetails += 1;
+            stats[name].totalZB += ZB_RULES.LOGISTICS;
+          }
+
+          if (s.approvedFree) {
+            stats[name].freeActivities += 1;
+            stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+          }
         }
       }
     });
@@ -743,24 +808,6 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
     return stats;
   }, [suggestions, quests, userProfiles, leagueConfig]);
-
-  const playerNameToIdMap = useMemo(() => {
-    const mapping: Record<string, string> = {};
-    Object.entries(userProfiles || {}).forEach(([uid, p]) => {
-      let name = p.adminAlias || p.displayName || p.email?.split('@')[0];
-      if (name) {
-        if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
-          name = "Táta";
-        }
-        mapping[name] = uid;
-      }
-    });
-    return mapping;
-  }, [userProfiles]);
-
-  const activePlayerId = useMemo(() => {
-    return playerNameToIdMap[activePlayer || ""] || "";
-  }, [playerNameToIdMap, activePlayer]);
 
   const currentSprintXP = useMemo(() => {
     const pStats = sprintStats?.[normalizedCurrentUserName || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
@@ -800,16 +847,6 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     );
   }
 
-  // ─── Žebříček ────────────────────────────────────────
-  const leaderboardData = useMemo(() => {
-    return Object.entries(playerStats)
-      .map(([name, stats]) => {
-        const badgeBonus = BADGES.filter(b => b.check(stats)).reduce((s, b) => s + b.bonusZB, 0);
-        return { name: name || "", ...stats, totalZB: stats.totalZB + badgeBonus, avatar: getAvatarForChild(name || "") };
-      })
-      .sort((a, b) => b.totalZB - a.totalZB);
-  }, [playerStats, getAvatarForChild]);
-
   const activeStats = playerStats[activePlayer || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
   const unlockedBadges = BADGES.filter(b => b.check(activeStats));
   const activeBadgeBonus = unlockedBadges.reduce((sum, b) => sum + b.bonusZB, 0);
@@ -828,7 +865,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   }
   const isUnderdog = currentBonusXP > 0;
   
-  const kidsProfiles = leaderboardData.filter(p => (p.name || "") !== "Táta");
+  const kidsProfiles = leaderboardData; // leaderboardData už má odfiltrovaného Tátu, takže kidsProfiles je totožné
   const avgKidsXP = kidsProfiles.length > 0
     ? kidsProfiles.reduce((sum, p) => sum + p.totalZB, 0) / kidsProfiles.length
     : 0;

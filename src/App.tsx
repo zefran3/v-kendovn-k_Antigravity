@@ -151,6 +151,9 @@ const getCityInLocative = (city: string) => {
   return `${prep} lokalitě ${city}`;
 };
 
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
+
 export default function App() {
   // POŠŤÁK (v1.4.6): Absolutní priorita pro zachycení kódu z URL
   const currentUrlParams = new URLSearchParams(window.location.search);
@@ -233,6 +236,9 @@ export default function App() {
   const [rejectReasonText, setRejectReasonText] = useState("");
 
   const [loadingStep, setLoadingStep] = useState('');
+  const todayStr = useMemo(() => {
+    return new Date().toISOString().split('T')[0];
+  }, []);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
@@ -918,12 +924,36 @@ export default function App() {
         return;
       }
 
+      if (newSuggestion.eventDate) {
+        const selectedDateTimeStr = newSuggestion.eventTime 
+          ? `${newSuggestion.eventDate}T${newSuggestion.eventTime}`
+          : `${newSuggestion.eventDate}T00:00`;
+        const selectedDate = new Date(selectedDateTimeStr);
+        const now = new Date();
+        
+        if (newSuggestion.eventTime) {
+          if (selectedDate.getTime() < now.getTime()) {
+            setError("❌ Datum a čas aktivity nemůže být v minulosti!");
+            return;
+          }
+        } else {
+          const todayMidnight = new Date();
+          todayMidnight.setHours(0, 0, 0, 0);
+          if (selectedDate.getTime() < todayMidnight.getTime()) {
+            setError("❌ Datum a čas aktivity nemůže být v minulosti!");
+            return;
+          }
+        }
+      }
+
       if (editingId) {
         // Aktualizace stávajícího draftu na pending návrh
         await updateDoc(doc(db, 'suggestions', editingId), {
           title: formType === "ride" ? `Odvoz: ${newSuggestion.rideFrom} ➡️ ${newSuggestion.rideTo}` : newSuggestion.title,
           description: formType === "ride" ? `Potřebuji odvézt.\nOdkud: ${newSuggestion.rideFrom}\nKam: ${newSuggestion.rideTo}` : newSuggestion.description,
           childName: finalChildName,
+          authorId: user.uid,
+          userId: user.uid,
           eventDate: newSuggestion.eventDate || "",
           eventTime: newSuggestion.eventTime || "",
           location: newSuggestion.location || "",
@@ -1093,6 +1123,35 @@ export default function App() {
 
       const finalDate = overrideDate !== undefined ? overrideDate : suggestion.eventDate;
       const finalTime = overrideTime !== undefined ? overrideTime : suggestion.eventTime;
+
+      if (status === "approved") {
+        if (!finalDate) {
+          setError("❌ Nelze schválit aktivitu bez zadaného data!");
+          return;
+        }
+
+        const checkDateTimeStr = finalTime 
+          ? `${finalDate}T${finalTime}`
+          : `${finalDate}T00:00`;
+        const checkDate = new Date(checkDateTimeStr);
+        const now = new Date();
+
+        const isPast = finalTime
+          ? checkDate.getTime() < now.getTime()
+          : checkDate.getTime() < new Date().setHours(0, 0, 0, 0);
+
+        if (isPast) {
+          setError("❌ Nelze schválit aktivitu s datem v minulosti! Změňte datum na budoucí.");
+          if (suggestion.type === "ride" || !approvingEvent || approvingEvent.id !== id) {
+            setApprovingEvent(suggestion);
+            setApproveDate(finalDate);
+            setApproveTime(finalTime || "");
+            setConfirmDetails(!!suggestion.claimedDetails);
+            setConfirmFree(!!suggestion.claimedFree);
+          }
+          return;
+        }
+      }
 
       if (status === "approved" && googleTokens) {
         let eventParams: any = {};
@@ -2782,14 +2841,55 @@ export default function App() {
                                   type="date" 
                                   value={approveDate}
                                   onChange={e => setApproveDate(e.target.value)}
+                                  min={todayStr}
                                   className="w-full text-xs p-2 rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-green-400 bg-white"
                                 />
-                                <input 
-                                  type="time" 
-                                  value={approveTime}
-                                  onChange={e => setApproveTime(e.target.value)}
-                                  className="w-full text-xs p-2 rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-green-400 bg-white"
-                                />
+                                {(() => {
+                                  const { hour: approveHour, minute: approveMin } = (() => {
+                                    if (!approveTime) return { hour: '', minute: '' };
+                                    const [h, m] = approveTime.split(':');
+                                    let minVal = m || '00';
+                                    const minNum = Math.round(parseInt(minVal, 10) / 5) * 5;
+                                    const roundedMin = minNum >= 60 ? 55 : minNum;
+                                    const formattedMin = String(roundedMin).padStart(2, '0');
+                                    return { hour: h || '', minute: formattedMin };
+                                  })();
+
+                                  const handleApproveTimeChange = (newHour: string, newMin: string) => {
+                                    if (!newHour && !newMin) {
+                                      setApproveTime("");
+                                    } else {
+                                      const finalHour = newHour || "12";
+                                      const finalMin = newMin || "00";
+                                      setApproveTime(`${finalHour}:${finalMin}`);
+                                    }
+                                  };
+
+                                  return (
+                                    <div className="flex gap-2 w-full">
+                                      <select
+                                        value={approveHour}
+                                        onChange={e => handleApproveTimeChange(e.target.value, approveMin)}
+                                        className="bg-zinc-900 border border-white/5 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
+                                      >
+                                        <option value="">-- Hod</option>
+                                        {HOURS.map(h => (
+                                          <option key={h} value={h}>{h}</option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        value={approveMin}
+                                        onChange={e => handleApproveTimeChange(approveHour, e.target.value)}
+                                        className="bg-zinc-900 border border-white/5 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
+                                      >
+                                        <option value="">-- Min</option>
+                                        {MINUTES.map(m => (
+                                          <option key={m} value={m}>{m}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </div>
 
@@ -3196,6 +3296,7 @@ export default function App() {
                         required
                         value={newSuggestion.eventDate}
                         onChange={e => setNewSuggestion({...newSuggestion, eventDate: e.target.value})}
+                        min={todayStr}
                         className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-rose-500 outline-none transition-all text-sm"
                       />
                     </div>
@@ -3203,13 +3304,55 @@ export default function App() {
                       <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block flex justify-between items-center">
                         {formType === "ride" ? "V kolik?" : "V kolik hodin?"} <span className="text-[9px] text-stone-400 font-normal normal-case opacity-70">({formType === "ride" ? "nutné" : "volitelné"})</span>
                       </label>
-                      <input 
-                        type="time"
-                        required={formType === "ride"}
-                        value={newSuggestion.eventTime}
-                        onChange={e => setNewSuggestion({...newSuggestion, eventTime: e.target.value})}
-                        className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-rose-500 outline-none transition-all text-sm"
-                      />
+                      {(() => {
+                        const { hour, minute } = (() => {
+                          const timeStr = newSuggestion.eventTime;
+                          if (!timeStr) return { hour: '', minute: '' };
+                          const [h, m] = timeStr.split(':');
+                          let minVal = m || '00';
+                          const minNum = Math.round(parseInt(minVal, 10) / 5) * 5;
+                          const roundedMin = minNum >= 60 ? 55 : minNum;
+                          const formattedMin = String(roundedMin).padStart(2, '0');
+                          return { hour: h || '', minute: formattedMin };
+                        })();
+
+                        const handleFormTimeChange = (newHour: string, newMin: string) => {
+                          if (!newHour && !newMin) {
+                            setNewSuggestion(prev => ({ ...prev, eventTime: "" }));
+                          } else {
+                            const finalHour = newHour || "12";
+                            const finalMin = newMin || "00";
+                            setNewSuggestion(prev => ({ ...prev, eventTime: `${finalHour}:${finalMin}` }));
+                          }
+                        };
+
+                        return (
+                          <div className="flex gap-2 w-full">
+                            <select
+                              required={formType === "ride"}
+                              value={hour}
+                              onChange={e => handleFormTimeChange(e.target.value, minute)}
+                              className="bg-zinc-900 border border-white/5 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
+                            >
+                              <option value="">-- Hod</option>
+                              {HOURS.map(h => (
+                                <option key={h} value={h}>{h}</option>
+                              ))}
+                            </select>
+                            <select
+                              required={formType === "ride"}
+                              value={minute}
+                              onChange={e => handleFormTimeChange(hour, e.target.value)}
+                              className="bg-zinc-900 border border-white/5 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-emerald-500 w-full"
+                            >
+                              <option value="">-- Min</option>
+                              {MINUTES.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
