@@ -942,7 +942,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
               <div className="relative">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-lg">⚙️</span>
-                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Správa Ligy (Velitelský můstek)</h3>
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Správa Maratonu (Velitelský můstek)</h3>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -968,7 +968,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
                     <div className="text-[11px] text-zinc-400 space-y-1">
                       <div className="flex justify-between">
-                        <span>Začátek ligy:</span>
+                        <span>Začátek maratonu:</span>
                         <span className="text-white font-bold">
                           {leagueConfig.leagueStartDate 
                             ? new Date(leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : leagueConfig.leagueStartDate).toLocaleDateString('cs-CZ') 
@@ -992,7 +992,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                         onClick={handleStartLeague}
                         className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-500/10 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                       >
-                        🚀 Odstartovat novou ligu
+                        🚀 Odstartovat nový maraton
                       </button>
                     )}
 
@@ -1001,7 +1001,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                         onClick={handlePauseLeague}
                         className="w-full py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-xs rounded-xl shadow-lg shadow-amber-500/10 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                       >
-                        ⏸️ Pozastavit ligu
+                        ⏸️ Pozastavit maraton
                       </button>
                     )}
 
@@ -1293,9 +1293,9 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                 <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-6 text-center space-y-3 relative overflow-hidden">
                   <div className="absolute -top-10 -right-10 w-24 h-24 bg-red-500/5 rounded-full blur-xl" />
                   <div className="text-4xl">🏆</div>
-                  <h3 className="text-base font-black text-red-400 uppercase tracking-wider">Liga momentálně neběží</h3>
+                  <h3 className="text-base font-black text-red-400 uppercase tracking-wider">Maraton (6 měs.) momentálně neběží</h3>
                   <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                    Aktuální půlroční sezóna Víkendovníku nebyla zahájena nebo byla ukončena. Přihlaste se jako Administrátor a odstartujte novou ligu na Velitelském můstku!
+                    Aktuální půlroční sezóna Víkendovníku nebyla zahájena nebo byla ukončena. Přihlaste se jako Administrátor a odstartujte nový maraton na Velitelském můstku!
                   </p>
                 </div>
               ) : null
@@ -1321,7 +1321,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                         leaderboardMode === "liga" ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/30" : "text-zinc-400 hover:text-white"
                       )}
                     >
-                      Liga (6 měs.)
+                      Maraton (6 měs.)
                     </button>
                   </div>
                 </div>
@@ -1611,9 +1611,9 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Gift size={16} className="text-rose-400" />
-                <h3 className="text-sm font-bold text-rose-300 uppercase tracking-wider">Přání (Půlroční Liga)</h3>
+                <h3 className="text-sm font-bold text-rose-300 uppercase tracking-wider">Přání (Maraton (6 měs.))</h3>
               </div>
-              {localView === "child" && (
+              {localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && (
                 <button onClick={() => setShowWishForm(!showWishForm)}
                   className="flex items-center gap-1 text-xs font-bold text-rose-400 hover:text-rose-300 transition-colors bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20"
                 >
@@ -1624,7 +1624,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
             {/* Wish form */}
             <AnimatePresence>
-              {showWishForm && (
+              {showWishForm && localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-3">
                   <div className="bg-zinc-800/50 border border-rose-500/10 rounded-xl p-4 space-y-3">
                     <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Přání od: {normalizedCurrentUserName}</div>
@@ -1757,7 +1757,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                 <TrendingUp size={16} className="text-violet-400" />
                 <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Jak získat XP</h3>
               </div>
-              <div className="grid grid-cols-2 gap-2.5 text-xs">
+              <div className="flex flex-col sm:grid sm:grid-cols-2 sm:gap-2.5 text-xs">
                 {[
                   { label: "Nový nápad", zb: `+${ZB_RULES.BASIC} XP`, color: "text-zinc-300" },
                   { label: "Realizovaná akce", zb: `+${ZB_RULES.REALIZED} XP`, color: "text-emerald-400" },
@@ -1766,7 +1766,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   { label: "🎯 Tajné mise", zb: "Dle zadání", subtext: "Sleduj Nástěnku", color: "text-violet-400" },
                   { label: "🚀 Dorovnávací bonus", zb: "+5 XP", subtext: "Získáš k misi, pokud ztrácíš na první místo", color: "text-rose-400" }
                 ].map((rule, i) => (
-                  <div key={i} className="flex flex-col justify-between bg-zinc-900/50 rounded-xl px-3 py-2.5 hover:bg-zinc-900/80 hover:scale-[1.01] transition-all duration-200 border border-transparent hover:border-white/5">
+                  <div key={i} className="flex flex-col justify-between bg-zinc-950 rounded-2xl border border-white/5 p-4 mb-3 sm:mb-0 hover:bg-zinc-900/80 hover:scale-[1.01] transition-all duration-200">
                     <div className="flex items-center justify-between gap-2 w-full">
                       <span className="text-zinc-300 font-medium">{rule.label}</span>
                       <span className={cn("font-black whitespace-nowrap", rule.color)}>{rule.zb}</span>
