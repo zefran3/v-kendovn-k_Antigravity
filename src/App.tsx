@@ -1713,8 +1713,8 @@ export default function App() {
               </button>
             )}
             {view === "parent" && (
-              <div className={cn("grid gap-2", canManageSystem ? "grid-cols-2" : "grid-cols-1")}>
-                {canManageSystem && (
+              <div className={cn("grid gap-2", (canManageSystem || currentUserRole === 'parent') ? "grid-cols-2" : "grid-cols-1")}>
+                {(canManageSystem || currentUserRole === 'parent') && (
                   <button
                     onClick={() => setShowUserManagement(true)}
                     className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-indigo-600 text-white font-bold text-xs w-full hover:bg-indigo-700 transition-all shadow-lg hover:-translate-y-0.5"
@@ -4019,7 +4019,7 @@ export default function App() {
       <input type="file" ref={commentFileInputRef} style={{ display: 'none' }} accept="image/*" onChange={handleCommentPhotoChange} />
 
       <AnimatePresence>
-        {showUserManagement && canManageSystem && (
+        {showUserManagement && (canManageSystem || currentUserRole === 'parent') && (
           <AdminPanel 
             onClose={() => setShowUserManagement(false)}
             userProfiles={userProfiles}
@@ -4029,6 +4029,7 @@ export default function App() {
             handleGenerateInspirations={handleGenerateInspirations}
             isGeneratingInspiration={isGeneratingInspiration}
             handleApproveBikeRoute={handleApproveBikeRoute}
+            currentUserRole={currentUserRole}
           />
         )}
       </AnimatePresence>
@@ -4175,6 +4176,7 @@ export default function App() {
             view={view}
             onClose={() => setShowGameHub(false)}
             getAvatarForChild={getAvatarForChild}
+            onOpenAdminPanel={() => setShowUserManagement(true)}
           />
         )}
       </AnimatePresence>

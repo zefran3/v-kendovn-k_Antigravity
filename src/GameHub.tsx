@@ -63,6 +63,15 @@ const SPRINT_REWARDS = [
   { icon: "🌙", title: "Late Night Pass", desc: "Večerka o hodinu později" },
 ];
 
+export const DEFAULT_BATTLE_PASS_MILESTONES: BattlePassMilestone[] = [
+  { id: "bp_1", pointsRequired: 20, title: "Popcorn", icon: "🍿", description: "Křupavý popcorn k večernímu rodinnému promítání.", order: 1 },
+  { id: "bp_2", pointsRequired: 40, title: "Kofola / Sladkost", icon: "🥤", description: "Sladká odměna nebo vychlazená Kofola za dobře odvedenou práci.", order: 2 },
+  { id: "bp_3", pointsRequired: 60, title: "Prodloužená večerka", icon: "🌙", description: "Jednorázová možnost jít o víkendu spát o něco později.", order: 3 },
+  { id: "bp_4", pointsRequired: 90, title: "Nedělní menu / Fast Food", icon: "🍽️", description: "Rozhodneš o tom, co dobrého se uvaří, nebo si dáte oblíbený Fast Food.", order: 4 },
+  { id: "bp_5", pointsRequired: 120, title: "Výběr aktivity / Výlet", icon: "🎡", description: "Vybereš společnou rodinnou aktivitu nebo výlet.", order: 5 },
+  { id: "bp_6", pointsRequired: 150, title: "Herní čas / Mega Odměna", icon: "🎮", description: "Získáš herní čas na PC/konzoli nebo jinou super mega odměnu!", order: 6 },
+];
+
 interface UserStats {
   totalIdeas: number;
   realized: number;
@@ -313,12 +322,111 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const canManageSystem = useMemo(() => currentUserRole === 'admin', [currentUserRole]);
 
   // Battle Pass stavy
-  const [milestones, setMilestones] = useState<BattlePassMilestone[]>([]);
+  const [milestones, setMilestones] = useState<BattlePassMilestone[]>(DEFAULT_BATTLE_PASS_MILESTONES);
   const [claims, setClaims] = useState<BattlePassClaim[]>([]);
   const [claimingMilestone, setClaimingMilestone] = useState<BattlePassMilestone | null>(null);
   const [isClaiming, setIsClaiming] = useState(false);
 
-  // ─── Firestore listenery ─────────────────────────────
+  // ─── Správa modal stav
+  const [showSpravModal, setShowSpravModal] = useState(false);
+  const [spravMilestones, setSpravMilestones] = useState<BattlePassMilestone[]>(DEFAULT_BATTLE_PASS_MILESTONES);
+  const [spravUnsaved, setSpravUnsaved] = useState(false);
+  const [spravSaving, setSpravSaving] = useState(false);
+
+  // Stavy pro formulář správy milníků v modalu
+  const [spravMilestoneTitle, setSpravMilestoneTitle] = useState("");
+  const [spravMilestoneDesc, setSpravMilestoneDesc] = useState("");
+  const [spravMilestonePoints, setSpravMilestonePoints] = useState(20);
+  const [spravMilestoneIcon, setSpravMilestoneIcon] = useState("🍿");
+  const [spravEditingMilestoneId, setSpravEditingMilestoneId] = useState<string | null>(null);
+
+  // Handlery pro správu milníků v modalu
+  const handleSaveSpravMilestone = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!spravMilestoneTitle.trim()) return;
+
+    if (spravEditingMilestoneId) {
+      setSpravMilestones(prev => 
+        prev.map(m => m.id === spravEditingMilestoneId 
+          ? { ...m, title: spravMilestoneTitle.trim(), description: spravMilestoneDesc.trim(), pointsRequired: spravMilestonePoints, icon: spravMilestoneIcon }
+          : m
+        ).sort((a, b) => a.order - b.order)
+      );
+      setSpravEditingMilestoneId(null);
+    } else {
+      const newMilestone: BattlePassMilestone = {
+        id: `bp_${Date.now()}`,
+        title: spravMilestoneTitle.trim(),
+        description: spravMilestoneDesc.trim(),
+        pointsRequired: spravMilestonePoints,
+        icon: spravMilestoneIcon,
+        order: spravMilestones.length + 1
+      };
+      setSpravMilestones(prev => [...prev, newMilestone].sort((a, b) => a.order - b.order));
+    }
+
+    setSpravMilestoneTitle("");
+    setSpravMilestoneDesc("");
+    setSpravMilestonePoints(20);
+    setSpravMilestoneIcon("🎁");
+    setSpravUnsaved(true);
+  };
+
+  const handleEditSpravMilestone = (m: BattlePassMilestone) => {
+    setSpravEditingMilestoneId(m.id);
+    setSpravMilestoneTitle(m.title);
+    setSpravMilestoneDesc(m.description);
+    setSpravMilestonePoints(m.pointsRequired);
+    setSpravMilestoneIcon(m.icon);
+  };
+
+  const handleDeleteSpravMilestone = (id: string) => {
+    setSpravMilestones(prev => {
+      const filtered = prev.filter(m => m.id !== id);
+      return filtered.map((m, idx) => ({ ...m, order: idx + 1 }));
+    });
+    setSpravUnsaved(true);
+    if (spravEditingMilestoneId === id) {
+      setSpravEditingMilestoneId(null);
+      setSpravMilestoneTitle("");
+      setSpravMilestoneDesc("");
+      setSpravMilestonePoints(20);
+      setSpravMilestoneIcon("🎁");
+    }
+  };
+
+  const handleMoveSpravMilestone = (idx: number, direction: 'up' | 'down') => {
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= spravMilestones.length) return;
+
+    const list = [...spravMilestones];
+    const temp = list[idx];
+    list[idx] = list[targetIdx];
+    list[targetIdx] = temp;
+
+    const updated = list.map((m, index) => ({
+      ...m,
+      order: index + 1
+    }));
+
+    setSpravMilestones(updated);
+    setSpravUnsaved(true);
+  };
+
+  // Interní confirm sub-modal
+  type SpravConfirmType = 'pause' | 'resume' | 'start' | 'reset_sprint' | 'reset_league';
+  const SPRAV_CONFIRM_CFG: Record<SpravConfirmType, { icon: string; title: string; desc: string; btnLabel: string; danger: boolean }> = {
+    pause:   { icon: '⏸️', title: 'Pozastavit Ligu?',    desc: 'Sprint i Maraton budou pozastaveny. Při obnovení se startovní datum automaticky posune o dobu pauzy.',                                                             btnLabel: 'Pozastavit',       danger: false },
+    resume:  { icon: '▶️', title: 'Obnovit Ligu?',       desc: 'Liga bude obnovena. Start Sprintu i Maratonu se posune o dobu, po kterou byla Liga pozastavena.',                                                                   btnLabel: 'Obnovit Ligu',     danger: false },
+    start:   { icon: '🚀', title: 'Spustit novou Ligu?', desc: 'Nastaví nový start Maratonu i Sprintu na dnešní datum.',                                                                                                              btnLabel: 'Spustit Ligu',    danger: false },
+    reset_sprint:  { icon: '🏁', title: 'Resetovat Sprint?',    desc: 'Aktuální Sprint bude ukončen a začne nový 60denní cyklus. Děti začínají Battle Pass od nuly. Maratonské body zůstávají nedotčené.',         btnLabel: 'Resetovat Sprint', danger: true  },
+    reset_league:  { icon: '⚠️', title: 'Resetovat celou Ligu?', desc: 'VAROVÁNÍ: Vymaže veškeré body – Sprintové i Maratonské. Všechno začíná od nuly. Tuto akci nelze vrátit!', btnLabel: 'Resetovat vše',   danger: true  },
+  };
+  const [spravConfirm, setSpravConfirm] = useState<{ open: boolean; type: SpravConfirmType | null }>({ open: false, type: null });
+
+  const openSpravConfirm = (type: SpravConfirmType) => setSpravConfirm({ open: true, type });
+  const closeSpravConfirm = () => setSpravConfirm({ open: false, type: null });
+
   useEffect(() => {
     const unsubW = onSnapshot(
       query(collection(db, 'wishlists'), orderBy('createdAt', 'desc')),
@@ -341,36 +449,33 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       },
       err => console.error("League config listen error:", err)
     );
+
     const unsubBP = onSnapshot(
       doc(db, 'settings', 'battle_pass'),
       docSnap => {
-        const defaultMilestones: BattlePassMilestone[] = [
-          { id: "bp_1", pointsRequired: 15, title: "Popcorn k filmu", icon: "🍿", description: "Křupavý popcorn k vybranému rodinnému filmu.", order: 1 },
-          { id: "bp_2", pointsRequired: 30, title: "Výběr nedělního menu", icon: "🍽️", description: "Rozhodneš, co se bude vařit v neděli k obědu.", order: 2 },
-          { id: "bp_3", pointsRequired: 45, title: "Prodloužená večerka", icon: "🌙", description: "Můžeš jít spát o 1 hodinu později.", order: 3 },
-          { id: "bp_4", pointsRequired: 60, title: "Hodina na PC navíc", icon: "🎮", description: "1 hodina času na počítači nebo konzoli navíc.", order: 4 },
-          { id: "bp_5", pointsRequired: 75, title: "Večeře na přání", icon: "🍕", description: "Mamka s tátem ti uvaří tvoje nejoblíbenější jídlo.", order: 5 },
-          { id: "bp_6", pointsRequired: 95, title: "Fast Food Feast", icon: "🍔", description: "Výlet do tvého oblíbeného fast foodu na účet rodičů!", order: 6 },
-        ];
-
         if (docSnap.exists()) {
           const data = docSnap.data();
           const list = (data.milestones || []) as BattlePassMilestone[];
           if (list.length === 0) {
-            setDoc(doc(db, 'settings', 'battle_pass'), { milestones: defaultMilestones })
-              .catch(err => console.error("Error initializing milestones in Firestore:", err));
-            setMilestones(defaultMilestones);
+            if (canApproveActivities) {
+              setDoc(doc(db, 'settings', 'battle_pass'), { milestones: DEFAULT_BATTLE_PASS_MILESTONES }, { merge: true })
+                .catch(err => console.error("Error initializing milestones in Firestore:", err));
+            }
+            setMilestones(DEFAULT_BATTLE_PASS_MILESTONES);
           } else {
             setMilestones([...list].sort((a, b) => a.order - b.order));
           }
         } else {
-          setDoc(doc(db, 'settings', 'battle_pass'), { milestones: defaultMilestones })
-            .catch(err => console.error("Error initializing milestones in Firestore:", err));
-          setMilestones(defaultMilestones);
+          if (canApproveActivities) {
+            setDoc(doc(db, 'settings', 'battle_pass'), { milestones: DEFAULT_BATTLE_PASS_MILESTONES }, { merge: true })
+              .catch(err => console.error("Error initializing milestones in Firestore:", err));
+          }
+          setMilestones(DEFAULT_BATTLE_PASS_MILESTONES);
         }
       },
       err => console.error("Battle pass listen error:", err)
     );
+
     const unsubClaims = onSnapshot(
       collection(db, 'battlePassClaims'),
       snap => setClaims(snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[]),
@@ -877,6 +982,42 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   });
   const activeQuests = quests.filter(q => q.active);
 
+  const handleSpravSave = async () => {
+    setSpravSaving(true);
+    await setDoc(doc(db, 'settings', 'battle_pass'), { milestones: spravMilestones }, { merge: true }).catch(console.error);
+    setSpravSaving(false);
+    setSpravUnsaved(false);
+  };
+
+  const executeSpravAction = async () => {
+    if (!spravConfirm.type) return;
+    const type = spravConfirm.type;
+    closeSpravConfirm();
+    try {
+      if (type === 'pause') {
+        await handlePauseLeague();
+      } else if (type === 'resume') {
+        await handleResumeLeague();
+      } else if (type === 'start') {
+        await handleStartLeague();
+      } else if (type === 'reset_sprint') {
+        await updateDoc(doc(db, 'settings', 'league_config'), {
+          status: 'running',
+          sprintStartDate: serverTimestamp()
+        });
+      } else if (type === 'reset_league') {
+        await setDoc(doc(db, 'settings', 'league_config'), {
+          status: 'running',
+          leagueStartDate: serverTimestamp(),
+          sprintStartDate: serverTimestamp(),
+          pausedAt: null
+        });
+      }
+    } catch (err) {
+      console.error("Sprav action failed:", err);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -986,48 +1127,22 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                     </div>
                   </div>
 
-                  <div className="flex flex-col justify-center gap-2">
-                    {leagueConfig.status === 'stopped' && (
-                      <button
-                        onClick={handleStartLeague}
-                        className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-500/10 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-                      >
-                        🚀 Odstartovat nový maraton
-                      </button>
-                    )}
-
-                    {leagueConfig.status === 'running' && (
-                      <button
-                        onClick={handlePauseLeague}
-                        className="w-full py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-xs rounded-xl shadow-lg shadow-amber-500/10 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-                      >
-                        ⏸️ Pozastavit maraton
-                      </button>
-                    )}
-
-                    {leagueConfig.status === 'paused' && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={handleResumeLeague}
-                          className="py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-1.5"
-                        >
-                          ▶️ Pokračovat
-                        </button>
-                        <button
-                          onClick={handleResetLeague}
-                          className="py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-black text-xs rounded-xl shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-1.5"
-                        >
-                          🔄 Resetovat
-                        </button>
-                      </div>
-                    )}
-                    {/* Dedikované tlačítko pro zadání Tajné mise */}
+                  {/* Grid 2 sloupce: Zadat tajnou misi + Správa Ligy */}
+                  <div className="grid grid-cols-2 gap-3 w-full">
                     <button
                       onClick={() => setShowCreateQuest(!showCreateQuest)}
-                      className="w-full py-2.5 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-black text-xs rounded-xl shadow-lg shadow-amber-500/5 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 mt-1"
+                      className="py-4 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-black text-xs rounded-xl shadow-lg shadow-amber-500/5 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5"
                     >
                       ➕ Zadat tajnou misi
                     </button>
+                    {canApproveActivities && (
+                      <button
+                        onClick={() => { setSpravMilestones([...milestones]); setShowSpravModal(true); }}
+                        className="py-4 border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 font-black text-xs rounded-xl shadow-lg shadow-indigo-500/5 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5"
+                      >
+                        🛡️ Správa Ligy
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1384,7 +1499,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                 className="flex items-center justify-between w-full relative z-10 text-left"
               >
                 <div className="flex items-center gap-2.5">
-                  <Award size={18} className={activeSprintXP < 15 ? "text-zinc-500" : "text-emerald-400"} />
+                  <Award size={18} className={activeSprintXP < (sortedMilestones[0]?.pointsRequired ?? 20) ? "text-zinc-500" : "text-emerald-400"} />
                   <div className="text-left">
                     <h3 className="text-sm font-black text-zinc-200 tracking-wider uppercase">Battle Pass</h3>
                     <p className="text-[10px] text-zinc-500 font-medium">Sprintová mapa odměn • Hráč: <span className="text-zinc-300 font-bold">{activePlayer}</span></p>
@@ -1393,13 +1508,13 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                     <span className="text-[9px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
                       Uplatněno
                     </span>
-                  ) : activeSprintXP >= 15 ? (
+                  ) : activeSprintXP >= (sortedMilestones[0]?.pointsRequired ?? 20) ? (
                     <span className="text-[9px] bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
                       Aktivní
                     </span>
                   ) : (
                     <span className="text-[9px] bg-zinc-800/80 border border-white/5 text-zinc-500 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
-                      Zamčeno (&lt; 15 XP)
+                      Zamčeno (&lt; {sortedMilestones[0]?.pointsRequired ?? 20} XP)
                     </span>
                   )}
                 </div>
@@ -1908,6 +2023,320 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             </motion.div>
           </>
         )}
+      </AnimatePresence>
+
+      {/* ═══ HERNÍ MODAL: SPRÁVA LIGY (tmavý GameHub design) ═══ */}
+      <AnimatePresence>
+        {showSpravModal && (
+          <motion.div
+            key="sprav-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-3 md:p-6"
+            onClick={() => !spravConfirm.open && setShowSpravModal(false)}
+          >
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/75 backdrop-blur-md" />
+
+            {/* Modal box */}
+            <motion.div
+              key="sprav-box"
+              initial={{ opacity: 0, scale: 0.92, y: 24 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 24 }}
+              transition={{ type: 'spring', damping: 22, stiffness: 280 }}
+              onClick={e => e.stopPropagation()}
+              className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl border border-white/10 shadow-2xl flex flex-col hide-scrollbar p-5 space-y-5"
+            >
+              <style>{`
+                .hide-scrollbar::-webkit-scrollbar {
+                  display: none !important;
+                }
+                .hide-scrollbar {
+                  -ms-overflow-style: none !important;
+                  scrollbar-width: none !important;
+                }
+              `}</style>
+
+              {/* Header modalu */}
+              <div className="relative flex items-center justify-between border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-base shadow-lg shadow-indigo-500/30">
+                    🛡️
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-black text-white tracking-tight">Správa Ligy</h2>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Velitelský můstek</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSpravModal(false)}
+                  className="w-7 h-7 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {/* Obsah modalu: Editor milníků */}
+              <div className="space-y-4">
+                {/* Nadpis a formulář */}
+                <form onSubmit={handleSaveSpravMilestone} className="bg-zinc-950/60 p-4 rounded-xl border border-white/5 space-y-3">
+                  <h4 className="font-bold text-zinc-200 text-xs uppercase tracking-wider">
+                    {spravEditingMilestoneId ? "✏️ Upravit milník Battle Passu" : "➕ Přidat nový milník Battle Passu"}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="sm:col-span-2">
+                      <input
+                        type="text"
+                        value={spravMilestoneTitle}
+                        onChange={(e) => setSpravMilestoneTitle(e.target.value)}
+                        placeholder="Název milníku (např. Popcorn k filmu)..."
+                        className="w-full bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500"
+                        required
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={spravMilestoneIcon}
+                        onChange={(e) => setSpravMilestoneIcon(e.target.value)}
+                        placeholder="Ikona (např. 🍿)..."
+                        className="w-14 text-center bg-zinc-900 border border-white/10 rounded-lg px-2 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500"
+                        required
+                      />
+                      <div className="flex-1 flex items-center gap-1.5 bg-zinc-900 border border-white/10 rounded-lg px-2 py-1">
+                        <input
+                          type="number"
+                          value={spravMilestonePoints}
+                          onChange={(e) => setSpravMilestonePoints(parseInt(e.target.value) || 0)}
+                          placeholder="XP"
+                          className="w-full text-center font-bold text-xs bg-transparent border-none text-white outline-none focus:ring-0"
+                          min="0"
+                          required
+                        />
+                        <span className="text-[10px] font-bold text-zinc-500 pr-1">XP</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <textarea
+                      value={spravMilestoneDesc}
+                      onChange={(e) => setSpravMilestoneDesc(e.target.value)}
+                      placeholder="Stručný popis milníku pro dítě..."
+                      className="w-full bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500 h-14 resize-none"
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    {spravEditingMilestoneId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSpravEditingMilestoneId(null);
+                          setSpravMilestoneTitle("");
+                          setSpravMilestoneDesc("");
+                          setSpravMilestonePoints(20);
+                          setSpravMilestoneIcon("🎁");
+                        }}
+                        className="px-3 py-1.5 text-[10px] font-bold text-zinc-400 bg-zinc-800 rounded-lg hover:bg-zinc-700 cursor-pointer transition-colors"
+                      >
+                        Zrušit
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      className="px-4 py-1.5 text-[10px] font-black text-white bg-indigo-500 rounded-lg hover:bg-indigo-400 shadow-md shadow-indigo-500/10 cursor-pointer transition-all active:scale-[0.98]"
+                    >
+                      {spravEditingMilestoneId ? "Aktualizovat" : "Přidat milník"}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Seznam milníků */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center px-1">
+                    <h4 className="font-bold text-zinc-400 text-[10px] uppercase tracking-wider">
+                      Milníky v paměti ({spravMilestones.length})
+                    </h4>
+                    {spravUnsaved && (
+                      <button
+                        type="button"
+                        onClick={handleSpravSave}
+                        disabled={spravSaving}
+                        className="px-2.5 py-1 text-[9px] font-black text-white bg-emerald-500 hover:bg-emerald-400 rounded-md shadow-lg shadow-emerald-500/10 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                      >
+                        {spravSaving ? "Uklám..." : "💾 Uložit do Firestore"}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto hide-scrollbar">
+                    {spravMilestones.map((m, idx) => (
+                      <div key={m.id} className="bg-zinc-950/40 p-2.5 rounded-xl border border-white/5 flex justify-between items-center gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <span className="text-xl shrink-0 filter drop-shadow select-none">{m.icon}</span>
+                          <div className="min-w-0 flex-1 text-left">
+                            <div className="font-bold text-xs text-white flex items-center gap-2">
+                              <span className="truncate">{m.title}</span>
+                              <span className="text-[9px] font-black text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-1.5 py-0.5 rounded shrink-0">
+                                {m.pointsRequired} XP
+                              </span>
+                            </div>
+                            <p className="text-[9px] text-zinc-500 truncate">{m.description || "Bez popisu."}</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveSpravMilestone(idx, 'up')}
+                            disabled={idx === 0}
+                            className="p-1 text-xs text-zinc-500 hover:text-white disabled:opacity-20 cursor-pointer"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveSpravMilestone(idx, 'down')}
+                            disabled={idx === spravMilestones.length - 1}
+                            className="p-1 text-xs text-zinc-500 hover:text-white disabled:opacity-20 cursor-pointer"
+                          >
+                            ▼
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditSpravMilestone(m)}
+                            className="p-1 text-xs text-zinc-500 hover:text-indigo-400 cursor-pointer"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSpravMilestone(m.id)}
+                            className="p-1 text-xs text-zinc-500 hover:text-rose-400 cursor-pointer"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Ovládací panel ligy (Dlaždice) */}
+              <div className="border-t border-white/5 pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-zinc-400 text-[10px] uppercase tracking-wider">🏆 Řízení ligy a reset cyklů</h4>
+                  <div className="flex items-center gap-2">
+                    {leagueConfig.status === 'running' && (
+                      <span className="text-[9px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold px-2.5 py-0.5 rounded-full animate-pulse">🟢 Běží</span>
+                    )}
+                    {leagueConfig.status === 'paused' && (
+                      <span className="text-[9px] bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold px-2.5 py-0.5 rounded-full">🟡 Pozastaveno</span>
+                    )}
+                    {leagueConfig.status === 'stopped' && (
+                      <span className="text-[9px] bg-rose-500/15 border border-rose-500/30 text-rose-400 font-bold px-2.5 py-0.5 rounded-full">🔴 Zastaveno</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3 velké dlaždice */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full mt-2">
+                  {/* Tlačítko 1: Stav */}
+                  {leagueConfig.status === 'running' ? (
+                    <button
+                      type="button"
+                      onClick={() => openSpravConfirm('pause')}
+                      className="h-24 rounded-2xl bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/20 hover:border-amber-500/30 text-amber-300 transition-all flex flex-col items-center justify-center gap-1.5 p-3 text-center cursor-pointer hover:scale-[1.02] active:scale-95"
+                    >
+                      <span className="text-2xl">⏸️</span>
+                      <span className="font-black text-[11px] leading-tight uppercase tracking-wider">Pozastavit Ligu</span>
+                      <span className="text-[8px] text-zinc-500 leading-normal">Pauza Maratonu i Sprintu</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openSpravConfirm(leagueConfig.status === 'paused' ? 'resume' : 'start')}
+                      className="h-24 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/20 hover:border-emerald-500/30 text-emerald-300 transition-all flex flex-col items-center justify-center gap-1.5 p-3 text-center cursor-pointer hover:scale-[1.02] active:scale-95"
+                    >
+                      <span className="text-2xl">▶️</span>
+                      <span className="font-black text-[11px] leading-tight uppercase tracking-wider">
+                        {leagueConfig.status === 'paused' ? 'Obnovit Ligu' : 'Spustit Ligu'}
+                      </span>
+                      <span className="text-[8px] text-zinc-500 leading-normal">Pokračovat v hraní</span>
+                    </button>
+                  )}
+
+                  {/* Tlačítko 2: Reset Sprintu */}
+                  <button
+                    type="button"
+                    onClick={() => openSpravConfirm('reset_sprint')}
+                    className="h-24 rounded-2xl bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/20 hover:border-indigo-500/30 text-indigo-300 transition-all flex flex-col items-center justify-center gap-1.5 p-3 text-center cursor-pointer hover:scale-[1.02] active:scale-95"
+                  >
+                    <span className="text-2xl">🏁</span>
+                    <span className="font-black text-[11px] leading-tight uppercase tracking-wider">Resetovat Sprint</span>
+                    <span className="text-[8px] text-zinc-500 leading-normal">Vymaže pouze BP odměny</span>
+                  </button>
+
+                  {/* Tlačítko 3: Reset celého maratonu */}
+                  <button
+                    type="button"
+                    onClick={() => openSpravConfirm('reset_league')}
+                    className="h-24 rounded-2xl bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/20 hover:border-rose-500/30 text-rose-300 transition-all flex flex-col items-center justify-center gap-1.5 p-3 text-center cursor-pointer hover:scale-[1.02] active:scale-95"
+                  >
+                    <span className="text-2xl">⚠️</span>
+                    <span className="font-black text-[11px] leading-tight uppercase tracking-wider">Resetovat Ligu</span>
+                    <span className="text-[8px] text-zinc-500 leading-normal">Úplný start od nuly</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ INTERNÍ CONFIRM MODAL (Správa) ═══ */}
+      <AnimatePresence>
+        {spravConfirm.open && spravConfirm.type && (() => {
+          const cfg = SPRAV_CONFIRM_CFG[spravConfirm.type];
+          return (
+            <motion.div
+              key="sprav-confirm-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+              onClick={closeSpravConfirm}
+            >
+              <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+              <motion.div
+                key="sprav-confirm-box"
+                initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                onClick={e => e.stopPropagation()}
+                className="relative w-full max-w-sm bg-zinc-900 border border-white/10 rounded-2xl p-5 flex flex-col gap-4 text-center shadow-2xl"
+              >
+                <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center text-xl shadow-lg ${cfg.danger ? 'bg-rose-500/20 border border-rose-500/30 text-rose-400' : 'bg-indigo-500/20 border border-indigo-500/30 text-indigo-400'}`}>
+                  {cfg.icon}
+                </div>
+                <div className="space-y-1.5">
+                  <h4 className={`text-sm font-black uppercase tracking-wider ${cfg.danger ? 'text-rose-400' : 'text-zinc-200'}`}>{cfg.title}</h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed font-medium">{cfg.desc}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={closeSpravConfirm} className="flex-1 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 font-bold text-xs transition-all cursor-pointer">
+                    Zrušit
+                  </button>
+                  <button onClick={executeSpravAction} className={`flex-1 py-2 rounded-xl font-black text-xs text-white transition-all cursor-pointer active:scale-[0.97] ${cfg.danger ? 'bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 shadow-lg shadow-rose-600/10' : 'bg-gradient-to-r from-indigo-600 to-violet-700 hover:from-indigo-500 hover:to-violet-600 shadow-lg shadow-indigo-600/10'}`}>
+                    {cfg.btnLabel}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
       </AnimatePresence>
     </motion.div>
   );

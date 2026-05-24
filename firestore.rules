@@ -124,7 +124,12 @@ service cloud.firestore {
 
     match /settings/league_config {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write, update: if isAdmin() || isParent();
+    }
+
+    match /settings/battle_pass {
+      allow read: if isAuthenticated();
+      allow write, update: if isAdmin() || isParent();
     }
 
     match /sprintRewards/{rewardId} {

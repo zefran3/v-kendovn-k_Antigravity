@@ -6,6 +6,15 @@ import { collection, query, orderBy, limit, onSnapshot, addDoc, updateDoc, delet
 import { cn } from "../lib/utils";
 import { UserProfile, UserRole, BattlePassMilestone, BattlePassClaim } from "../types";
 
+export const DEFAULT_BATTLE_PASS_MILESTONES: BattlePassMilestone[] = [
+  { id: "bp_1", pointsRequired: 20, title: "Popcorn", icon: "🍿", description: "Křupavý popcorn k večernímu rodinnému promítání.", order: 1 },
+  { id: "bp_2", pointsRequired: 40, title: "Kofola / Sladkost", icon: "🥤", description: "Sladká odměna nebo vychlazená Kofola za dobře odvedenou práci.", order: 2 },
+  { id: "bp_3", pointsRequired: 60, title: "Prodloužená večerka", icon: "🌙", description: "Jednorázová možnost jít o víkendu spát o něco později.", order: 3 },
+  { id: "bp_4", pointsRequired: 90, title: "Nedělní menu / Fast Food", icon: "🍽️", description: "Rozhodneš o tom, co dobrého se uvaří, nebo si dáte oblíbený Fast Food.", order: 4 },
+  { id: "bp_5", pointsRequired: 120, title: "Výběr aktivity / Výlet", icon: "🎡", description: "Vybereš společnou rodinnou aktivitu nebo výlet.", order: 5 },
+  { id: "bp_6", pointsRequired: 150, title: "Herní čas / Mega Odměna", icon: "🎮", description: "Získáš herní čas na PC/konzoli nebo jinou super mega odměnu!", order: 6 },
+];
+
 interface AdminLog {
   id: string;
   timestamp: any;
@@ -23,6 +32,7 @@ interface AdminPanelProps {
   handleGenerateInspirations: () => void;
   isGeneratingInspiration: boolean;
   handleApproveBikeRoute: (id: string) => void;
+  currentUserRole?: string;
 }
 
 export default function AdminPanel({
@@ -33,12 +43,17 @@ export default function AdminPanel({
   toggleUserBlocked,
   handleGenerateInspirations,
   isGeneratingInspiration,
-  handleApproveBikeRoute
+  handleApproveBikeRoute,
+  currentUserRole
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions" | "rewards">("logs");
+  const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions" | "rewards">(
+    currentUserRole === "parent" ? "rewards" : "logs"
+  );
+
   const [logs, setLogs] = useState<AdminLog[]>([]);
-  const [milestones, setMilestones] = useState<BattlePassMilestone[]>([]);
+  const [milestones, setMilestones] = useState<BattlePassMilestone[]>(DEFAULT_BATTLE_PASS_MILESTONES);
   const [claims, setClaims] = useState<BattlePassClaim[]>([]);
+  const [leagueConfig, setLeagueConfig] = useState<any>({ status: 'stopped', sprintStartDate: null, marathonStartDate: null, leagueStartDate: null });
   
   const [milestoneTitle, setMilestoneTitle] = useState("");
   const [milestoneDesc, setMilestoneDesc] = useState("");
@@ -46,6 +61,154 @@ export default function AdminPanel({
   const [milestoneIcon, setMilestoneIcon] = useState("🎁");
   const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // ─── Herní potvrzovací modal ─────────────────────────────
+  type ConfirmType = 'delete_milestone' | 'pause' | 'resume' | 'start' | 'reset_sprint' | 'reset_league';
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    type: ConfirmType | null;
+    payload?: any;
+  }>({ isOpen: false, type: null });
+
+  const CONFIRM_CONFIG: Record<ConfirmType, { icon: string; title: string; desc: string; btnLabel: string; danger: boolean }> = {
+    delete_milestone: {
+      icon: '🗑️',
+      title: 'Smazat milník?',
+      desc: 'Tento milník bude trvale odstraněn z Battle Passu. Tuto akci nelze vrátit.',
+      btnLabel: 'Ano, smazat',
+      danger: true,
+    },
+    pause: {
+      icon: '⏸️',
+      title: 'Pozastavit Ligu?',
+      desc: 'Sprint i Maraton budou pozastaveny. Čas plyne dál – při obnovení se startovní datum automaticky posune o dobu pauzy.',
+      btnLabel: 'Pozastavit',
+      danger: false,
+    },
+    resume: {
+      icon: '▶️',
+      title: 'Obnovit Ligu?',
+      desc: 'Liga bude obnovena. Start Sprintu i Maratonu se automaticky posune o dobu, po kterou byla Liga pozastavena.',
+      btnLabel: 'Obnovit Ligu',
+      danger: false,
+    },
+    start: {
+      icon: '🚀',
+      title: 'Spustit novou Ligu?',
+      desc: 'Tím se nastaví nový start Maratonu i Sprintu na dnešní datum. Vhodné pro zahájení nové sezóny.',
+      btnLabel: 'Spustit Ligu',
+      danger: false,
+    },
+    reset_sprint: {
+      icon: '🏁',
+      title: 'Resetovat Sprint?',
+      desc: 'Aktuální Sprint bude ukončen a začne nový 60denní cyklus. Děti začínají Battle Pass od nuly. Maratonské body zůstávají nedotčené.',
+      btnLabel: 'Resetovat Sprint',
+      danger: true,
+    },
+    reset_league: {
+      icon: '⚠️',
+      title: 'Resetovat celou Ligu?',
+      desc: 'VAROVÁNÍ: Tato akce vymaže veškeré body – jak Sprintové, tak Maratonské. Všechno začíná od nuly. Tuto akci nelze vrátit!',
+      btnLabel: 'Resetovat vše',
+      danger: true,
+    },
+  };
+
+  const openConfirm = (type: ConfirmType, payload?: any) => {
+    setConfirmModal({ isOpen: true, type, payload });
+  };
+
+  const closeConfirm = () => {
+    setConfirmModal({ isOpen: false, type: null });
+  };
+
+  const executeConfirmedAction = async () => {
+    const { type, payload } = confirmModal;
+    closeConfirm();
+    if (!type) return;
+
+    if (type === 'delete_milestone') {
+      const id = payload as string;
+      setMilestones(prev => {
+        const filtered = prev.filter(m => m.id !== id);
+        return filtered.map((m, idx) => ({ ...m, order: idx + 1 }));
+      });
+      setHasUnsavedChanges(true);
+      if (editingMilestoneId === id) {
+        setEditingMilestoneId(null);
+        setMilestoneTitle('');
+        setMilestoneDesc('');
+        setMilestonePoints(15);
+        setMilestoneIcon('🎁');
+      }
+      return;
+    }
+
+    if (type === 'pause') {
+      try {
+        await setDoc(doc(db, 'settings', 'league_config'), {
+          status: 'paused',
+          pausedAt: serverTimestamp(),
+          sprintStartDate: leagueConfig.sprintStartDate || null,
+          marathonStartDate: leagueConfig.marathonStartDate || null
+        });
+      } catch (err) { console.error(err); }
+      return;
+    }
+
+    if (type === 'resume') {
+      const sprintStart = leagueConfig.sprintStartDate || leagueConfig.leagueStartDate;
+      const marathonStart = leagueConfig.marathonStartDate || leagueConfig.leagueStartDate;
+      if (!sprintStart || !marathonStart) return;
+      const pauseDurationMs = Date.now() - (leagueConfig.pausedAt.toMillis ? leagueConfig.pausedAt.toMillis() : new Date(leagueConfig.pausedAt).getTime());
+      const newSprintStartMs = (sprintStart.toMillis ? sprintStart.toMillis() : new Date(sprintStart).getTime()) + pauseDurationMs;
+      const newMarathonStartMs = (marathonStart.toMillis ? marathonStart.toMillis() : new Date(marathonStart).getTime()) + pauseDurationMs;
+      try {
+        await setDoc(doc(db, 'settings', 'league_config'), {
+          status: 'running',
+          sprintStartDate: new Date(newSprintStartMs),
+          marathonStartDate: new Date(newMarathonStartMs),
+          pausedAt: null
+        });
+      } catch (err) { console.error(err); }
+      return;
+    }
+
+    if (type === 'start') {
+      try {
+        await setDoc(doc(db, 'settings', 'league_config'), {
+          status: 'running',
+          sprintStartDate: serverTimestamp(),
+          marathonStartDate: serverTimestamp(),
+          pausedAt: null
+        });
+      } catch (err) { console.error(err); }
+      return;
+    }
+
+    if (type === 'reset_sprint') {
+      try {
+        await setDoc(doc(db, 'settings', 'league_config'), {
+          status: 'running',
+          sprintStartDate: serverTimestamp()
+        }, { merge: true });
+      } catch (err) { console.error(err); }
+      return;
+    }
+
+    if (type === 'reset_league') {
+      try {
+        await setDoc(doc(db, 'settings', 'league_config'), {
+          status: 'running',
+          sprintStartDate: serverTimestamp(),
+          marathonStartDate: serverTimestamp(),
+          pausedAt: null
+        });
+      } catch (err) { console.error(err); }
+      return;
+    }
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'admin_logs'), orderBy('timestamp', 'desc'), limit(15));
@@ -63,24 +226,24 @@ export default function AdminPanel({
         if (docSnap.exists()) {
           const data = docSnap.data();
           const list = (data.milestones || []) as BattlePassMilestone[];
-          setMilestones(prev => {
-            return prev.length === 0 || !hasUnsavedChanges
-              ? [...list].sort((a, b) => a.order - b.order)
-              : prev;
-          });
+          if (list.length === 0) {
+            setDoc(doc(db, 'settings', 'battle_pass'), { milestones: DEFAULT_BATTLE_PASS_MILESTONES }, { merge: true })
+              .catch(err => console.error("Error initializing milestones in Firestore from AdminPanel:", err));
+            setMilestones(prev => {
+              return prev.length === 0 || !hasUnsavedChanges ? DEFAULT_BATTLE_PASS_MILESTONES : prev;
+            });
+          } else {
+            setMilestones(prev => {
+              return prev.length === 0 || !hasUnsavedChanges
+                ? [...list].sort((a, b) => a.order - b.order)
+                : prev;
+            });
+          }
         } else {
+          setDoc(doc(db, 'settings', 'battle_pass'), { milestones: DEFAULT_BATTLE_PASS_MILESTONES }, { merge: true })
+            .catch(err => console.error("Error initializing milestones in Firestore from AdminPanel:", err));
           setMilestones(prev => {
-            if (prev.length === 0 || !hasUnsavedChanges) {
-              return [
-                { id: "bp_1", pointsRequired: 15, title: "Popcorn k filmu", icon: "🍿", description: "Křupavý popcorn k vybranému rodinnému filmu.", order: 1 },
-                { id: "bp_2", pointsRequired: 30, title: "Výběr nedělního menu", icon: "🍽️", description: "Rozhodneš, co se bude vařit v neděli k obědu.", order: 2 },
-                { id: "bp_3", pointsRequired: 45, title: "Prodloužená večerka", icon: "🌙", description: "Můžeš jít spát o 1 hodinu později.", order: 3 },
-                { id: "bp_4", pointsRequired: 60, title: "Hodina na PC navíc", icon: "🎮", description: "1 hodina času na počítači nebo konzoli navíc.", order: 4 },
-                { id: "bp_5", pointsRequired: 75, title: "Večeře na přání", icon: "🍕", description: "Mamka s tátem ti uvaří tvoje nejoblíbenější jídlo.", order: 5 },
-                { id: "bp_6", pointsRequired: 95, title: "Fast Food Feast", icon: "🍔", description: "Výlet do tvého oblíbeného fast foodu na účet rodičů!", order: 6 },
-              ];
-            }
-            return prev;
+            return prev.length === 0 || !hasUnsavedChanges ? DEFAULT_BATTLE_PASS_MILESTONES : prev;
           });
         }
       }
@@ -93,10 +256,22 @@ export default function AdminPanel({
       }
     );
 
+    const unsubL = onSnapshot(
+      doc(db, 'settings', 'league_config'),
+      (snap) => {
+        if (snap.exists()) {
+          setLeagueConfig(snap.data());
+        } else {
+          setLeagueConfig({ status: 'stopped', sprintStartDate: null, marathonStartDate: null, leagueStartDate: null });
+        }
+      }
+    );
+
     return () => {
       unsubscribe();
       unsubBP();
       unsubClaims();
+      unsubL();
     };
   }, [hasUnsavedChanges]);
 
@@ -143,19 +318,7 @@ export default function AdminPanel({
   };
 
   const handleDeleteMilestone = (id: string) => {
-    if (!window.confirm("Opravdu chceš smazat tento milník?")) return;
-    setMilestones(prev => {
-      const filtered = prev.filter(m => m.id !== id);
-      return filtered.map((m, idx) => ({ ...m, order: idx + 1 }));
-    });
-    setHasUnsavedChanges(true);
-    if (editingMilestoneId === id) {
-      setEditingMilestoneId(null);
-      setMilestoneTitle("");
-      setMilestoneDesc("");
-      setMilestonePoints(15);
-      setMilestoneIcon("🎁");
-    }
+    openConfirm('delete_milestone', id);
   };
 
   const handleMoveMilestone = (idx: number, direction: 'up' | 'down') => {
@@ -186,6 +349,20 @@ export default function AdminPanel({
       alert("Chyba při ukládání konfigurace: " + (err as Error).message);
     }
   };
+
+  const handlePauseLeague = () => { openConfirm('pause'); };
+
+  const handleStartOrResumeLeague = () => {
+    if (leagueConfig.status === 'paused' && leagueConfig.pausedAt) {
+      openConfirm('resume');
+    } else {
+      openConfirm('start');
+    }
+  };
+
+  const handleResetSprintOnly = () => { openConfirm('reset_sprint'); };
+
+  const handleResetWholeLeague = () => { openConfirm('reset_league'); };
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return "";
@@ -228,34 +405,40 @@ export default function AdminPanel({
         </div>
 
         <div className="flex gap-4 border-b border-stone-100 pb-2">
-          <button 
-            onClick={() => setActiveTab("logs")}
-            className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "logs" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
-          >
-            Logy (Firestore)
-          </button>
-          <button 
-            onClick={() => setActiveTab("users")}
-            className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "users" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
-          >
-            Správa Uživatelů
-          </button>
+          {currentUserRole !== "parent" && (
+            <button 
+              onClick={() => setActiveTab("logs")}
+              className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "logs" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
+            >
+              Logy (Firestore)
+            </button>
+          )}
+          {currentUserRole !== "parent" && (
+            <button 
+              onClick={() => setActiveTab("users")}
+              className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "users" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
+            >
+              Správa Uživatelů
+            </button>
+          )}
           <button 
             onClick={() => setActiveTab("rewards")}
             className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "rewards" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
           >
-            Sprint Odměny
+            🏆 Milníky & řízení Ligy
           </button>
-          <button 
-            onClick={() => setActiveTab("actions")}
-            className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "actions" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
-          >
-            Akce
-          </button>
+          {currentUserRole !== "parent" && (
+            <button 
+              onClick={() => setActiveTab("actions")}
+              className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "actions" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
+            >
+              Akce
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 min-h-[300px] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {activeTab === "logs" && (
+          {activeTab === "logs" && currentUserRole !== "parent" && (
             <div className="flex flex-col gap-2">
               {(logs || []).length === 0 ? (
                 <div className="text-stone-400 text-center py-8">Zatím žádné logy.</div>
@@ -280,7 +463,7 @@ export default function AdminPanel({
             </div>
           )}
 
-          {activeTab === "actions" && (
+          {activeTab === "actions" && currentUserRole !== "parent" && (
             <div className="flex flex-col gap-4">
               <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 flex flex-col gap-3">
                 <div className="font-bold text-indigo-800 flex items-center gap-2">
@@ -316,7 +499,7 @@ export default function AdminPanel({
             </div>
           )}
 
-          {activeTab === "users" && (
+          {activeTab === "users" && currentUserRole !== "parent" && (
             <div className="w-full text-left">
               <div className="hidden md:grid grid-cols-[1fr_120px_180px] gap-4 border-b border-stone-100 pb-3 px-3 text-[11px] uppercase tracking-wider text-stone-400 font-bold">
                 <div>Uživatel</div>
@@ -617,10 +800,169 @@ export default function AdminPanel({
                   </div>
                 )}
               </div>
+
+              {/* ═══ OVLÁDACÍ PANEL LIGY ═══ */}
+              <div className="pt-4 border-t border-stone-200 space-y-3 text-left">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-stone-800 text-xs uppercase tracking-wider">🏆 Správa milníků a řízení Ligy</h4>
+                  <div className="flex items-center gap-2">
+                    {leagueConfig.status === 'running' && (
+                      <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 font-bold px-2 py-0.5 rounded-full animate-pulse">🟢 Běží</span>
+                    )}
+                    {leagueConfig.status === 'paused' && (
+                      <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 font-bold px-2 py-0.5 rounded-full">🟡 Pozastaveno</span>
+                    )}
+                    {leagueConfig.status === 'stopped' && (
+                      <span className="text-[10px] bg-rose-50 text-rose-600 border border-rose-200 font-bold px-2 py-0.5 rounded-full">🔴 Zastaveno</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Info o datumech */}
+                <div className="bg-stone-50 rounded-xl p-3 text-[10px] text-stone-500 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Začátek maratonu:</span>
+                    <span className="font-bold text-stone-700">
+                      {leagueConfig.marathonStartDate
+                        ? new Date(leagueConfig.marathonStartDate.toMillis ? leagueConfig.marathonStartDate.toMillis() : leagueConfig.marathonStartDate).toLocaleDateString('cs-CZ')
+                        : (leagueConfig.leagueStartDate
+                          ? new Date(leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : leagueConfig.leagueStartDate).toLocaleDateString('cs-CZ')
+                          : 'Nezahájeno')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Začátek sprintu:</span>
+                    <span className="font-bold text-stone-700">
+                      {leagueConfig.sprintStartDate
+                        ? new Date(leagueConfig.sprintStartDate.toMillis ? leagueConfig.sprintStartDate.toMillis() : leagueConfig.sprintStartDate).toLocaleDateString('cs-CZ')
+                        : (leagueConfig.leagueStartDate
+                          ? new Date(leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : leagueConfig.leagueStartDate).toLocaleDateString('cs-CZ')
+                          : 'Nezahájeno')}
+                    </span>
+                  </div>
+                  {leagueConfig.status === 'paused' && leagueConfig.pausedAt && (
+                    <div className="flex justify-between text-amber-600">
+                      <span>Pozastaveno od:</span>
+                      <span className="font-bold">{new Date(leagueConfig.pausedAt.toMillis ? leagueConfig.pausedAt.toMillis() : leagueConfig.pausedAt).toLocaleDateString('cs-CZ')}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3 hlavní tlačítka řízení */}
+                <div className="flex flex-col gap-2">
+                  {/* Dynamické tlačítko stavu */}
+                  {leagueConfig.status === 'running' ? (
+                    <button
+                      type="button"
+                      onClick={handlePauseLeague}
+                      className="w-full px-4 py-2.5 rounded-xl bg-amber-100 text-amber-700 border border-amber-200 font-bold text-xs hover:bg-amber-200 transition-all text-center cursor-pointer"
+                    >
+                      ⏸️ Pozastavit Ligu (Sprint &amp; Maraton)
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleStartOrResumeLeague}
+                      className="w-full px-4 py-2.5 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-xs hover:bg-emerald-200 transition-all text-center cursor-pointer"
+                    >
+                      {leagueConfig.status === 'paused' ? '▶️ Obnovit Ligu (po pauze)' : '▶️ Spustit novou Ligu'}
+                    </button>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="button"
+                      onClick={handleResetSprintOnly}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs hover:bg-indigo-200 transition-all text-center cursor-pointer"
+                    >
+                      🏁 Ukončit a resetovat pouze Sprint
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetWholeLeague}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs hover:bg-rose-200 transition-all text-center cursor-pointer"
+                    >
+                      🏆 Ukončit a resetovat celou Ligu
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
       </motion.div>
+
+      {/* ═══ HERNÍ POTVRZOVACÍ MODAL ═══ */}
+      <AnimatePresence>
+        {confirmModal.isOpen && confirmModal.type && (() => {
+          const cfg = CONFIRM_CONFIG[confirmModal.type];
+          return (
+            <motion.div
+              key="confirm-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+              onClick={closeConfirm}
+            >
+              {/* Zatmění pozadí */}
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+              {/* Modal box */}
+              <motion.div
+                key="confirm-box"
+                initial={{ opacity: 0, scale: 0.85, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.85, y: 20 }}
+                transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+                onClick={e => e.stopPropagation()}
+                className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl border-2 border-stone-100 p-6 flex flex-col gap-5 text-center"
+              >
+                {/* Ikona */}
+                <div className={`w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl shadow-lg ${cfg.danger ? 'bg-rose-50 border-2 border-rose-200' : 'bg-indigo-50 border-2 border-indigo-200'}`}>
+                  {cfg.icon}
+                </div>
+
+                {/* Texty */}
+                <div className="space-y-2">
+                  <h3 className={`text-lg font-extrabold tracking-tight ${cfg.danger ? 'text-rose-700' : 'text-stone-800'}`}>
+                    {cfg.title}
+                  </h3>
+                  <p className="text-sm text-stone-500 leading-relaxed">
+                    {cfg.desc}
+                  </p>
+                </div>
+
+                {/* Tlačítka */}
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={closeConfirm}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-stone-100 text-stone-600 font-bold text-sm hover:bg-stone-200 transition-all cursor-pointer"
+                  >
+                    Zrušit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={executeConfirmedAction}
+                    className={`flex-1 px-4 py-2.5 rounded-xl font-black text-sm text-white transition-all cursor-pointer shadow-lg active:scale-[0.97] ${
+                      cfg.danger
+                        ? 'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 shadow-rose-200'
+                        : 'bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 shadow-indigo-200'
+                    }`}
+                  >
+                    {cfg.btnLabel}
+                  </button>
+                </div>
+
+                {/* Dekorativní prvek */}
+                <div className={`absolute -top-1 -right-1 w-6 h-6 rounded-full ${cfg.danger ? 'bg-rose-400' : 'bg-indigo-400'} opacity-60`} />
+                <div className={`absolute -bottom-1 -left-1 w-4 h-4 rounded-full ${cfg.danger ? 'bg-rose-300' : 'bg-violet-300'} opacity-40`} />
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
     </>
   );
 }
