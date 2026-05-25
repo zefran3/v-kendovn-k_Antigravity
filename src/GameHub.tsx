@@ -45,14 +45,14 @@ function getNextTitle(zb: number) {
 
 // ─── Odznaky ─────────────────────────────────────────────
 const BADGES = [
-  { id: "first_idea", name: "První jiskra", desc: "Zadej svůj první nápad", icon: "⚡", bonusZB: 8, check: (stats: UserStats) => stats.totalIdeas >= 1 },
-  { id: "five_ideas", name: "Generátor nápadů", desc: "Zadej 5 nápadů", icon: "💡", bonusZB: 16, check: (stats: UserStats) => stats.totalIdeas >= 5 },
-  { id: "culture", name: "Kulturní maniak", desc: "3 realizované kulturní akce", icon: "🎭", bonusZB: 26, check: (stats: UserStats) => stats.realized >= 3 },
-  { id: "mountain", name: "Horský kamzík", desc: "Realizuj outdoorovou aktivitu", icon: "🏔️", bonusZB: 20, check: (stats: UserStats) => stats.realized >= 2 },
-  { id: "discount_hunter", name: "Lovec slev", desc: "Najdi 3 akce zcela zdarma", icon: "💰", bonusZB: 26, check: (stats: UserStats) => stats.freeActivities >= 3 },
-  { id: "detail_master", name: "Detailista", desc: "Dodej detaily u 3 aktivit", icon: "📋", bonusZB: 16, check: (stats: UserStats) => stats.withDetails >= 3 },
-  { id: "streak_3", name: "Série 3", desc: "3 schválené aktivity v řadě", icon: "🔥", bonusZB: 20, check: (stats: UserStats) => stats.realized >= 3 },
-  { id: "ten_realized", name: "Dekáda výletů", desc: "10 realizovaných aktivit", icon: "🏆", bonusZB: 50, check: (stats: UserStats) => stats.realized >= 10 },
+  { id: "first_idea", name: "První jiskra", desc: "Zadej svůj první nápad", icon: "⚡", bonusZB: 5, check: (stats: UserStats) => stats.totalIdeas >= 1 },
+  { id: "five_ideas", name: "Generátor nápadů", desc: "Zadej 5 nápadů", icon: "💡", bonusZB: 10, check: (stats: UserStats) => stats.totalIdeas >= 5 },
+  { id: "detail_master", name: "Detailista", desc: "Dodej detaily u 3 aktivit", icon: "📋", bonusZB: 10, check: (stats: UserStats) => stats.withDetails >= 3 },
+  { id: "streak_3", name: "Série 3", desc: "3 schválené aktivity v řadě", icon: "🔥", bonusZB: 10, check: (stats: UserStats) => stats.realized >= 3 },
+  { id: "culture", name: "Kulturní maniak", desc: "3 realizované kulturní akce", icon: "🎭", bonusZB: 15, check: (stats: UserStats) => stats.realized >= 3 },
+  { id: "mountain", name: "Horský kamzík", desc: "Realizuj outdoorovou aktivitu", icon: "🏔️", bonusZB: 15, check: (stats: UserStats) => stats.realized >= 2 },
+  { id: "discount_hunter", name: "Lovec slev", desc: "Najdi 3 akce zcela zdarma", icon: "💰", bonusZB: 15, check: (stats: UserStats) => stats.freeActivities >= 3 },
+  { id: "ten_realized", name: "Dekáda výletů", desc: "10 realizovaných aktivit", icon: "🏆", bonusZB: 20, check: (stats: UserStats) => stats.realized >= 10 },
 ];
 
 // ─── Sprint odměny ───────────────────────────────────────
@@ -68,7 +68,7 @@ export const DEFAULT_BATTLE_PASS_MILESTONES: BattlePassMilestone[] = [
   { id: "bp_2", pointsRequired: 40, title: "Kofola / Sladkost", icon: "🥤", description: "Sladká odměna nebo vychlazená Kofola za dobře odvedenou práci.", order: 2 },
   { id: "bp_3", pointsRequired: 60, title: "Prodloužená večerka", icon: "🌙", description: "Jednorázová možnost jít o víkendu spát o něco později.", order: 3 },
   { id: "bp_4", pointsRequired: 90, title: "Nedělní menu / Fast Food", icon: "🍽️", description: "Rozhodneš o tom, co dobrého se uvaří, nebo si dáte oblíbený Fast Food.", order: 4 },
-  { id: "bp_5", pointsRequired: 120, title: "Výběr aktivity / Výlet", icon: "🎡", description: "Vybereš společnou rodinnou aktivitu nebo výlet.", order: 5 },
+  { id: "bp_5", pointsRequired: 120, title: "Návštěva kina / Lístek do kina", icon: "🎬", description: "Společný filmový večer nebo výlet do kina na film podle výběru.", order: 5 },
   { id: "bp_6", pointsRequired: 150, title: "Herní čas / Mega Odměna", icon: "🎮", description: "Získáš herní čas na PC/konzoli nebo jinou super mega odměnu!", order: 6 },
 ];
 
@@ -339,6 +339,17 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const [spravMilestonePoints, setSpravMilestonePoints] = useState(20);
   const [spravMilestoneIcon, setSpravMilestoneIcon] = useState("🍿");
   const [spravEditingMilestoneId, setSpravEditingMilestoneId] = useState<string | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  // Helper pro automatické přemapování bodů (pointsRequired) podle pořadí
+  const remapSpravMilestonePoints = (milestonesList: BattlePassMilestone[]): BattlePassMilestone[] => {
+    const FIXED_XP_VALUES = [20, 40, 60, 90, 120, 150];
+    return milestonesList.map((m, index) => ({
+      ...m,
+      order: index + 1,
+      pointsRequired: FIXED_XP_VALUES[index] !== undefined ? FIXED_XP_VALUES[index] : m.pointsRequired
+    }));
+  };
 
   // Handlery pro správu milníků v modalu
   const handleSaveSpravMilestone = (e: React.FormEvent) => {
@@ -346,12 +357,13 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     if (!spravMilestoneTitle.trim()) return;
 
     if (spravEditingMilestoneId) {
-      setSpravMilestones(prev => 
-        prev.map(m => m.id === spravEditingMilestoneId 
-          ? { ...m, title: spravMilestoneTitle.trim(), description: spravMilestoneDesc.trim(), pointsRequired: spravMilestonePoints, icon: spravMilestoneIcon }
+      setSpravMilestones(prev => {
+        const mapped = prev.map(m => m.id === spravEditingMilestoneId 
+          ? { ...m, title: spravMilestoneTitle.trim(), description: spravMilestoneDesc.trim(), icon: spravMilestoneIcon }
           : m
-        ).sort((a, b) => a.order - b.order)
-      );
+        );
+        return remapSpravMilestonePoints(mapped.sort((a, b) => a.order - b.order));
+      });
       setSpravEditingMilestoneId(null);
     } else {
       const newMilestone: BattlePassMilestone = {
@@ -362,13 +374,17 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
         icon: spravMilestoneIcon,
         order: spravMilestones.length + 1
       };
-      setSpravMilestones(prev => [...prev, newMilestone].sort((a, b) => a.order - b.order));
+      setSpravMilestones(prev => {
+        const sorted = [...prev, newMilestone].sort((a, b) => a.order - b.order);
+        return remapSpravMilestonePoints(sorted);
+      });
     }
 
     setSpravMilestoneTitle("");
     setSpravMilestoneDesc("");
     setSpravMilestonePoints(20);
     setSpravMilestoneIcon("🎁");
+    setShowEmojiPicker(false);
     setSpravUnsaved(true);
   };
 
@@ -378,12 +394,13 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     setSpravMilestoneDesc(m.description);
     setSpravMilestonePoints(m.pointsRequired);
     setSpravMilestoneIcon(m.icon);
+    setShowEmojiPicker(false);
   };
 
   const handleDeleteSpravMilestone = (id: string) => {
     setSpravMilestones(prev => {
       const filtered = prev.filter(m => m.id !== id);
-      return filtered.map((m, idx) => ({ ...m, order: idx + 1 }));
+      return remapSpravMilestonePoints(filtered);
     });
     setSpravUnsaved(true);
     if (spravEditingMilestoneId === id) {
@@ -392,6 +409,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       setSpravMilestoneDesc("");
       setSpravMilestonePoints(20);
       setSpravMilestoneIcon("🎁");
+      setShowEmojiPicker(false);
     }
   };
 
@@ -404,12 +422,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     list[idx] = list[targetIdx];
     list[targetIdx] = temp;
 
-    const updated = list.map((m, index) => ({
-      ...m,
-      order: index + 1
-    }));
-
-    setSpravMilestones(updated);
+    setSpravMilestones(remapSpravMilestonePoints(list));
     setSpravUnsaved(true);
   };
 
@@ -1512,11 +1525,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                     <span className="text-[9px] bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
                       Aktivní
                     </span>
-                  ) : (
-                    <span className="text-[9px] bg-zinc-800/80 border border-white/5 text-zinc-500 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
-                      Zamčeno (&lt; {sortedMilestones[0]?.pointsRequired ?? 20} XP)
-                    </span>
-                  )}
+                  ) : null}
                 </div>
                 <ChevronRight size={18} className={cn("text-zinc-500 transition-transform duration-300", showRewards && "rotate-90")} />
               </button>
@@ -1555,13 +1564,13 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                     )}
 
                     {/* Vertikální časová osa (Battle Pass) */}
-                    <div className="relative pl-8 pr-2 py-4 space-y-6">
+                    <div className="relative pl-12 pr-2 py-4 space-y-6">
                       {/* Čára na pozadí osy */}
-                      <div className="absolute left-[15px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-emerald-500/10 via-zinc-800 to-zinc-900" />
+                      <div className="absolute left-[23px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-emerald-500/10 via-zinc-800 to-zinc-900" />
                       
                       {/* Dynamická čára pokroku */}
                       <div 
-                        className="absolute left-[15px] top-0 w-[2px] bg-gradient-to-b from-emerald-500 to-teal-400 transition-all duration-1000"
+                        className="absolute left-[23px] top-0 w-[2px] bg-gradient-to-b from-emerald-500 to-teal-400 transition-all duration-1000"
                         style={{
                           height: (() => {
                             if (!sortedMilestones || sortedMilestones.length === 0) return '0%';
@@ -2086,6 +2095,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   <h4 className="font-bold text-zinc-200 text-xs uppercase tracking-wider">
                     {spravEditingMilestoneId ? "✏️ Upravit milník Battle Passu" : "➕ Přidat nový milník Battle Passu"}
                   </h4>
+                  
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div className="sm:col-span-2">
                       <input
@@ -2098,14 +2108,57 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                       />
                     </div>
                     <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={spravMilestoneIcon}
-                        onChange={(e) => setSpravMilestoneIcon(e.target.value)}
-                        placeholder="Ikona (např. 🍿)..."
-                        className="w-14 text-center bg-zinc-900 border border-white/10 rounded-lg px-2 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500"
-                        required
-                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={spravMilestoneIcon}
+                          onChange={(e) => setSpravMilestoneIcon(e.target.value)}
+                          onFocus={() => {
+                            if (window.innerWidth >= 1024) {
+                              setShowEmojiPicker(true);
+                            }
+                          }}
+                          placeholder="Ikona (např. 🍿)..."
+                          className="w-14 text-center bg-zinc-900 border border-white/10 rounded-lg px-2 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500"
+                          required
+                        />
+                        {showEmojiPicker && (
+                          <>
+                            {/* Backdrop overlay to dismiss popover when clicking outside */}
+                            <div 
+                              className="fixed inset-0 z-40 cursor-default" 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowEmojiPicker(false);
+                              }} 
+                            />
+                            {/* Absolutely positioned popover container */}
+                            <div className="absolute left-0 mt-1.5 z-50 p-2 bg-zinc-950 border border-white/10 rounded-xl shadow-2xl shadow-black/80 w-[164px]">
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {['🍿', '🥤', '🌙', '🍽️', '🎬', '🎮', '🎟️', '🎡', '🍬', '🍕', '🍦', '⛺', '🧸', '🎁', '🚀', '👑'].map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSpravMilestoneIcon(emoji);
+                                      setShowEmojiPicker(false);
+                                    }}
+                                    className={cn(
+                                      "w-8 h-8 flex items-center justify-center text-sm rounded-lg transition-all active:scale-[0.85] cursor-pointer hover:bg-zinc-800 hover:scale-110",
+                                      spravMilestoneIcon === emoji
+                                        ? "bg-indigo-500/20 border border-indigo-500/50 text-white shadow-lg shadow-indigo-500/10"
+                                        : "border border-zinc-800 text-zinc-400 hover:text-white"
+                                    )}
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
                       <div className="flex-1 flex items-center gap-1.5 bg-zinc-900 border border-white/10 rounded-lg px-2 py-1">
                         <input
                           type="number"
@@ -2128,6 +2181,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                       className="w-full bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500 h-14 resize-none"
                     />
                   </div>
+
                   <div className="flex gap-2 justify-end">
                     {spravEditingMilestoneId && (
                       <button
