@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { google } from "googleapis";
 import dotenv from "dotenv";
@@ -155,8 +156,9 @@ export async function addAdminLog(type: 'SUCCESS' | 'ERROR' | 'LIMIT' | 'SCRAPER
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 5000;
 
+  app.use(cors({ origin: 'http://localhost:3000' }));
   app.use(express.json());
 
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
@@ -227,6 +229,32 @@ async function startServer() {
         return res.status(401).json({ error: "Vypršelo připojení ke Google kalendáři." });
       }
       res.status(500).json({ error: "Failed to fetch events" });
+    }
+  });
+
+  app.post("/api/calendar/list-day", async (req, res) => {
+    const { tokens, timeMin, timeMax } = req.body;
+    if (!tokens) return res.status(401).json({ error: "No tokens" });
+    if (!timeMin || !timeMax) return res.status(400).json({ error: "Missing time range" });
+
+    oauth2Client.setCredentials(tokens);
+    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    const targetCalendarId = await getTargetCalendarId(calendar);
+
+    try {
+      const response = await calendar.events.list({
+        calendarId: targetCalendarId,
+        timeMin: timeMin,
+        timeMax: timeMax,
+        singleEvents: true,
+        orderBy: "startTime",
+      });
+      res.json(response.data.items || []);
+    } catch (error: any) {
+      if (error.message?.includes('invalid_grant') || error.code === 401) {
+        return res.status(401).json({ error: "Vypršelo připojení ke Google kalendáři." });
+      }
+      res.status(500).json({ error: error.message || "Failed to fetch events" });
     }
   });
 

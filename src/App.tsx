@@ -72,6 +72,10 @@ import {
   arrayUnion
 } from "firebase/firestore";
 
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? "http://localhost:5000"
+  : "";
+
 // Operation types for error handling
 enum OperationType {
   CREATE = 'create',
@@ -234,6 +238,22 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [rejectingActivity, setRejectingActivity] = useState<ActivitySuggestion | null>(null);
   const [rejectReasonText, setRejectReasonText] = useState("");
+
+  // Stavy pro kontrolu časových kolizí
+  const [collisionWarning, setCollisionWarning] = useState<{
+    type: 'direct' | 'buffer' | 'allday';
+    message: string;
+    suggestion: ActivitySuggestion;
+    targetDate: string;
+    targetTime: string;
+    confirmDetails?: boolean;
+    confirmFree?: boolean;
+  } | null>(null);
+  const [collisionActionMode, setCollisionActionMode] = useState<'none' | 'edit' | 'reject'>('none');
+  const [collisionEditDate, setCollisionEditDate] = useState("");
+  const [collisionEditTime, setCollisionEditTime] = useState("");
+  const [collisionEditReason, setCollisionEditReason] = useState("");
+  const [collisionRejectReason, setCollisionRejectReason] = useState("");
 
   const [loadingStep, setLoadingStep] = useState('');
   const todayStr = useMemo(() => {
@@ -873,7 +893,7 @@ export default function App() {
       const activeSuggestions = currentSuggestions || suggestions;
       const knownIds = activeSuggestions.map((s: ActivitySuggestion) => s.calendarEventId).filter(Boolean);
 
-      const response = await fetch('/api/calendar/events', {
+      const response = await fetch(`${API_BASE}/api/calendar/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tokens, knownIds }),
@@ -897,7 +917,7 @@ export default function App() {
 
   const handleConnectGoogle = async () => {
     try {
-      const response = await fetch('/api/auth/google/url');
+      const response = await fetch(`${API_BASE}/api/auth/google/url`);
       const { url } = await response.json();
       // Vždy použijeme přesměrování aktuálního okna, abychom se vyhnuli blokování popupů a izolaci oken
       window.location.href = url;
@@ -1100,6 +1120,197 @@ export default function App() {
     setShowForm(true);
   };
 
+  // Pomocné funkce pro kontrolu kolizí v kalendáři a notifikace dětí
+  // Pomocné funkce pro kontrolu kolizí v kalendáři a notifikace dětí
+  const getEndTimeStr = (timeStr: string, isRide: boolean) => {
+    if (!timeStr) return "";
+    const parts = timeStr.split(':');
+    if (parts.length < 2) return "";
+    const h = parseInt(parts[0], 10) || 0;
+    const m = parseInt(parts[1], 10) || 0;
+    const totalMinutes = h * 60 + m + (isRide ? 30 : 120);
+    const newH = Math.floor(totalMinutes / 60) % 24;
+    const newM = totalMinutes % 60;
+    return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+  };
+
+  const findChildUserId = (childName: string) => {
+    const match = Object.entries(userProfiles).find(([uid, profile]) => 
+      profile.displayName?.toLowerCase() === childName.toLowerCase() ||
+      profile.adminAlias?.toLowerCase() === childName.toLowerCase()
+    );
+    return match ? match[0] : "";
+  };
+
+  const parseGoogleEvent = (e: any) => {
+    const title = e.summary || "Bez názvu";
+    if (e.start?.date) {
+      return { title, isAllDay: true };
+    }
+    if (e.start?.dateTime && e.end?.dateTime) {
+      const start = new Date(e.start.dateTime);
+      const end = new Date(e.end.dateTime);
+      const startMin = start.getHours() * 60 + start.getMinutes();
+      const endMin = end.getHours() * 60 + end.getMinutes();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const startStr = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+      const endStr = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+      return {
+        title,
+        isAllDay: false,
+        startMinutes: startMin,
+        endMinutes: endMin,
+        timeRangeStr: `${startStr} - ${endStr}`
+      };
+    }
+    return { title, isAllDay: true };
+  };
+
+  const checkActivityCollisionWithGoogleEvents = (
+    id: string,
+    checkDate: string,
+    checkTime: string,
+    isRide: boolean,
+    googleEvents: any[]
+  ) => {
+    if (googleEvents.length === 0) return { type: 'none' as const };
+
+    const currentSuggestion = suggestions.find(s => s.id === id);
+    const calendarEventId = currentSuggestion?.calendarEventId;
+    const otherEvents = googleEvents.filter(e => e.id !== calendarEventId);
+    if (otherEvents.length === 0) return { type: 'none' as const };
+
+    const parsedEvents = otherEvents.map(parseGoogleEvent);
+
+    // Celodenní schvalovaná aktivita (nemá čas) koliduje s jakoukoliv jinou v tento den
+    if (!checkTime) {
+      return {
+        type: 'allday' as const,
+        conflictingEvent: parsedEvents[0],
+        message: `V tento den je již naplánována jiná aktivita: ${parsedEvents[0].title}. Chceš celodenní aktivitu přesto schválit?`
+      };
+    }
+
+    const checkTimeParts = checkTime.split(':');
+    if (checkTimeParts.length < 2) return { type: 'none' as const };
+    const s1 = (parseInt(checkTimeParts[0], 10) || 0) * 60 + (parseInt(checkTimeParts[1], 10) || 0);
+    const duration1 = isRide ? 30 : 120;
+    const e1 = s1 + duration1;
+
+    let directConflict: any = null;
+    let bufferConflict: any = null;
+
+    for (const other of parsedEvents) {
+      if (other.isAllDay) continue;
+
+      const s2 = other.startMinutes!;
+      const e2 = other.endMinutes!;
+
+      // A. Přímá kolize (překryv)
+      if (s1 < e2 && s2 < e1) {
+        directConflict = {
+          type: 'direct' as const,
+          conflictingEvent: other,
+          message: `Kolize! V tomto čase je již naplánována aktivita: ${other.title} (${other.timeRangeStr}).`
+        };
+        break; // Přímá kolize má nejvyšší prioritu
+      }
+
+      // B. Ochranné okno (Buffer 60 minut před/po)
+      if (s1 - 60 < e2 && s2 < e1 + 60) {
+        bufferConflict = {
+          type: 'buffer' as const,
+          conflictingEvent: other,
+          message: `Pozor na logistiku! Této aktivitě předchází/následuje aktivita: ${other.title} (${other.timeRangeStr}).`
+        };
+      }
+    }
+
+    if (directConflict) return directConflict;
+    if (bufferConflict) return bufferConflict;
+
+    return { type: 'none' as const };
+  };
+
+  const handleApproveAttempt = async (
+    suggestion: ActivitySuggestion,
+    targetDate: string,
+    targetTime: string,
+    bypassCollision: boolean = false
+  ) => {
+    if (!targetDate) {
+      setError("❌ Nelze schválit aktivitu bez zadaného data!");
+      return;
+    }
+
+    if (!googleTokens) {
+      setError("Než schválíte aktivitu, musíte se propojit s Google Kalendářem (modré tlačítko výše).");
+      return;
+    }
+
+    if (!bypassCollision) {
+      try {
+        setLoadingStep("Ověřuji časové kolize v Google Kalendáři...");
+        const timeMin = new Date(`${targetDate}T00:00:00`).toISOString();
+        const timeMax = new Date(`${targetDate}T23:59:59`).toISOString();
+
+        const res = await fetch(`${API_BASE}/api/calendar/list-day`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tokens: googleTokens,
+            timeMin,
+            timeMax
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "Nepodařilo se načíst události z Google Kalendáře.");
+        }
+
+        const events = await res.json();
+        const isRide = suggestion.type === "ride";
+        const collision = checkActivityCollisionWithGoogleEvents(suggestion.id, targetDate, targetTime, isRide, events);
+        setLoadingStep("");
+
+        if (collision.type !== "none") {
+          setCollisionWarning({
+            type: collision.type,
+            message: collision.message || "",
+            suggestion,
+            targetDate,
+            targetTime,
+            confirmDetails,
+            confirmFree
+          });
+          setCollisionEditDate(targetDate);
+          setCollisionEditTime(targetTime || "");
+          setCollisionEditReason("");
+          setCollisionRejectReason("");
+          setCollisionActionMode('none');
+          return;
+        }
+      } catch (err: any) {
+        setLoadingStep("");
+        console.error("Collision check failed", err);
+        setError(`Nepodařilo se ověřit kolize v Google kalendáři: ${err.message || err}`);
+        return;
+      }
+    }
+
+    // Bez kolize nebo s vynuceným schválením (bypass)
+    handleUpdateStatus(
+      suggestion.id,
+      "approved",
+      targetDate,
+      targetTime,
+      undefined,
+      confirmDetails,
+      confirmFree
+    );
+  };
+
   const handleUpdateStatus = async (
     id: string, 
     status: "approved" | "rejected", 
@@ -1256,7 +1467,7 @@ export default function App() {
           ...eventParams
         };
 
-        const res = await fetch('/api/calendar/create', {
+        const res = await fetch(`${API_BASE}/api/calendar/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tokens: googleTokens, event }),
@@ -1316,6 +1527,43 @@ export default function App() {
 
       await updateDoc(doc(db, 'suggestions', id), updateData);
       setApprovingEvent(null);
+
+      // --- Zápis notifikace dětem ---
+      try {
+        const childUserId = suggestion.authorId || findChildUserId(suggestion.childName) || "";
+        const activityTitle = suggestion.title || (suggestion.type === 'ride' ? `Odvoz z ${suggestion.rideFrom} do ${suggestion.rideTo}` : "Aktivita");
+        
+        let notificationText = "";
+        if (status === "approved") {
+          let dateText = finalDate || "";
+          if (finalTime) {
+            const endT = getEndTimeStr(finalTime, suggestion.type === "ride");
+            dateText = `${finalDate} (${finalTime} - ${endT})`;
+          }
+          
+          if (reason) {
+            notificationText = `✏️ Aktivita "${activityTitle}" byla upravena a schválena na ${dateText}. Důvod: ${reason}`;
+          } else {
+            notificationText = `🎉 Hurá! Aktivita "${activityTitle}" byla schválena na ${dateText}.`;
+          }
+        } else if (status === "rejected") {
+          notificationText = `❌ Aktivita "${activityTitle}" nebyla schválena. Důvod: ${reason || "Bez udání důvodu"}`;
+        }
+
+        if (notificationText) {
+          await addDoc(collection(db, 'notifications'), {
+            userId: childUserId || "",
+            childName: suggestion.childName,
+            text: notificationText,
+            suggestionId: id,
+            type: status === "approved" ? (reason ? "modified" : "approved") : "rejected",
+            read: false,
+            createdAt: Date.now()
+          });
+        }
+      } catch (notifErr) {
+        console.error("Failed to write notification to Firestore:", notifErr);
+      }
 
       if (status === "approved" && googleTokens) {
         fetchCalendarEvents(googleTokens);
@@ -1462,7 +1710,7 @@ export default function App() {
 
       // Smazání z kalendáře v případě schválené události
       if (suggestion.calendarEventId && googleTokens) {
-        const res = await fetch('/api/calendar/delete', {
+        const res = await fetch(`${API_BASE}/api/calendar/delete`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tokens: googleTokens, eventId: suggestion.calendarEventId }),
@@ -2944,7 +3192,7 @@ export default function App() {
 
                             <div className="flex gap-2">
                               <button 
-                                onClick={() => handleUpdateStatus(suggestion.id, "approved", approveDate, approveTime, undefined, confirmDetails, confirmFree)}
+                                onClick={() => handleApproveAttempt(suggestion, approveDate, approveTime)}
                                 className="px-4 py-2.5 rounded-xl bg-green-600 text-white font-bold text-xs hover:bg-green-700 transition-colors flex-1"
                               >
                                 Potvrdit schválení
@@ -2962,7 +3210,7 @@ export default function App() {
                             <button 
                               onClick={() => {
                                 if (suggestion.type === "ride") {
-                                  handleUpdateStatus(suggestion.id, "approved");
+                                  handleApproveAttempt(suggestion, suggestion.eventDate || "", suggestion.eventTime || "");
                                 } else {
                                   setApprovingEvent(suggestion);
                                   setApproveDate(suggestion.eventDate || "");
@@ -4210,6 +4458,205 @@ export default function App() {
             </div>
             <span className="font-bold">Hotovo!</span>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Calendar Collision Warning Modal */}
+      <AnimatePresence>
+        {collisionWarning && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+              onClick={() => setCollisionWarning(null)}
+              className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-[80]"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className={cn(
+                "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-md bg-stone-900 border rounded-3xl p-6 shadow-2xl z-[90] flex flex-col gap-4 text-white",
+                collisionWarning.type === 'direct' ? "border-rose-500 shadow-rose-500/10" :
+                collisionWarning.type === 'buffer' ? "border-amber-500 shadow-amber-500/10" :
+                "border-blue-500 shadow-blue-500/10"
+              )}
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                <h3 className={cn(
+                  "text-base font-black flex items-center gap-2",
+                  collisionWarning.type === 'direct' ? "text-rose-400" :
+                  collisionWarning.type === 'buffer' ? "text-amber-400" :
+                  "text-blue-400"
+                )}>
+                  {collisionWarning.type === 'direct' && <span>🚨 Přímá kolize v kalendáři</span>}
+                  {collisionWarning.type === 'buffer' && <span>⚠️ Logistické varování (Buffer)</span>}
+                  {collisionWarning.type === 'allday' && <span>ℹ️ Celodenní kolize</span>}
+                </h3>
+                <button 
+                  onClick={() => setCollisionWarning(null)} 
+                  className="text-stone-400 hover:text-white p-1 rounded-full transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className={cn(
+                "p-4 rounded-xl text-sm border font-medium leading-relaxed",
+                collisionWarning.type === 'direct' ? "bg-rose-500/10 border-rose-500/20 text-rose-300" :
+                collisionWarning.type === 'buffer' ? "bg-amber-500/10 border-amber-500/20 text-amber-300" :
+                "bg-blue-500/10 border-blue-500/20 text-blue-300"
+              )}>
+                {collisionWarning.message}
+              </div>
+
+              {collisionActionMode === 'none' && (
+                <div className="space-y-4">
+                  <div className="text-xs text-stone-400">
+                    Schvalovaná aktivita: <strong className="text-white">"{collisionWarning.suggestion.title || (collisionWarning.suggestion.type === 'ride' ? 'Odvoz' : 'Aktivita')}"</strong> na {collisionWarning.targetDate} {collisionWarning.targetTime ? `v ${collisionWarning.targetTime}` : ''}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => {
+                        handleApproveAttempt(collisionWarning.suggestion, collisionWarning.targetDate, collisionWarning.targetTime, true);
+                        setCollisionWarning(null);
+                      }}
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] transition-all rounded-xl font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      ✔️ Schválit tak, jak je
+                    </button>
+                    <button
+                      onClick={() => setCollisionActionMode('edit')}
+                      className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] transition-all rounded-xl font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5 border border-white/5"
+                    >
+                      ✏️ Upravit čas a schválit
+                    </button>
+                    <button
+                      onClick={() => setCollisionActionMode('reject')}
+                      className="w-full py-3 bg-rose-600/20 text-rose-300 border border-rose-500/30 hover:bg-rose-600/30 active:scale-[0.98] transition-all rounded-xl font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      ❌ Zamítnout aktivitu
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setCollisionWarning(null)}
+                    className="w-full py-2 text-zinc-400 hover:text-white transition-colors text-xs font-bold cursor-pointer"
+                  >
+                    Zavřít
+                  </button>
+                </div>
+              )}
+
+              {collisionActionMode === 'edit' && (
+                <div className="space-y-4">
+                  <div className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Upravit čas konání:</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-zinc-400 block mb-1">Datum:</label>
+                      <input
+                        type="date"
+                        value={collisionEditDate}
+                        onChange={e => setCollisionEditDate(e.target.value)}
+                        className="w-full bg-zinc-800 border border-white/10 text-white rounded-lg p-2 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-zinc-400 block mb-1">Čas:</label>
+                      <input
+                        type="time"
+                        value={collisionEditTime}
+                        onChange={e => setCollisionEditTime(e.target.value)}
+                        className="w-full bg-zinc-800 border border-white/10 text-white rounded-lg p-2 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-1">Důvod změny (povinné):</label>
+                    <textarea
+                      value={collisionEditReason}
+                      onChange={e => setCollisionEditReason(e.target.value)}
+                      placeholder="Zadej důvod změny času pro dítě..."
+                      className="w-full bg-zinc-800 border border-white/10 text-white rounded-lg p-2.5 text-xs outline-none focus:ring-1 focus:ring-indigo-500 h-16 resize-none"
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={() => setCollisionActionMode('none')}
+                      className="flex-1 py-2.5 bg-zinc-800 text-zinc-300 font-bold rounded-xl text-xs hover:bg-zinc-700 transition-colors"
+                    >
+                      Zpět
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (collisionEditDate && collisionEditReason.trim()) {
+                          handleUpdateStatus(
+                            collisionWarning.suggestion.id,
+                            "approved",
+                            collisionEditDate,
+                            collisionEditTime,
+                            collisionEditReason.trim(),
+                            collisionWarning.confirmDetails,
+                            collisionWarning.confirmFree
+                          );
+                          setCollisionWarning(null);
+                          setCollisionActionMode('none');
+                        }
+                      }}
+                      disabled={!collisionEditDate || !collisionEditReason.trim()}
+                      className="flex-1 py-2.5 bg-indigo-600 disabled:opacity-50 text-white font-bold rounded-xl text-xs hover:bg-indigo-500 transition-colors"
+                    >
+                      Uložit a schválit
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {collisionActionMode === 'reject' && (
+                <div className="space-y-4">
+                  <div className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Zamítnutí aktivity:</div>
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-1">Důvod zamítnutí (povinné):</label>
+                    <textarea
+                      value={collisionRejectReason}
+                      onChange={e => setCollisionRejectReason(e.target.value)}
+                      placeholder="Zadej důvod zamítnutí pro dítě..."
+                      className="w-full bg-zinc-800 border border-white/10 text-white rounded-lg p-2.5 text-xs outline-none focus:ring-1 focus:ring-indigo-500 h-16 resize-none"
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={() => setCollisionActionMode('none')}
+                      className="flex-1 py-2.5 bg-zinc-800 text-zinc-300 font-bold rounded-xl text-xs hover:bg-zinc-700 transition-colors"
+                    >
+                      Zpět
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (collisionRejectReason.trim()) {
+                          handleUpdateStatus(
+                            collisionWarning.suggestion.id,
+                            "rejected",
+                            undefined,
+                            undefined,
+                            collisionRejectReason.trim()
+                          );
+                          setCollisionWarning(null);
+                          setCollisionActionMode('none');
+                        }
+                      }}
+                      disabled={!collisionRejectReason.trim()}
+                      className="flex-1 py-2.5 bg-rose-600 disabled:opacity-50 text-white font-bold rounded-xl text-xs hover:bg-rose-500 transition-colors"
+                    >
+                      Potvrdit zamítnutí
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 
