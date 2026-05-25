@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { X, Bot, Shield, AlertCircle, CheckCircle, Database, Bike } from "lucide-react";
 import { db } from "../firebase";
-import { collection, query, orderBy, limit, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, orderBy, limit, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc } from "firebase/firestore";
 import { cn } from "../lib/utils";
 import { UserProfile, UserRole, BattlePassMilestone, BattlePassClaim } from "../types";
 
@@ -53,7 +53,6 @@ export default function AdminPanel({
   const [logs, setLogs] = useState<AdminLog[]>([]);
   const [milestones, setMilestones] = useState<BattlePassMilestone[]>(DEFAULT_BATTLE_PASS_MILESTONES);
   const [claims, setClaims] = useState<BattlePassClaim[]>([]);
-  const [leagueConfig, setLeagueConfig] = useState<any>({ status: 'stopped', sprintStartDate: null, marathonStartDate: null, leagueStartDate: null });
   
   const [milestoneTitle, setMilestoneTitle] = useState("");
   const [milestoneDesc, setMilestoneDesc] = useState("");
@@ -63,7 +62,7 @@ export default function AdminPanel({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // ─── Herní potvrzovací modal ─────────────────────────────
-  type ConfirmType = 'delete_milestone' | 'pause' | 'resume' | 'start' | 'reset_sprint' | 'reset_league';
+  type ConfirmType = 'delete_milestone';
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     type: ConfirmType | null;
@@ -76,41 +75,6 @@ export default function AdminPanel({
       title: 'Smazat milník?',
       desc: 'Tento milník bude trvale odstraněn z Battle Passu. Tuto akci nelze vrátit.',
       btnLabel: 'Ano, smazat',
-      danger: true,
-    },
-    pause: {
-      icon: '⏸️',
-      title: 'Pozastavit Ligu?',
-      desc: 'Sprint i Maraton budou pozastaveny. Čas plyne dál – při obnovení se startovní datum automaticky posune o dobu pauzy.',
-      btnLabel: 'Pozastavit',
-      danger: false,
-    },
-    resume: {
-      icon: '▶️',
-      title: 'Obnovit Ligu?',
-      desc: 'Liga bude obnovena. Start Sprintu i Maratonu se automaticky posune o dobu, po kterou byla Liga pozastavena.',
-      btnLabel: 'Obnovit Ligu',
-      danger: false,
-    },
-    start: {
-      icon: '🚀',
-      title: 'Spustit novou Ligu?',
-      desc: 'Tím se nastaví nový start Maratonu i Sprintu na dnešní datum. Vhodné pro zahájení nové sezóny.',
-      btnLabel: 'Spustit Ligu',
-      danger: false,
-    },
-    reset_sprint: {
-      icon: '🏁',
-      title: 'Resetovat Sprint?',
-      desc: 'Aktuální Sprint bude ukončen a začne nový 60denní cyklus. Děti začínají Battle Pass od nuly. Maratonské body zůstávají nedotčené.',
-      btnLabel: 'Resetovat Sprint',
-      danger: true,
-    },
-    reset_league: {
-      icon: '⚠️',
-      title: 'Resetovat celou Ligu?',
-      desc: 'VAROVÁNÍ: Tato akce vymaže veškeré body – jak Sprintové, tak Maratonské. Všechno začíná od nuly. Tuto akci nelze vrátit!',
-      btnLabel: 'Resetovat vše',
       danger: true,
     },
   };
@@ -142,70 +106,6 @@ export default function AdminPanel({
         setMilestonePoints(15);
         setMilestoneIcon('🎁');
       }
-      return;
-    }
-
-    if (type === 'pause') {
-      try {
-        await setDoc(doc(db, 'settings', 'league_config'), {
-          status: 'paused',
-          pausedAt: serverTimestamp(),
-          sprintStartDate: leagueConfig.sprintStartDate || null,
-          marathonStartDate: leagueConfig.marathonStartDate || null
-        });
-      } catch (err) { console.error(err); }
-      return;
-    }
-
-    if (type === 'resume') {
-      const sprintStart = leagueConfig.sprintStartDate || leagueConfig.leagueStartDate;
-      const marathonStart = leagueConfig.marathonStartDate || leagueConfig.leagueStartDate;
-      if (!sprintStart || !marathonStart) return;
-      const pauseDurationMs = Date.now() - (leagueConfig.pausedAt.toMillis ? leagueConfig.pausedAt.toMillis() : new Date(leagueConfig.pausedAt).getTime());
-      const newSprintStartMs = (sprintStart.toMillis ? sprintStart.toMillis() : new Date(sprintStart).getTime()) + pauseDurationMs;
-      const newMarathonStartMs = (marathonStart.toMillis ? marathonStart.toMillis() : new Date(marathonStart).getTime()) + pauseDurationMs;
-      try {
-        await setDoc(doc(db, 'settings', 'league_config'), {
-          status: 'running',
-          sprintStartDate: new Date(newSprintStartMs),
-          marathonStartDate: new Date(newMarathonStartMs),
-          pausedAt: null
-        });
-      } catch (err) { console.error(err); }
-      return;
-    }
-
-    if (type === 'start') {
-      try {
-        await setDoc(doc(db, 'settings', 'league_config'), {
-          status: 'running',
-          sprintStartDate: serverTimestamp(),
-          marathonStartDate: serverTimestamp(),
-          pausedAt: null
-        });
-      } catch (err) { console.error(err); }
-      return;
-    }
-
-    if (type === 'reset_sprint') {
-      try {
-        await setDoc(doc(db, 'settings', 'league_config'), {
-          status: 'running',
-          sprintStartDate: serverTimestamp()
-        }, { merge: true });
-      } catch (err) { console.error(err); }
-      return;
-    }
-
-    if (type === 'reset_league') {
-      try {
-        await setDoc(doc(db, 'settings', 'league_config'), {
-          status: 'running',
-          sprintStartDate: serverTimestamp(),
-          marathonStartDate: serverTimestamp(),
-          pausedAt: null
-        });
-      } catch (err) { console.error(err); }
       return;
     }
   };
@@ -256,22 +156,10 @@ export default function AdminPanel({
       }
     );
 
-    const unsubL = onSnapshot(
-      doc(db, 'settings', 'league_config'),
-      (snap) => {
-        if (snap.exists()) {
-          setLeagueConfig(snap.data());
-        } else {
-          setLeagueConfig({ status: 'stopped', sprintStartDate: null, marathonStartDate: null, leagueStartDate: null });
-        }
-      }
-    );
-
     return () => {
       unsubscribe();
       unsubBP();
       unsubClaims();
-      unsubL();
     };
   }, [hasUnsavedChanges]);
 
@@ -350,19 +238,7 @@ export default function AdminPanel({
     }
   };
 
-  const handlePauseLeague = () => { openConfirm('pause'); };
 
-  const handleStartOrResumeLeague = () => {
-    if (leagueConfig.status === 'paused' && leagueConfig.pausedAt) {
-      openConfirm('resume');
-    } else {
-      openConfirm('start');
-    }
-  };
-
-  const handleResetSprintOnly = () => { openConfirm('reset_sprint'); };
-
-  const handleResetWholeLeague = () => { openConfirm('reset_league'); };
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return "";
@@ -425,7 +301,7 @@ export default function AdminPanel({
             onClick={() => setActiveTab("rewards")}
             className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "rewards" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
           >
-            🏆 Milníky & řízení Ligy
+            🏆 Milníky BP
           </button>
           {currentUserRole !== "parent" && (
             <button 
@@ -775,117 +651,6 @@ export default function AdminPanel({
                     ))}
                   </div>
                 )}
-              </div>
-
-              {/* Log uplatněných odměn */}
-              <div className="space-y-2 pt-4 border-t border-stone-100 text-left">
-                <h4 className="font-bold text-stone-700 text-xs uppercase tracking-wider">Uplatněné odměny dětí (Battle Pass)</h4>
-                {claims.length === 0 ? (
-                  <div className="text-stone-400 text-center py-4 text-xs italic">Zatím nikdo neuplatnil žádnou odměnu z Battle Passu.</div>
-                ) : (
-                  <div className="flex flex-col gap-2 max-h-40 overflow-y-auto pr-1">
-                    {claims.map((c) => (
-                      <div key={c.id} className="bg-stone-50/50 p-2.5 rounded-xl border border-stone-100 flex items-center justify-between text-xs">
-                        <div className="text-left">
-                          <span className="font-bold text-stone-800">{c.userName}</span>
-                          <span className="text-stone-500"> si vybral(a) </span>
-                          <span className="font-bold text-indigo-600">{c.rewardTitle}</span>
-                        </div>
-                        <div className="text-[10px] text-stone-400 flex flex-col items-end shrink-0">
-                          <span>{c.sprintId?.replace('sprint_', 'Sprint ')}</span>
-                          <span>{formatDate(c.claimedAt)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* ═══ OVLÁDACÍ PANEL LIGY ═══ */}
-              <div className="pt-4 border-t border-stone-200 space-y-3 text-left">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-stone-800 text-xs uppercase tracking-wider">🏆 Správa milníků a řízení Ligy</h4>
-                  <div className="flex items-center gap-2">
-                    {leagueConfig.status === 'running' && (
-                      <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 font-bold px-2 py-0.5 rounded-full animate-pulse">🟢 Běží</span>
-                    )}
-                    {leagueConfig.status === 'paused' && (
-                      <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 font-bold px-2 py-0.5 rounded-full">🟡 Pozastaveno</span>
-                    )}
-                    {leagueConfig.status === 'stopped' && (
-                      <span className="text-[10px] bg-rose-50 text-rose-600 border border-rose-200 font-bold px-2 py-0.5 rounded-full">🔴 Zastaveno</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Info o datumech */}
-                <div className="bg-stone-50 rounded-xl p-3 text-[10px] text-stone-500 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Začátek maratonu:</span>
-                    <span className="font-bold text-stone-700">
-                      {leagueConfig.marathonStartDate
-                        ? new Date(leagueConfig.marathonStartDate.toMillis ? leagueConfig.marathonStartDate.toMillis() : leagueConfig.marathonStartDate).toLocaleDateString('cs-CZ')
-                        : (leagueConfig.leagueStartDate
-                          ? new Date(leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : leagueConfig.leagueStartDate).toLocaleDateString('cs-CZ')
-                          : 'Nezahájeno')}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Začátek sprintu:</span>
-                    <span className="font-bold text-stone-700">
-                      {leagueConfig.sprintStartDate
-                        ? new Date(leagueConfig.sprintStartDate.toMillis ? leagueConfig.sprintStartDate.toMillis() : leagueConfig.sprintStartDate).toLocaleDateString('cs-CZ')
-                        : (leagueConfig.leagueStartDate
-                          ? new Date(leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : leagueConfig.leagueStartDate).toLocaleDateString('cs-CZ')
-                          : 'Nezahájeno')}
-                    </span>
-                  </div>
-                  {leagueConfig.status === 'paused' && leagueConfig.pausedAt && (
-                    <div className="flex justify-between text-amber-600">
-                      <span>Pozastaveno od:</span>
-                      <span className="font-bold">{new Date(leagueConfig.pausedAt.toMillis ? leagueConfig.pausedAt.toMillis() : leagueConfig.pausedAt).toLocaleDateString('cs-CZ')}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* 3 hlavní tlačítka řízení */}
-                <div className="flex flex-col gap-2">
-                  {/* Dynamické tlačítko stavu */}
-                  {leagueConfig.status === 'running' ? (
-                    <button
-                      type="button"
-                      onClick={handlePauseLeague}
-                      className="w-full px-4 py-2.5 rounded-xl bg-amber-100 text-amber-700 border border-amber-200 font-bold text-xs hover:bg-amber-200 transition-all text-center cursor-pointer"
-                    >
-                      ⏸️ Pozastavit Ligu (Sprint &amp; Maraton)
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleStartOrResumeLeague}
-                      className="w-full px-4 py-2.5 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-xs hover:bg-emerald-200 transition-all text-center cursor-pointer"
-                    >
-                      {leagueConfig.status === 'paused' ? '▶️ Obnovit Ligu (po pauze)' : '▶️ Spustit novou Ligu'}
-                    </button>
-                  )}
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <button
-                      type="button"
-                      onClick={handleResetSprintOnly}
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs hover:bg-indigo-200 transition-all text-center cursor-pointer"
-                    >
-                      🏁 Ukončit a resetovat pouze Sprint
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleResetWholeLeague}
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs hover:bg-rose-200 transition-all text-center cursor-pointer"
-                    >
-                      🏆 Ukončit a resetovat celou Ligu
-                    </button>
-                  </div>
-                </div>
               </div>
             </div>
           )}
