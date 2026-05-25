@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { google } from "googleapis";
 import dotenv from "dotenv";
@@ -156,9 +155,8 @@ export async function addAdminLog(type: 'SUCCESS' | 'ERROR' | 'LIMIT' | 'SCRAPER
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 5000;
+  const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(cors({ origin: 'http://localhost:3000' }));
   app.use(express.json());
 
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));

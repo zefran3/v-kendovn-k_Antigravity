@@ -72,9 +72,9 @@ import {
   arrayUnion
 } from "firebase/firestore";
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? "http://localhost:5000"
-  : "";
+const API_BASE_URL = window.location.hostname === 'localhost'
+  ? `${window.location.protocol}//${window.location.host}`
+  : '';
 
 // Operation types for error handling
 enum OperationType {
@@ -893,7 +893,7 @@ export default function App() {
       const activeSuggestions = currentSuggestions || suggestions;
       const knownIds = activeSuggestions.map((s: ActivitySuggestion) => s.calendarEventId).filter(Boolean);
 
-      const response = await fetch(`${API_BASE}/api/calendar/events`, {
+      const response = await fetch(`${API_BASE_URL}/api/calendar/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tokens, knownIds }),
@@ -917,7 +917,7 @@ export default function App() {
 
   const handleConnectGoogle = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/auth/google/url`);
+      const response = await fetch(`${API_BASE_URL}/api/auth/google/url`);
       const { url } = await response.json();
       // Vždy použijeme přesměrování aktuálního okna, abychom se vyhnuli blokování popupů a izolaci oken
       window.location.href = url;
@@ -1254,7 +1254,7 @@ export default function App() {
         const timeMin = new Date(`${targetDate}T00:00:00`).toISOString();
         const timeMax = new Date(`${targetDate}T23:59:59`).toISOString();
 
-        const res = await fetch(`${API_BASE}/api/calendar/list-day`, {
+        const res = await fetch(`${API_BASE_URL}/api/calendar/list-day`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1467,7 +1467,7 @@ export default function App() {
           ...eventParams
         };
 
-        const res = await fetch(`${API_BASE}/api/calendar/create`, {
+        const res = await fetch(`${API_BASE_URL}/api/calendar/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tokens: googleTokens, event }),
@@ -1710,7 +1710,7 @@ export default function App() {
 
       // Smazání z kalendáře v případě schválené události
       if (suggestion.calendarEventId && googleTokens) {
-        const res = await fetch(`${API_BASE}/api/calendar/delete`, {
+        const res = await fetch(`${API_BASE_URL}/api/calendar/delete`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tokens: googleTokens, eventId: suggestion.calendarEventId }),
