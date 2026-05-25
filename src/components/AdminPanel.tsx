@@ -4,16 +4,9 @@ import { X, Bot, Shield, AlertCircle, CheckCircle, Database, Bike } from "lucide
 import { db } from "../firebase";
 import { collection, query, orderBy, limit, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc } from "firebase/firestore";
 import { cn } from "../lib/utils";
-import { UserProfile, UserRole, BattlePassMilestone, BattlePassClaim } from "../types";
+import { UserProfile, UserRole } from "../types";
 
-export const DEFAULT_BATTLE_PASS_MILESTONES: BattlePassMilestone[] = [
-  { id: "bp_1", pointsRequired: 20, title: "Popcorn", icon: "🍿", description: "Křupavý popcorn k večernímu rodinnému promítání.", order: 1 },
-  { id: "bp_2", pointsRequired: 40, title: "Kofola / Sladkost", icon: "🥤", description: "Sladká odměna nebo vychlazená Kofola za dobře odvedenou práci.", order: 2 },
-  { id: "bp_3", pointsRequired: 60, title: "Prodloužená večerka", icon: "🌙", description: "Jednorázová možnost jít o víkendu spát o něco později.", order: 3 },
-  { id: "bp_4", pointsRequired: 90, title: "Nedělní menu / Fast Food", icon: "🍽️", description: "Rozhodneš o tom, co dobrého se uvaří, nebo si dáte oblíbený Fast Food.", order: 4 },
-  { id: "bp_5", pointsRequired: 120, title: "Výběr aktivity / Výlet", icon: "🎡", description: "Vybereš společnou rodinnou aktivitu nebo výlet.", order: 5 },
-  { id: "bp_6", pointsRequired: 150, title: "Herní čas / Mega Odměna", icon: "🎮", description: "Získáš herní čas na PC/konzoli nebo jinou super mega odměnu!", order: 6 },
-];
+
 
 interface AdminLog {
   id: string;
@@ -46,69 +39,8 @@ export default function AdminPanel({
   handleApproveBikeRoute,
   currentUserRole
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions" | "rewards">(
-    currentUserRole === "parent" ? "rewards" : "logs"
-  );
-
+  const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions">("users");
   const [logs, setLogs] = useState<AdminLog[]>([]);
-  const [milestones, setMilestones] = useState<BattlePassMilestone[]>(DEFAULT_BATTLE_PASS_MILESTONES);
-  const [claims, setClaims] = useState<BattlePassClaim[]>([]);
-  
-  const [milestoneTitle, setMilestoneTitle] = useState("");
-  const [milestoneDesc, setMilestoneDesc] = useState("");
-  const [milestonePoints, setMilestonePoints] = useState<number>(15);
-  const [milestoneIcon, setMilestoneIcon] = useState("🎁");
-  const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
-  // ─── Herní potvrzovací modal ─────────────────────────────
-  type ConfirmType = 'delete_milestone';
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    type: ConfirmType | null;
-    payload?: any;
-  }>({ isOpen: false, type: null });
-
-  const CONFIRM_CONFIG: Record<ConfirmType, { icon: string; title: string; desc: string; btnLabel: string; danger: boolean }> = {
-    delete_milestone: {
-      icon: '🗑️',
-      title: 'Smazat milník?',
-      desc: 'Tento milník bude trvale odstraněn z Battle Passu. Tuto akci nelze vrátit.',
-      btnLabel: 'Ano, smazat',
-      danger: true,
-    },
-  };
-
-  const openConfirm = (type: ConfirmType, payload?: any) => {
-    setConfirmModal({ isOpen: true, type, payload });
-  };
-
-  const closeConfirm = () => {
-    setConfirmModal({ isOpen: false, type: null });
-  };
-
-  const executeConfirmedAction = async () => {
-    const { type, payload } = confirmModal;
-    closeConfirm();
-    if (!type) return;
-
-    if (type === 'delete_milestone') {
-      const id = payload as string;
-      setMilestones(prev => {
-        const filtered = prev.filter(m => m.id !== id);
-        return filtered.map((m, idx) => ({ ...m, order: idx + 1 }));
-      });
-      setHasUnsavedChanges(true);
-      if (editingMilestoneId === id) {
-        setEditingMilestoneId(null);
-        setMilestoneTitle('');
-        setMilestoneDesc('');
-        setMilestonePoints(15);
-        setMilestoneIcon('🎁');
-      }
-      return;
-    }
-  };
 
   useEffect(() => {
     const q = query(collection(db, 'admin_logs'), orderBy('timestamp', 'desc'), limit(15));
@@ -120,123 +52,10 @@ export default function AdminPanel({
       setLogs(data);
     });
 
-    const unsubBP = onSnapshot(
-      doc(db, 'settings', 'battle_pass'),
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const list = (data.milestones || []) as BattlePassMilestone[];
-          if (list.length === 0) {
-            setDoc(doc(db, 'settings', 'battle_pass'), { milestones: DEFAULT_BATTLE_PASS_MILESTONES }, { merge: true })
-              .catch(err => console.error("Error initializing milestones in Firestore from AdminPanel:", err));
-            setMilestones(prev => {
-              return prev.length === 0 || !hasUnsavedChanges ? DEFAULT_BATTLE_PASS_MILESTONES : prev;
-            });
-          } else {
-            setMilestones(prev => {
-              return prev.length === 0 || !hasUnsavedChanges
-                ? [...list].sort((a, b) => a.order - b.order)
-                : prev;
-            });
-          }
-        } else {
-          setDoc(doc(db, 'settings', 'battle_pass'), { milestones: DEFAULT_BATTLE_PASS_MILESTONES }, { merge: true })
-            .catch(err => console.error("Error initializing milestones in Firestore from AdminPanel:", err));
-          setMilestones(prev => {
-            return prev.length === 0 || !hasUnsavedChanges ? DEFAULT_BATTLE_PASS_MILESTONES : prev;
-          });
-        }
-      }
-    );
-
-    const unsubClaims = onSnapshot(
-      query(collection(db, 'battlePassClaims'), orderBy('claimedAt', 'desc')),
-      (snap) => {
-        setClaims(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[]);
-      }
-    );
-
     return () => {
       unsubscribe();
-      unsubBP();
-      unsubClaims();
     };
-  }, [hasUnsavedChanges]);
-
-  const handleSaveMilestone = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!milestoneTitle.trim()) return;
-
-    if (editingMilestoneId) {
-      setMilestones(prev => prev.map(m => m.id === editingMilestoneId ? {
-        ...m,
-        title: milestoneTitle.trim(),
-        description: milestoneDesc.trim(),
-        pointsRequired: milestonePoints,
-        icon: milestoneIcon.trim() || "🎁"
-      } : m));
-      setEditingMilestoneId(null);
-    } else {
-      const newId = "bp_" + Date.now();
-      const nextOrder = milestones.length > 0 ? Math.max(...milestones.map(m => m.order)) + 1 : 1;
-      const newMilestone: BattlePassMilestone = {
-        id: newId,
-        title: milestoneTitle.trim(),
-        description: milestoneDesc.trim(),
-        pointsRequired: milestonePoints,
-        icon: milestoneIcon.trim() || "🎁",
-        order: nextOrder
-      };
-      setMilestones(prev => [...prev, newMilestone].sort((a, b) => a.order - b.order));
-    }
-
-    setMilestoneTitle("");
-    setMilestoneDesc("");
-    setMilestonePoints(15);
-    setMilestoneIcon("🎁");
-    setHasUnsavedChanges(true);
-  };
-
-  const handleEditMilestone = (m: BattlePassMilestone) => {
-    setEditingMilestoneId(m.id);
-    setMilestoneTitle(m.title);
-    setMilestoneDesc(m.description);
-    setMilestonePoints(m.pointsRequired);
-    setMilestoneIcon(m.icon);
-  };
-
-  const handleDeleteMilestone = (id: string) => {
-    openConfirm('delete_milestone', id);
-  };
-
-  const handleMoveMilestone = (idx: number, direction: 'up' | 'down') => {
-    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (targetIdx < 0 || targetIdx >= milestones.length) return;
-
-    const list = [...milestones];
-    const temp = list[idx];
-    list[idx] = list[targetIdx];
-    list[targetIdx] = temp;
-
-    const updated = list.map((m, index) => ({
-      ...m,
-      order: index + 1
-    }));
-
-    setMilestones(updated);
-    setHasUnsavedChanges(true);
-  };
-
-  const handleSaveBPConfig = async () => {
-    try {
-      await setDoc(doc(db, 'settings', 'battle_pass'), { milestones });
-      setHasUnsavedChanges(false);
-      alert("Konfigurace Battle Passu byla úspěšně uložena!");
-    } catch (err) {
-      console.error("Failed to save battle pass config:", err);
-      alert("Chyba při ukládání konfigurace: " + (err as Error).message);
-    }
-  };
+  }, []);
 
 
 
@@ -281,40 +100,28 @@ export default function AdminPanel({
         </div>
 
         <div className="flex gap-4 border-b border-stone-100 pb-2">
-          {currentUserRole !== "parent" && (
-            <button 
-              onClick={() => setActiveTab("logs")}
-              className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "logs" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
-            >
-              Logy (Firestore)
-            </button>
-          )}
-          {currentUserRole !== "parent" && (
-            <button 
-              onClick={() => setActiveTab("users")}
-              className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "users" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
-            >
-              Správa Uživatelů
-            </button>
-          )}
           <button 
-            onClick={() => setActiveTab("rewards")}
-            className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "rewards" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
+            onClick={() => setActiveTab("users")}
+            className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "users" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
           >
-            🏆 Milníky BP
+            Správa Uživatelů
           </button>
-          {currentUserRole !== "parent" && (
-            <button 
-              onClick={() => setActiveTab("actions")}
-              className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "actions" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
-            >
-              Akce
-            </button>
-          )}
+          <button 
+            onClick={() => setActiveTab("logs")}
+            className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "logs" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
+          >
+            Logy
+          </button>
+          <button 
+            onClick={() => setActiveTab("actions")}
+            className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "actions" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
+          >
+            Akce
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 min-h-[300px] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {activeTab === "logs" && currentUserRole !== "parent" && (
+          {activeTab === "logs" && (
             <div className="flex flex-col gap-2">
               {(logs || []).length === 0 ? (
                 <div className="text-stone-400 text-center py-8">Zatím žádné logy.</div>
@@ -339,7 +146,7 @@ export default function AdminPanel({
             </div>
           )}
 
-          {activeTab === "actions" && currentUserRole !== "parent" && (
+          {activeTab === "actions" && (
             <div className="flex flex-col gap-4">
               <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 flex flex-col gap-3">
                 <div className="font-bold text-indigo-800 flex items-center gap-2">
@@ -375,7 +182,7 @@ export default function AdminPanel({
             </div>
           )}
 
-          {activeTab === "users" && currentUserRole !== "parent" && (
+          {activeTab === "users" && (
             <div className="w-full text-left">
               <div className="hidden md:grid grid-cols-[1fr_120px_180px] gap-4 border-b border-stone-100 pb-3 px-3 text-[11px] uppercase tracking-wider text-stone-400 font-bold">
                 <div>Uživatel</div>
@@ -424,16 +231,6 @@ export default function AdminPanel({
                         <div className="text-[10px] text-stone-400 truncate px-1">
                           {profile.email}
                         </div>
-                        {/* Zobrazení uplatněných odměn */}
-                        {claims.filter(c => c.userId === profile.id).length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1 px-1">
-                            {claims.filter(c => c.userId === profile.id).map(c => (
-                              <span key={c.id} className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-black border border-amber-100" title={formatDate(c.claimedAt)}>
-                                🎁 {c.rewardTitle} ({c.sprintId?.replace('sprint_', 'S')})
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -491,243 +288,10 @@ export default function AdminPanel({
               </div>
             </div>
           )}
-
-          {activeTab === "rewards" && (
-            <div className="space-y-6">
-              {/* Upozornění na neuložené změny */}
-              {hasUnsavedChanges && (
-                <div className="bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
-                  <div>
-                    <h5 className="font-bold text-xs">⚠️ Máš neuložené změny v Battle Passu!</h5>
-                    <p className="text-[10px] text-stone-500">Změny se projeví u dětí až po kliknutí na tlačítko "Uložit konfiguraci".</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSaveBPConfig}
-                    className="px-4 py-2 text-xs font-black text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 rounded-lg shadow transition-all active:scale-[0.98] cursor-pointer shrink-0"
-                  >
-                    💾 Uložit konfiguraci
-                  </button>
-                </div>
-              )}
-
-              {/* Formulář pro Přidání / Úpravu Milníku */}
-              <form onSubmit={handleSaveMilestone} className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100/50 space-y-3 text-left">
-                <h4 className="font-bold text-indigo-900 text-xs uppercase tracking-wider">
-                  {editingMilestoneId ? "✏️ Upravit milník Battle Passu" : "➕ Přidat nový milník Battle Passu"}
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div className="sm:col-span-2">
-                    <input
-                      type="text"
-                      value={milestoneTitle}
-                      onChange={(e) => setMilestoneTitle(e.target.value)}
-                      placeholder="Název milníku (např. Popcorn k filmu)..."
-                      className="w-full bg-white border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-800 outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-stone-50"
-                      required
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={milestoneIcon}
-                      onChange={(e) => setMilestoneIcon(e.target.value)}
-                      placeholder="Ikona (např. 🍿)..."
-                      className="w-16 text-center bg-white border border-stone-200 rounded-lg px-2 py-2 text-xs text-stone-800 outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-stone-50"
-                      required
-                    />
-                    <div className="flex-1 flex items-center gap-1.5 bg-white border border-stone-200 rounded-lg px-2 py-1">
-                      <input
-                        type="number"
-                        value={milestonePoints}
-                        onChange={(e) => setMilestonePoints(parseInt(e.target.value) || 0)}
-                        placeholder="XP"
-                        className="w-full text-center font-bold text-xs border-none outline-none focus:ring-0"
-                        min="0"
-                        required
-                      />
-                      <span className="text-[10px] font-bold text-stone-400 pr-1">XP</span>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <textarea
-                    value={milestoneDesc}
-                    onChange={(e) => setMilestoneDesc(e.target.value)}
-                    placeholder="Stručný popis milníku pro dítě..."
-                    className="w-full bg-white border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-800 outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-stone-50 h-16 resize-none"
-                  />
-                </div>
-                <div className="flex gap-2 justify-end">
-                  {editingMilestoneId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingMilestoneId(null);
-                        setMilestoneTitle("");
-                        setMilestoneDesc("");
-                        setMilestonePoints(15);
-                        setMilestoneIcon("🎁");
-                      }}
-                      className="px-3 py-1.5 text-xs font-bold text-stone-500 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 cursor-pointer"
-                    >
-                      Zrušit
-                    </button>
-                  )}
-                  <button
-                    type="submit"
-                    className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 shadow-sm cursor-pointer"
-                  >
-                    {editingMilestoneId ? "Aktualizovat milník" : "Přidat milník"}
-                  </button>
-                </div>
-              </form>
-
-              {/* Seznam Milníků */}
-              <div className="space-y-2 text-left">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-bold text-stone-700 text-xs uppercase tracking-wider">Milníky Battle Passu ({milestones.length})</h4>
-                  {!hasUnsavedChanges && (
-                    <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-100 font-bold px-2 py-0.5 rounded-full">
-                      Vše uloženo
-                    </span>
-                  )}
-                </div>
-                {milestones.length === 0 ? (
-                  <div className="text-stone-400 text-center py-4 text-xs italic">Zatím nebyly vytvořeny žádné milníky pro Battle Pass.</div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {milestones.map((m, idx) => (
-                      <div key={m.id} className="bg-white p-3 rounded-xl border border-stone-200 flex justify-between items-center gap-3 shadow-sm">
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <span className="text-2xl shrink-0 filter drop-shadow">{m.icon}</span>
-                          <div className="min-w-0 flex-1 text-left">
-                            <div className="font-bold text-xs text-stone-800 flex items-center gap-2">
-                              <span className="truncate">{m.title}</span>
-                              <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded shrink-0">
-                                {m.pointsRequired} XP
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-stone-500 mt-0.5 truncate">{m.description || "Bez popisu."}</p>
-                          </div>
-                        </div>
-                        <div className="flex gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleMoveMilestone(idx, 'up')}
-                            disabled={idx === 0}
-                            className="p-1 text-stone-400 hover:text-stone-700 hover:bg-stone-50 rounded disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
-                            title="Posunout nahoru"
-                          >
-                            ⬆️
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMoveMilestone(idx, 'down')}
-                            disabled={idx === milestones.length - 1}
-                            className="p-1 text-stone-400 hover:text-stone-700 hover:bg-stone-50 rounded disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
-                            title="Posunout dolů"
-                          >
-                            ⬇️
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEditMilestone(m)}
-                            className="p-1 text-stone-400 hover:text-indigo-600 hover:bg-stone-50 rounded cursor-pointer"
-                            title="Upravit"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteMilestone(m.id)}
-                            className="p-1 text-stone-400 hover:text-rose-600 hover:bg-stone-50 rounded cursor-pointer"
-                            title="Smazat"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       </motion.div>
 
-      {/* ═══ HERNÍ POTVRZOVACÍ MODAL ═══ */}
-      <AnimatePresence>
-        {confirmModal.isOpen && confirmModal.type && (() => {
-          const cfg = CONFIRM_CONFIG[confirmModal.type];
-          return (
-            <motion.div
-              key="confirm-overlay"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[80] flex items-center justify-center p-4"
-              onClick={closeConfirm}
-            >
-              {/* Zatmění pozadí */}
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
-              {/* Modal box */}
-              <motion.div
-                key="confirm-box"
-                initial={{ opacity: 0, scale: 0.85, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.85, y: 20 }}
-                transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-                onClick={e => e.stopPropagation()}
-                className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl border-2 border-stone-100 p-6 flex flex-col gap-5 text-center"
-              >
-                {/* Ikona */}
-                <div className={`w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl shadow-lg ${cfg.danger ? 'bg-rose-50 border-2 border-rose-200' : 'bg-indigo-50 border-2 border-indigo-200'}`}>
-                  {cfg.icon}
-                </div>
-
-                {/* Texty */}
-                <div className="space-y-2">
-                  <h3 className={`text-lg font-extrabold tracking-tight ${cfg.danger ? 'text-rose-700' : 'text-stone-800'}`}>
-                    {cfg.title}
-                  </h3>
-                  <p className="text-sm text-stone-500 leading-relaxed">
-                    {cfg.desc}
-                  </p>
-                </div>
-
-                {/* Tlačítka */}
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={closeConfirm}
-                    className="flex-1 px-4 py-2.5 rounded-xl bg-stone-100 text-stone-600 font-bold text-sm hover:bg-stone-200 transition-all cursor-pointer"
-                  >
-                    Zrušit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={executeConfirmedAction}
-                    className={`flex-1 px-4 py-2.5 rounded-xl font-black text-sm text-white transition-all cursor-pointer shadow-lg active:scale-[0.97] ${
-                      cfg.danger
-                        ? 'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 shadow-rose-200'
-                        : 'bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 shadow-indigo-200'
-                    }`}
-                  >
-                    {cfg.btnLabel}
-                  </button>
-                </div>
-
-                {/* Dekorativní prvek */}
-                <div className={`absolute -top-1 -right-1 w-6 h-6 rounded-full ${cfg.danger ? 'bg-rose-400' : 'bg-indigo-400'} opacity-60`} />
-                <div className={`absolute -bottom-1 -left-1 w-4 h-4 rounded-full ${cfg.danger ? 'bg-rose-300' : 'bg-violet-300'} opacity-40`} />
-              </motion.div>
-            </motion.div>
-          );
-        })()}
-      </AnimatePresence>
     </>
   );
 }
