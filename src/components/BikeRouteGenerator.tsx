@@ -77,7 +77,10 @@ export default function BikeRouteGenerator({ userCity, userId, authorName, onGen
 
     try {
       // SSE přes POST pomocí fetch + ReadableStream
-      const response = await fetch("/api/agent/generate-bike/stream", {
+      const API_BASE_URL = window.location.hostname === 'localhost'
+        ? `${window.location.protocol}//${window.location.host}`
+        : '';
+      const response = await fetch(`${API_BASE_URL}/api/agent/generate-bike/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

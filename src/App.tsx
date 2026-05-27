@@ -704,7 +704,7 @@ export default function App() {
     setLoadingStep('Inicializuji generování...');
     const location = weather?.city ? `location=${encodeURIComponent(weather.city)}` : '';
     const uidParam = user?.uid ? `&uid=${user.uid}` : '';
-    const es = new EventSource(`/api/agent/generate/stream?${location}${uidParam}`);
+    const es = new EventSource(`${API_BASE_URL}/api/agent/generate/stream?${location}${uidParam}`);
     es.addEventListener('status', (e: MessageEvent) => {
       try {
         const { message } = JSON.parse(e.data);
