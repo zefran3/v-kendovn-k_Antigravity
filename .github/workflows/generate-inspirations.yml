@@ -3,22 +3,21 @@ name: Generate Weekend Inspirations
 on:
   schedule:
     - cron: '0 3 * * 3' # Každou středu ve 3:00 UTC
-  workflow_dispatch: # Umožní ti spustit kód i ručně z webu GitHubu
+  workflow_dispatch: # Povolí tlačítko pro ruční spuštění
 
 jobs:
   trigger-generation:
     runs-on: ubuntu-latest
     steps:
-      - name: ☕ Probuzení Render serveru (Warm-up)
+      - name: 🚀 Probuzení serveru a spuštění AI tipů
         run: |
-          echo "Posílám warm-up požadavek na Render..."
+          echo "Step 1: Posílám warm-up požadavek na Render..."
           curl --retry 3 --retry-delay 10 --connect-timeout 15 --max-time 60 -I https://v-kendovn-k-antigravity.onrender.com/ || true
-          echo "Čekám 30 sekund na plné nastartování kontejneru..."
+          
+          echo "Step 2: Čekám 30 sekund na inicializaci kontejneru..."
           sleep 30
-
-      - name: 🚀 Spuštění generování AI tipů
-        run: |
-          echo "Volám endpoint pro generování tipů..."
+          
+          echo "Step 3: Volám endpoint pro generování tipů..."
           STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 30 --max-time 300 -X POST https://v-kendovn-k-antigravity.onrender.com/api/generate-inspirations)
           
           echo "Backend odpověděl s HTTP status kódem: $STATUS_CODE"
