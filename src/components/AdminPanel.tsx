@@ -21,6 +21,7 @@ interface AdminPanelProps {
   userProfiles: Record<string, UserProfile>;
   updateUserRole: (userId: string, role: UserRole) => void;
   updateUserAdminAlias: (userId: string, alias: string) => void;
+  updateUserTargetGroup: (userId: string, targetGroup: 'pro_dceru' | 'pro_syna' | 'pro_vsechny') => void;
   toggleUserBlocked: (userId: string, currentBlocked: boolean) => void;
   handleGenerateInspirations: () => void;
   isGeneratingInspiration: boolean;
@@ -33,6 +34,7 @@ export default function AdminPanel({
   userProfiles,
   updateUserRole,
   updateUserAdminAlias,
+  updateUserTargetGroup,
   toggleUserBlocked,
   handleGenerateInspirations,
   isGeneratingInspiration,
@@ -234,9 +236,9 @@ export default function AdminPanel({
                       </div>
                     </div>
 
-                    {/* 2. Volba Role */}
+                    {/* 2. Volba Role + TargetGroup */}
                     {!profile.isBlocked ? (
-                      <div className="flex flex-col md:items-center w-full md:w-[120px]">
+                      <div className="flex flex-col gap-2 md:items-start w-full md:w-[120px]">
                         <span className="text-[9px] uppercase font-black text-stone-400 tracking-wider mb-1 md:hidden">Role</span>
                         <select
                           value={profile.role || 'viewer'}
@@ -248,6 +250,19 @@ export default function AdminPanel({
                           <option value="child">Dítě</option>
                           <option value="viewer">Divák</option>
                         </select>
+                        {/* Dropdown targetGroup — zobrazí se pouze pro roli child */}
+                        {profile.role === 'child' && (
+                          <select
+                            value={profile.targetGroup || 'pro_vsechny'}
+                            onChange={(e) => updateUserTargetGroup(profile.id!, e.target.value as 'pro_dceru' | 'pro_syna' | 'pro_vsechny')}
+                            className="w-full text-xs font-bold bg-pink-50 text-pink-700 border border-pink-100 rounded-xl px-3 py-2.5 md:py-1.5 focus:ring-2 focus:ring-pink-100 cursor-pointer mt-0.5"
+                            title="Které AI tipy toto dítě uvidí"
+                          >
+                            <option value="pro_vsechny">👨‍👩‍👧‍👦 Vše</option>
+                            <option value="pro_dceru">👧 Jen pro dceru</option>
+                            <option value="pro_syna">👦 Jen pro syna</option>
+                          </select>
+                        )}
                       </div>
                     ) : null}
 

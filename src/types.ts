@@ -65,6 +65,8 @@ export interface UserProfile {
   role?: UserRole;
   permissions?: UserPermissions;
   isBlocked?: boolean;
+  /** Pro role=child: které AI tipy uživatel uvidí. Nastavuje admin. */
+  targetGroup?: 'pro_dceru' | 'pro_syna' | 'pro_vsechny';
 }
 
 export interface CinemaListing {

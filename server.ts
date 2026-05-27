@@ -341,11 +341,31 @@ async function startServer() {
 
     const mksCinema = (mksResult as any)?.cinema || [];
     const mksEvents = (mksResult as any)?.events || [];
-    const cinemaDataString = JSON.stringify(mksCinema, null, 2);
-    const mksEventsString = JSON.stringify(mksEvents, null, 2);
-    const cineStarString = JSON.stringify(cineStarData, null, 2);
-    const kudyString = JSON.stringify(kudyData, null, 2);
-    const jizniMoravaString = JSON.stringify(jizniMoravaData, null, 2);
+
+    // ── Diagnostika: kolik položek každý scraper vrátil ──────────────────────
+    const mksCinemaCount = Array.isArray(mksCinema) ? mksCinema.length : (mksCinema?.cinema_listings?.length ?? 0);
+    const mksEventsCount = mksEvents.length;
+    const cineStarCount = (cineStarData as any[]).length;
+    const kudyCount = (kudyData as any[]).length;
+    const jizniMoravaCount = (jizniMoravaData as any[]).length;
+    const totalScraped = mksCinemaCount + mksEventsCount + cineStarCount + kudyCount + jizniMoravaCount;
+
+    console.log(`[AI Agent] Scraper diagnostika:
+      MKS Kino: ${mksCinemaCount} filmů
+      MKS Akce: ${mksEventsCount} akcí
+      CineStar:  ${cineStarCount} položek
+      KudyZNudy: ${kudyCount} položek
+      JižníMorava: ${jizniMoravaCount} položek
+      CELKEM: ${totalScraped} položek pro AI`);
+
+    addAdminLog('SCRAPER', `Scraped: MKS kino=${mksCinemaCount}, MKS akce=${mksEventsCount}, CineStar=${cineStarCount}, KudyZNudy=${kudyCount}, JižníMorava=${jizniMoravaCount}`, { totalScraped });
+
+    // ── Sestavení datových bloků pro AI prompt ─────────────────────────────
+    const cinemaDataString = mksCinemaCount > 0 ? JSON.stringify(mksCinema, null, 2) : 'ŽÁDNÁ DATA (scraper selhal nebo nenašel nic)';
+    const mksEventsString  = mksEventsCount > 0  ? JSON.stringify(mksEvents, null, 2) : 'ŽÁDNÁ DATA';
+    const cineStarString   = cineStarCount > 0   ? JSON.stringify(cineStarData, null, 2) : 'ŽÁDNÁ DATA';
+    const kudyString       = kudyCount > 0        ? JSON.stringify(kudyData, null, 2) : 'ŽÁDNÁ DATA';
+    const jizniMoravaString = jizniMoravaCount > 0 ? JSON.stringify(jizniMoravaData, null, 2) : 'ŽÁDNÁ DATA';
 
     const now = new Date();
     const todayStr = now.toLocaleDateString('cs-CZ', { day: '2-digit', month: 'long', year: 'numeric', weekday: 'long' });
@@ -358,18 +378,32 @@ async function startServer() {
     const weekendStr = `${fmtDate(nextSat)} (sobota) – ${fmtDate(nextSun)} (neděle)`;
 
     const prompt = `Jsi organizátor rodinných aktivit Víkendovník. 📅 DNEŠNÍ DATUM: ${todayStr}, 🗓️ VÍKEND: ${weekendStr}.
-    Vyhledej akce v Jihomoravském kraji (Brno, Vyškov, Olomouc). ${userLocation ? `LOKALITA: ${userLocation}.` : ""}
-    MKS Vyškov: ${cinemaDataString}. ${mksEvents.length > 0 ? `Další akce MKS: ${mksEventsString}` : ""}
-    CineStar Olomouc: ${cineStarString}.
-    Kudy z nudy: ${kudyString}.
-    Jižní Morava: ${jizniMoravaString}.
-    
-    PRAVIDLA:
-    1. Emma (dcera) nesnáší hrady a historii.
-    2. František (syn) nesnáší vodu, miluje hokej (Kometa) a PlayStation.
-    3. CineStar a ZOO mají přednost.
-    4. Formát: JSON pole objektů s poli: title, description, target, location, is_vyskov, date, time, time_type, opening_hours, price, duration, url, indoor, age_recommendation, ticket_url, cinema_listings.
-    5. Vrať přesně 10 akcí.`;
+Lokalita rodiny: ${userLocation || 'Vyškov, Jihomoravský kraj'}.
+
+━━━ SCRAPED DATA Z INTERNETU (aktuální, ověřená) ━━━
+[MKS Vyškov – Kino]: ${cinemaDataString}
+[MKS Vyškov – Akce]: ${mksEventsString}
+[CineStar Olomouc]: ${cineStarString}
+[Kudy z nudy – JM kraj]: ${kudyString}
+[Jižní Morava – Akce]: ${jizniMoravaString}
+━━━ KONEC DAT ━━━
+
+Celkem scraped položek pro tento výběr: ${totalScraped}
+
+${ageRules}
+
+ABSOLUTNÍ PRAVIDLA — MUSÍŠ JE DODRŽET:
+1. ⛔ NIKDY nevymýšlej místa, která nejsou v datech výše. Pokud data neobsahují konkrétní halu, hernu, minigolf nebo atrakci v okolí Vyškova, NENAPIŠ JI. Tato místa prostě neexistují.
+2. ⛔ NIKDY nevymýšlej „Herna PlayStation", „Minigolf Vyškov", „Aquapark Vyškov" ani žádné jiné konkrétní zařízení, pokud není v datech výše.
+3. ✅ Pokud data z konkrétního scraperu obsahují ŽÁDNÁ DATA — ignoruj ho a nečerpej z něj žádné tipy.
+4. ✅ Pokud celkový počet scraped položek nestačí na 10 tipů, doplň zbývající tipy aktivitami BEZ FIXNÍ LOKACE: procházka v přírodě, piknik, domácí vaření, cyklovýlet obecně (bez názvu konkrétní herny/atrakce), sportovní aktivita venku. Tyto tipy MUSÍ mít v poli location hodnotu "příroda okolí Vyškova" nebo "domácí aktivita" nebo "Vyškov a okolí" — NE konkrétní budovu, která neexistuje.
+5. ✅ Emma (dcera) nesnáší hrady a historii.
+6. ✅ František (syn) nesnáší vodu, miluje hokej (Kometa) a PlayStation — ale PlayStation centrum v Vyškově NEEXISTUJE, NEPÍŠEŠ JEJ.
+7. ✅ CineStar a ZOO mají přednost pokud jsou v datech.
+8. ✅ Formát: JSON pole objektů s poli: title, description, target, location, is_vyskov, date, time, time_type, opening_hours, price, duration, url, indoor, age_recommendation, ticket_url, cinema_listings.
+9. ✅ Vrať přesně 10 akcí.
+10. ⛔ DATUM: Pole "date" NESMÍ být v minulosti. Dnešní datum je ${now.toISOString().split('T')[0]}. Každé datum musí být ${now.toISOString().split('T')[0]} nebo pozdější. Pokud ze scraperu nemáš přesné datum, použij datum nejbližšího víkendu: ${nextSat.toISOString().split('T')[0]}.
+11. ⛔ URL: Pole "url" musí být PŘESNÁ URL konkrétní akce/stránky z dat výše (např. https://www.kudyznudy.cz/akce/nazev-akce). NIKDY nepoužívej základní URL webu (https://www.kudyznudy.cz/ ani https://www.mksvyskov.cz/ bez dalšího). Pokud přesnou URL akce nemáš, použij prázdný string "".`;
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     let suggestions = [];
@@ -384,6 +418,47 @@ async function startServer() {
       suggestions = [];
     }
 
+    // ── Server-side post-processing: záchranná síť pro datum a URL ──────────
+    const todayISO = now.toISOString().split('T')[0];
+    const weekendISO = nextSat.toISOString().split('T')[0];
+
+    // Domény, jejichž holá URL (bez cesty za /) je nepřijatelná
+    const BARE_DOMAINS = [
+      'https://www.kudyznudy.cz',
+      'https://kudyznudy.cz',
+      'https://www.jizni-morava.cz',
+      'https://www.mksvyskov.cz',
+      'https://mksvyskov.cz',
+    ];
+
+    suggestions = suggestions.map((s: any) => {
+      // 1. Oprava data v minulosti
+      if (s.date) {
+        // Pokus o parsování data z různých formátů (ISO nebo česky)
+        const isoMatch = s.date.match(/(\d{4}-\d{2}-\d{2})/);
+        if (isoMatch) {
+          const eventDate = isoMatch[1];
+          if (eventDate < todayISO) {
+            console.warn(`[Post-process] Datum v minulosti: "${s.date}" → nahrazuji ${weekendISO}`);
+            s.date = weekendISO;
+          }
+        }
+      }
+
+      // 2. Oprava holé URL domény (přesměruje na homepage místo na akci)
+      if (s.url) {
+        const isBareUrl = BARE_DOMAINS.some(domain =>
+          s.url === domain || s.url === domain + '/'
+        );
+        if (isBareUrl) {
+          console.warn(`[Post-process] Holá URL domény: "${s.url}" → nahrazuji prázdným stringem`);
+          s.url = '';
+        }
+      }
+
+      return s;
+    });
+
     if (admin.apps.length > 0 && suggestions.length > 0) {
       const db = admin.firestore();
       const oldInspirations = await db.collection('inspirations').where('status', 'not-in', ['draft', 'proposed']).get();
@@ -395,7 +470,7 @@ async function startServer() {
         batch.set(docRef, { ...s, status: 'approved', createdAt: admin.firestore.FieldValue.serverTimestamp() });
       });
       await batch.commit();
-      addAdminLog('SUCCESS', `Vygenerováno ${suggestions.length} tipů.`);
+      addAdminLog('SUCCESS', `Vygenerováno ${suggestions.length} tipů. Scraped celkem: ${totalScraped} položek.`, { totalScraped });
     }
 
     return suggestions;

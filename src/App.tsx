@@ -343,6 +343,18 @@ export default function App() {
     }
   };
 
+  const updateUserTargetGroup = async (userId: string, targetGroup: 'pro_dceru' | 'pro_syna' | 'pro_vsechny') => {
+    try {
+      await updateDoc(doc(db, "users", userId), {
+        targetGroup,
+        updatedAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Nepodařilo se aktualizovat skupinu tipů pro uživatele.");
+    }
+  };
+
   const toggleUserBlocked = async (userId: string, currentBlocked: boolean) => {
     if (userId === user?.uid) {
       setError("Nemůžete zablokovat sami sebe.");
@@ -2212,12 +2224,18 @@ export default function App() {
                       if ((insp as any).status === 'proposed') {
                         return (insp as any).userId === user?.uid || view === 'parent';
                       }
-                      // Schválené trasy — standardní filtrování dle cíle
-                      if (view === "parent") return true;
-                      const userEmail = user?.email?.toLowerCase();
-                      if (userEmail === "emasterba@gmail.com") return insp.target === "pro_dceru" || insp.target === "pro_vsechny";
-                      if (userEmail === "frantisek.sterba2010@gmail.com" || userEmail === "zefran3@gmail.com") return insp.target === "pro_syna" || insp.target === "pro_vsechny";
-                      return insp.target === "pro_vsechny";
+                      // Schválené trasy — filtrování dle role a targetGroup
+                      if (currentUserRole === 'admin' || currentUserRole === 'parent' || view === 'parent') return true;
+                      if (currentUserRole === 'child') {
+                        const myProfile = userProfiles[user?.uid || ''];
+                        const myTargetGroup = myProfile?.targetGroup;
+                        // Pokud child nemá nastavený targetGroup → vidí vše (bezpečný výchozí stav)
+                        if (!myTargetGroup || myTargetGroup === 'pro_vsechny') return true;
+                        // Vidí tipy pro sebe + tipy pro všechny
+                        return insp.target === myTargetGroup || insp.target === 'pro_vsechny';
+                      }
+                      // viewer a ostatní — pouze pro_vsechny
+                      return insp.target === 'pro_vsechny';
                     })
                     .map(insp => (
                     <div id={`insp-${insp.id}`} key={insp.id} className="break-inside-avoid inline-block w-full mb-5 bg-white p-6 rounded-2xl shadow-sm border border-indigo-50 flex flex-col justify-between hover:shadow-md transition-shadow">
@@ -4272,6 +4290,7 @@ export default function App() {
             userProfiles={userProfiles}
             updateUserRole={updateUserRole}
             updateUserAdminAlias={updateUserAdminAlias}
+            updateUserTargetGroup={updateUserTargetGroup}
             toggleUserBlocked={toggleUserBlocked}
             handleGenerateInspirations={handleGenerateInspirations}
             isGeneratingInspiration={isGeneratingInspiration}
