@@ -1121,7 +1121,6 @@ export default function App() {
   };
 
   // Pomocné funkce pro kontrolu kolizí v kalendáři a notifikace dětí
-  // Pomocné funkce pro kontrolu kolizí v kalendáři a notifikace dětí
   const getEndTimeStr = (timeStr: string, isRide: boolean) => {
     if (!timeStr) return "";
     const parts = timeStr.split(':');
