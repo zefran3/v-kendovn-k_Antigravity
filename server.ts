@@ -11,6 +11,7 @@ import { scrapeCineStarOlomouc } from "./src/lib/cineStarOlomouc";
 import { scrapeKudyZnudy } from "./src/services/scrapers/kudyZnudy";
 import { scrapeJizniMorava } from "./src/services/scrapers/jizniMorava";
 import { generateBikeRoute, BikeRouteDifficulty } from "./src/lib/bikeRoutes";
+import { getShoppingDestinations } from "./src/services/scrapers/shopping";
 
 dotenv.config();
 console.log('[API DEBUG] Prvních 10 znaků Gemini klíče:', process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 10) : 'CHYBÍ KLÍČ!');
@@ -291,6 +292,9 @@ async function startServer() {
     if (!process.env.GEMINI_API_KEY) throw new Error("Missing GEMINI_API_KEY");
 
     let ageRules = "";
+    let daughterSection = "";
+    let sonSection = "";
+
     if (admin.apps.length > 0) {
       try {
         const db = admin.firestore();
@@ -301,11 +305,37 @@ async function startServer() {
 
         usersSnapshot.forEach(doc => {
           const user = doc.data();
-          const age = user.age !== undefined ? user.age : (user.birthYear ? new Date().getFullYear() - user.birthYear : null);
+          const name = user.adminAlias || user.displayName || (user.email ? user.email.split('@')[0] : 'Dítě');
+          
+          let age = user.age !== undefined ? user.age : null;
+          if (age === null) {
+            if (user.birthYear) {
+              age = new Date().getFullYear() - user.birthYear;
+            } else if (user.targetGroup === 'pro_dceru') {
+              age = 14;
+            } else if (user.targetGroup === 'pro_syna') {
+              age = 15;
+            }
+          }
+
           if (age !== null) {
-            childrenAgesText += `- ${user.displayName || user.email || 'Dítě'}: ${age} let\n`;
+            childrenAgesText += `- ${name}: ${age} let\n`;
             if (age >= 13) hasTeenagers = true;
             if (age <= 5) hasToddlers = true;
+          }
+
+          const ageStr = age !== null ? `, ${age} let` : "";
+          if (user.targetGroup === 'pro_dceru') {
+            daughterSection += `👧 ${name} (dcera${ageStr}):
+  NEMÁ RÁDA (nemá smysl jí je nutit): prohlídky hradů, zámků a obecně akce týkající se prohlídek historických památek.
+  MÁ RÁDA: hudební koncerty (jak festivaly v přírodě, tak klasické koncerty v hale), návštěvy koupališť a aquaparků, nakupování (oblečení, kosmetika).
+`;
+          } else if (user.targetGroup === 'pro_syna') {
+            sonSection += `👦 ${name} (syn${ageStr}):
+  NEMÁ RÁD: ležení u vody a rodinné výlety na koupaliště (s kamarády by mu to nevadilo, ale s rodinou ne).
+  MÁ RÁD: hokej — zejména HC Kometa Brno a hokej obecně, vojenskou techniku a armádní akce (Dny NATO jsou pro něj svátek), počítačové hry (Kingdom Come: Deliverance) a PlayStation hry všeho druhu, posilování ve fitcentru.
+  POZNÁMKA: Herní centrum PlayStation ve Vyškově NEEXISTUJE — nikdy jej nenabízej jako konkrétní místo.
+`;
           }
         });
 
@@ -314,13 +344,28 @@ async function startServer() {
           if (hasTeenagers) ageRules += `⚠️ PRAVIDLO PRO TEENAGERY: Dětem je 13 a více let. Zahrň do výběru i akce pro starší.\n`;
           if (hasToddlers) ageRules += `⚠️ PRAVIDLO PRO NEJMENŠÍ: V rodině je dítě do 5 let. Prioritizuj hřiště a bezpečné akce.\n`;
         }
-      } catch (err) { console.error("Chyba při načítání věku:", err); }
+      } catch (err) { console.error("Chyba při načítání věku a profilů dětí:", err); }
+    }
+
+    // Default fallbacks if no child is configured with targetGroup in DB
+    if (!daughterSection) {
+      daughterSection = `👧 Emma (dcera, 14 let):
+  NEMÁ RÁDA (nemá smysl jí je nutit): prohlídky hradů, zámků a obecně akce týkající se prohlídek historických památek.
+  MÁ RÁDA: hudební koncerty (jak festivaly v přírodě, tak klasické koncerty v hale), návštěvy koupališť a aquaparků, nakupování (oblečení, kosmetika).
+`;
+    }
+    if (!sonSection) {
+      sonSection = `👦 František (syn, 15 let):
+  NEMÁ RÁD: ležení u vody a rodinné výlety na koupaliště (s kamarády by mu to nevadilo, ale s rodinou ne).
+  MÁ RÁD: hokej — zejména HC Kometa Brno a hokej obecně, vojenskou techniku a armádní akce (Dny NATO jsou pro něj svátek), počítačové hry (Kingdom Come: Deliverance) a PlayStation hry všeho druhu, posilování ve fitcentru.
+  POZNÁMKA: Herní centrum PlayStation ve Vyškově NEEXISTUJE — nikdy jej nenabízej jako konkrétní místo.
+`;
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-    emit('Spouštím scrapery (Kina, Kudy z nudy, Jižní Morava)...');
+    emit('Spouštím scrapery (Kina, Kudy z nudy, Jižní Morava, Nákupy)...');
     
-    const [mksResult, cineStarData, kudyData, jizniMoravaData] = await Promise.all([
+    const [mksResult, cineStarData, kudyData, jizniMoravaData, shoppingData] = await Promise.all([
       (async () => { 
         console.log('[MKS Vyškov] Spouštím scraper...'); 
         return fetchMksVyskovProgram().catch(e => { console.error('[MKS Vyškov] Chyba:', e); return { cinema: [], events: [] }; });
@@ -336,6 +381,10 @@ async function startServer() {
       (async () => { 
         console.log('[Jižní Morava] Spouštím scraper...'); 
         return scrapeJizniMorava().catch(e => { console.error('[Jižní Morava] Chyba:', e); return []; });
+      })(),
+      (async () => {
+        console.log('[Nákupy] Načítám data...');
+        return getShoppingDestinations();
       })()
     ]);
 
@@ -348,7 +397,8 @@ async function startServer() {
     const cineStarCount = (cineStarData as any[]).length;
     const kudyCount = (kudyData as any[]).length;
     const jizniMoravaCount = (jizniMoravaData as any[]).length;
-    const totalScraped = mksCinemaCount + mksEventsCount + cineStarCount + kudyCount + jizniMoravaCount;
+    const shoppingCount = shoppingData.length;
+    const totalScraped = mksCinemaCount + mksEventsCount + cineStarCount + kudyCount + jizniMoravaCount + shoppingCount;
 
     console.log(`[AI Agent] Scraper diagnostika:
       MKS Kino: ${mksCinemaCount} filmů
@@ -356,9 +406,10 @@ async function startServer() {
       CineStar:  ${cineStarCount} položek
       KudyZNudy: ${kudyCount} položek
       JižníMorava: ${jizniMoravaCount} položek
+      Nákupy: ${shoppingCount} položek
       CELKEM: ${totalScraped} položek pro AI`);
 
-    addAdminLog('SCRAPER', `Scraped: MKS kino=${mksCinemaCount}, MKS akce=${mksEventsCount}, CineStar=${cineStarCount}, KudyZNudy=${kudyCount}, JižníMorava=${jizniMoravaCount}`, { totalScraped });
+    addAdminLog('SCRAPER', `Scraped: MKS kino=${mksCinemaCount}, MKS akce=${mksEventsCount}, CineStar=${cineStarCount}, KudyZNudy=${kudyCount}, JižníMorava=${jizniMoravaCount}, Nákupy=${shoppingCount}`, { totalScraped });
 
     // ── Sestavení datových bloků pro AI prompt ─────────────────────────────
     const cinemaDataString = mksCinemaCount > 0 ? JSON.stringify(mksCinema, null, 2) : 'ŽÁDNÁ DATA (scraper selhal nebo nenašel nic)';
@@ -366,6 +417,7 @@ async function startServer() {
     const cineStarString   = cineStarCount > 0   ? JSON.stringify(cineStarData, null, 2) : 'ŽÁDNÁ DATA';
     const kudyString       = kudyCount > 0        ? JSON.stringify(kudyData, null, 2) : 'ŽÁDNÁ DATA';
     const jizniMoravaString = jizniMoravaCount > 0 ? JSON.stringify(jizniMoravaData, null, 2) : 'ŽÁDNÁ DATA';
+    const shoppingString   = JSON.stringify(shoppingData, null, 2);
 
     const now = new Date();
     const todayStr = now.toLocaleDateString('cs-CZ', { day: '2-digit', month: 'long', year: 'numeric', weekday: 'long' });
@@ -386,26 +438,51 @@ Lokalita rodiny: ${userLocation || 'Vyškov, Jihomoravský kraj'}.
 [CineStar Olomouc]: ${cineStarString}
 [Kudy z nudy – JM kraj]: ${kudyString}
 [Jižní Morava – Akce]: ${jizniMoravaString}
+[Nákupní centra a nákupy (oblečení, kosmetika)]: ${shoppingString}
 ━━━ KONEC DAT ━━━
 
 Celkem scraped položek pro tento výběr: ${totalScraped}
 
 ${ageRules}
 
-ABSOLUTNÍ PRAVIDLA — MUSÍŠ JE DODRŽET:
-1. ⛔ NIKDY nevymýšlej místa, která nejsou v datech výše. Pokud data neobsahují konkrétní halu, hernu, minigolf nebo atrakci v okolí Vyškova, NENAPIŠ JI. Tato místa prostě neexistují.
-2. ⛔ NIKDY nevymýšlej „Herna PlayStation", „Minigolf Vyškov", „Aquapark Vyškov" ani žádné jiné konkrétní zařízení, pokud není v datech výše.
-3. ✅ Pokud data z konkrétního scraperu obsahují ŽÁDNÁ DATA — ignoruj ho a nečerpej z něj žádné tipy.
-4. ✅ Pokud celkový počet scraped položek nestačí na 10 tipů, doplň zbývající tipy aktivitami BEZ FIXNÍ LOKACE: procházka v přírodě, piknik, domácí vaření, cyklovýlet obecně (bez názvu konkrétní herny/atrakce), sportovní aktivita venku. Tyto tipy MUSÍ mít v poli location hodnotu "příroda okolí Vyškova" nebo "domácí aktivita" nebo "Vyškov a okolí" — NE konkrétní budovu, která neexistuje.
-5. ✅ Emma (dcera) nesnáší hrady a historii.
-6. ✅ František (syn) nesnáší vodu, miluje hokej (Kometa) a PlayStation — ale PlayStation centrum v Vyškově NEEXISTUJE, NEPÍŠEŠ JEJ.
-7. ✅ CineStar a ZOO mají přednost pokud jsou v datech.
-8. ✅ Formát: JSON pole objektů s poli: title, description, target, location, is_vyskov, date, time, time_type, opening_hours, price, duration, url, indoor, age_recommendation, ticket_url, cinema_listings.
-9. ✅ Vrať přesně 10 akcí.
-10. ⛔ DATUM: Pole "date" NESMÍ být v minulosti. Dnešní datum je ${now.toISOString().split('T')[0]}. Každé datum musí být ${now.toISOString().split('T')[0]} nebo pozdější. Pokud ze scraperu nemáš přesné datum, použij datum nejbližšího víkendu: ${nextSat.toISOString().split('T')[0]}.
-11. ⛔ URL: Pole "url" musí být PŘESNÁ URL konkrétní akce/stránky z dat výše (např. https://www.kudyznudy.cz/akce/nazev-akce). NIKDY nepoužívej základní URL webu (https://www.kudyznudy.cz/ ani https://www.mksvyskov.cz/ bez dalšího). Pokud přesnou URL akce nemáš, použij prázdný string "".`;
+━━━ PROFILY ČLENŮ RODINY ━━━
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+${daughterSection}
+${sonSection}
+
+━━━ PRAVIDLA PRO POLE target ━━━
+Každý tip musí mít hodnotu target:
+- "pro_dceru"   → tip je ideální hlavně pro dceru (koncert, aquapark, nákupy)
+- "pro_syna"    → tip je ideální hlavně pro syna (hokej, armáda, fitko, tech)
+- "pro_vsechny" → tip je vhodný pro celou rodinu (kino, ZOO, cyklovýlet, festival)
+Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny".
+
+━━━ ABSOLUTNÍ PRAVIDLA ━━━
+
+1. ⛔ NIKDY nevymýšlej místa, která nejsou v datech výše. Pokud data neobsahují konkrétní halu, hernu, minigolf nebo atrakci v okolí Vyškova, NENAPIŠ JI.
+
+2. ⛔ NIKDY nevymýšlej „Herna PlayStation", „Minigolf Vyškov", „Aquapark Vyškov" ani jiné konkrétní zařízení, pokud není v datech výše.
+
+3. ✅ Pokud scraper vrátil "ŽÁDNÁ DATA" — zcela ho ignoruj. Přejdi na scraper který data má. NEČERPEJ z prázdného scraperu vůbec nic.
+
+4. ⛔ NIKDY nedoplňuj chybějící tipy vymyšlenými volnočasovými aktivitami (žádné obecné „procházka v přírodě", „domácí vaření" apod. jako výplň). Pokud máš méně než 10 reálných tipů z dat — vrať jen tolik tipů, kolik reálných dat máš. Méně tipů je lepší než vymyšlené tipy.
+
+5. ✅ Priorita zdrojů: CineStar Olomouc, ZOO a nákupní centra mají přednost pro dceru. MKS Vyškov Kino zařaď jako tip pro celou rodinu.
+
+6. ✅ Formát výstupu: JSON pole objektů. Každý objekt musí mít PŘESNĚ tato pole:
+   title, description, target, location, is_vyskov, date, time, time_type, opening_hours, price, duration, url, indoor, age_recommendation, ticket_url, cinema_listings
+
+7. ✅ Maximálně 10 akcí. Pokud je reálných dat méně — vrať méně. Nikdy více než 10.
+
+8. ⛔ DATUM: Pole "date" NESMÍ být v minulosti. Dnešní datum je ${now.toISOString().split('T')[0]}. Pokud ze scraperu nemáš přesné datum, použij datum nejbližšího víkendu: ${nextSat.toISOString().split('T')[0]}.
+
+9. ⛔ URL: Pole "url" musí být PŘESNÁ URL konkrétní akce z dat výše. NIKDY nepoužívej holou doménu (https://www.kudyznudy.cz/ ani https://www.mksvyskov.cz/ bez cesty). Pokud přesnou URL nemáš → "".
+
+10. ⛔ U kina CineStar Olomouc se nesmí generovat obecná karta pro celkovou návštěvu kina (např. "Návštěva kina CineStar") a zároveň samostatné karty pro konkrétní filmy (představení) v tomto kině. Vygeneruj jednu celkovou kartu kina se všemi promítanými filmy v cinema_listings (ideálně jako tip pro celou rodinu), ale NIKDY negeneruj samostané karty.`;
+
+    // gemini-2.5-pro: lepší reasoning, přesnější dodržování složitých instrukcí
+    // Fallback na gemini-2.5-flash pokud Pro selže (quota/dostupnost)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
     let suggestions = [];
     try {
       emit('AI skládá víkendový plán...');
@@ -413,9 +490,25 @@ ABSOLUTNÍ PRAVIDLA — MUSÍŠ JE DODRŽET:
       const result = await model.generateContent(fullPrompt);
       const responseText = result.response.text();
       suggestions = JSON.parse(responseText.replace(/```json|```/g, '').trim());
-    } catch (err) {
-      console.error("AI Generation Error:", err);
-      suggestions = [];
+    } catch (err: any) {
+      // Fallback na Flash pokud Pro selže (quota, rate limit, dostupnost)
+      const isQuotaError = err?.status === 429 || err?.status === 503 || String(err).includes('quota') || String(err).includes('RESOURCE_EXHAUSTED');
+      if (isQuotaError) {
+        console.warn('[AI] gemini-2.5-pro selhalo, zkouším fallback na gemini-2.5-flash...');
+        emit('Přepínám na záložní model...');
+        try {
+          const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+          const fallbackPrompt = prompt + "\n\nDŮLEŽITÉ: Vrať POUZE validní JSON formát. Nepřidávej žádný vysvětlující text a NEPOUŽÍVEJ markdownové značky jako ```json. Výstup musí začínat znakem [ nebo { a končit ] nebo }.";
+          const fallbackResult = await fallbackModel.generateContent(fallbackPrompt);
+          suggestions = JSON.parse(fallbackResult.response.text().replace(/```json|```/g, '').trim());
+        } catch (fallbackErr) {
+          console.error('[AI] Fallback model také selhal:', fallbackErr);
+          suggestions = [];
+        }
+      } else {
+        console.error('AI Generation Error:', err);
+        suggestions = [];
+      }
     }
 
     // ── Server-side post-processing: záchranná síť pro datum a URL ──────────

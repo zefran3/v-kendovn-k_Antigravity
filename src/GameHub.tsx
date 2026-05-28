@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   X, Trophy, Target, Star, Lock, Zap, Gift, Shield, Plus,
@@ -89,6 +89,7 @@ interface GameHubProps {
   view: "parent" | "child";
   onClose: () => void;
   getAvatarForChild: (name: string) => string;
+  onOpenAdminPanel?: () => void;
 }
 
 interface ActiveQuestBannerProps {
@@ -787,7 +788,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
   // ─── Žebříček (Vyloučení rodiče/admina podle rolí) ───────────────
   const leaderboardData = useMemo(() => {
-    return Object.entries(playerStats)
+    return (Object.entries(playerStats) as [string, UserStats][])
       .map(([name, stats]) => {
         const badgeBonus = BADGES.filter(b => b.check(stats)).reduce((s, b) => s + b.bonusZB, 0);
         return { name: name || "", ...stats, totalZB: stats.totalZB + badgeBonus, avatar: getAvatarForChild(name || "") };

@@ -67,6 +67,8 @@ export interface UserProfile {
   isBlocked?: boolean;
   /** Pro role=child: které AI tipy uživatel uvidí. Nastavuje admin. */
   targetGroup?: 'pro_dceru' | 'pro_syna' | 'pro_vsechny';
+  /** Rok narození — věk se počítá dynamicky, nemusí se každý rok aktualizovat. */
+  birthYear?: number;
 }
 
 export interface CinemaListing {

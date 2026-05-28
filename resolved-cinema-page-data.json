@@ -1,0 +1,447 @@
+{
+  "componentsBuilder": [
+    {
+      "items": [
+        {
+          "id": "2",
+          "typeHandle": "weekMovie",
+          "__typename": "components_weekMovie_Entry"
+        }
+      ],
+      "visibleGroup": "all",
+      "__typename": "componentsBuilder_component_BlockType"
+    },
+    {
+      "items": [],
+      "visibleGroup": "all",
+      "__typename": "componentsBuilder_component_BlockType"
+    },
+    {
+      "items": [],
+      "visibleGroup": "all",
+      "__typename": "componentsBuilder_component_BlockType"
+    },
+    {
+      "items": [
+        {
+          "id": "4",
+          "typeHandle": "nextShow",
+          "title": "Nejbližší představení",
+          "subtitle": null,
+          "description": null,
+          "linkElement": [],
+          "__typename": "components_nextShow_Entry"
+        }
+      ],
+      "visibleGroup": "all",
+      "__typename": "componentsBuilder_component_BlockType"
+    },
+    {
+      "items": [
+        {
+          "id": "57572",
+          "typeHandle": "screeningAndPreorder",
+          "componentTitle": "Promítáme a předprodej",
+          "movieScreeningsType": "screening",
+          "moviesOrderOverride": [
+            {
+              "customIndex": 1,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "9519",
+                  "TitleArray": "Na horách",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 2,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "6239",
+                  "TitleArray": "Přání k narozeninám",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 3,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "9514",
+                  "TitleArray": "Na skok do divočiny",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 4,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10284",
+                  "TitleArray": "EPiC: Elvis Presley in Concert",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 5,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10212",
+                  "TitleArray": "Nečekané léto",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 20,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10423",
+                  "TitleArray": "BTS WORLD TOUR 'ARIRANG' IN GOYANG: LIVE VIEWING",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 21,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10425",
+                  "TitleArray": "BTS WORLD TOUR 'ARIRANG' IN JAPAN: LIVE VIEWING",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 22,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10152",
+                  "TitleArray": "DEJVICKÉ DIVADLO: UCPANEJ SYSTÉM (záznam)",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 23,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10380",
+                  "TitleArray": "ZDENĚK SVĚRÁK 90",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 24,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10386",
+                  "TitleArray": "Bring Me The Horizon - L.I.V.E. in Sao Paulo",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 25,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10424",
+                  "TitleArray": "BTS WORLD TOUR 'ARIRANG' IN GOYANG: LIVE VIEWING AJ TITULKY",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 26,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10426",
+                  "TitleArray": "BTS WORLD TOUR 'ARIRANG' IN JAPAN: LIVE VIEWING AJ TITULKY",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 27,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10222",
+                  "TitleArray": "Co nám zbylo z lásky",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 100,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "9655",
+                  "TitleArray": "Poslední sen Fridy a Diega",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 101,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "9653",
+                  "TitleArray": "Evžen Oněgin (Opera)",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 102,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "9656",
+                  "TitleArray": "Poslední sen Fridy a Diega (Opera) TITULKY",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 103,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "9651",
+                  "TitleArray": "Tristan a Isolda (Opera)",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 104,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "9652",
+                  "TitleArray": "Tristan a Isolda (Opera) TITULKY",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 105,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "9519",
+                  "TitleArray": "Na horách",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            }
+          ],
+          "__typename": "components_screeningAndPreorder_Entry"
+        }
+      ],
+      "visibleGroup": "all",
+      "__typename": "componentsBuilder_component_BlockType"
+    },
+    {
+      "items": [
+        {
+          "id": "6",
+          "typeHandle": "banners",
+          "title": "Akce",
+          "subtitle": "všechny akce",
+          "description": null,
+          "showActionFilters": false,
+          "bannersMobileType": "carousel",
+          "showBannerTypes": "all",
+          "componentBanners": [],
+          "__typename": "components_banners_Entry"
+        }
+      ],
+      "visibleGroup": "all",
+      "__typename": "componentsBuilder_component_BlockType"
+    },
+    {
+      "id": "239580",
+      "header": null,
+      "advertisingLabelVisible": true,
+      "specifiedAdvertisements": [],
+      "__typename": "componentsBuilder_advertising_BlockType"
+    },
+    {
+      "items": [
+        {
+          "id": "86785",
+          "typeHandle": "screeningAndPreorder",
+          "componentTitle": "Brzy uvedeme",
+          "movieScreeningsType": "upcoming",
+          "moviesOrderOverride": [
+            {
+              "customIndex": 101,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "8492",
+                  "TitleArray": "Lazebník sevillský (Opera)",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 102,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "8491",
+                  "TitleArray": "Salome (Opera)",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 103,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "8490",
+                  "TitleArray": "Figarova svatba (Opera)",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 104,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "8489",
+                  "TitleArray": "Fidelio (Opera)",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 105,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "8488",
+                  "TitleArray": "Aida (Opera)",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 106,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "8487",
+                  "TitleArray": "Tosca (Opera)",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 200,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10085",
+                  "TitleArray": "Ben Cristovao - live show - Eden 2025 CZ",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            },
+            {
+              "customIndex": 201,
+              "doNotShow": false,
+              "movie": [
+                {
+                  "MovieId": "10084",
+                  "TitleArray": "Ben Cristovao - live show - Eden 2025",
+                  "__typename": "movies_default_Entry"
+                }
+              ],
+              "__typename": "moviesOrderOverride_BlockType"
+            }
+          ],
+          "__typename": "components_screeningAndPreorder_Entry"
+        }
+      ],
+      "visibleGroup": "all",
+      "__typename": "componentsBuilder_component_BlockType"
+    }
+  ],
+  "kosmikUnlogged": [
+    {
+      "header": null,
+      "subHeader": null,
+      "variant": "",
+      "button": [],
+      "__typename": "kosmikUnlogged_item_BlockType"
+    }
+  ],
+  "kosmikLogged": [
+    {
+      "header": null,
+      "subHeader": null,
+      "variant": "",
+      "button": [],
+      "__typename": "kosmikLogged_item_BlockType"
+    }
+  ],
+  "kosmikCsc": [
+    {
+      "header": null,
+      "subHeader": null,
+      "variant": "",
+      "button": [],
+      "__typename": "kosmikCsc_item_BlockType"
+    }
+  ],
+  "__typename": "pages_homepage_Entry"
+}

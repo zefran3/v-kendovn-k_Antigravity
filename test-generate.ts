@@ -30,7 +30,7 @@ async function testModels() {
       try {
         const searchModel = genAI.getGenerativeModel({ 
           model: modelName,
-          tools: [{ googleSearch: {} }] 
+          tools: [{ googleSearch: {} } as any] 
         });
         await searchModel.generateContent("Napiš OK.");
         console.log(`✅ ÚSPĚCH! Model ${modelName} podporuje i Search Grounding!`);

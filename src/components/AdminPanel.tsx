@@ -22,6 +22,7 @@ interface AdminPanelProps {
   updateUserRole: (userId: string, role: UserRole) => void;
   updateUserAdminAlias: (userId: string, alias: string) => void;
   updateUserTargetGroup: (userId: string, targetGroup: 'pro_dceru' | 'pro_syna' | 'pro_vsechny') => void;
+  updateUserBirthYear: (userId: string, birthYear: number) => void;
   toggleUserBlocked: (userId: string, currentBlocked: boolean) => void;
   handleGenerateInspirations: () => void;
   isGeneratingInspiration: boolean;
@@ -35,6 +36,7 @@ export default function AdminPanel({
   updateUserRole,
   updateUserAdminAlias,
   updateUserTargetGroup,
+  updateUserBirthYear,
   toggleUserBlocked,
   handleGenerateInspirations,
   isGeneratingInspiration,
@@ -236,9 +238,9 @@ export default function AdminPanel({
                       </div>
                     </div>
 
-                    {/* 2. Volba Role + TargetGroup */}
+                    {/* 2. Volba Role + TargetGroup + BirthYear */}
                     {!profile.isBlocked ? (
-                      <div className="flex flex-col gap-2 md:items-start w-full md:w-[120px]">
+                      <div className="flex flex-col gap-2 md:items-start w-full md:w-[140px]">
                         <span className="text-[9px] uppercase font-black text-stone-400 tracking-wider mb-1 md:hidden">Role</span>
                         <select
                           value={profile.role || 'viewer'}
@@ -250,18 +252,43 @@ export default function AdminPanel({
                           <option value="child">Dítě</option>
                           <option value="viewer">Divák</option>
                         </select>
-                        {/* Dropdown targetGroup — zobrazí se pouze pro roli child */}
+                        {/* Dropdown targetGroup + input rok narození — pouze pro roli child */}
                         {profile.role === 'child' && (
-                          <select
-                            value={profile.targetGroup || 'pro_vsechny'}
-                            onChange={(e) => updateUserTargetGroup(profile.id!, e.target.value as 'pro_dceru' | 'pro_syna' | 'pro_vsechny')}
-                            className="w-full text-xs font-bold bg-pink-50 text-pink-700 border border-pink-100 rounded-xl px-3 py-2.5 md:py-1.5 focus:ring-2 focus:ring-pink-100 cursor-pointer mt-0.5"
-                            title="Které AI tipy toto dítě uvidí"
-                          >
-                            <option value="pro_vsechny">👨‍👩‍👧‍👦 Vše</option>
-                            <option value="pro_dceru">👧 Jen pro dceru</option>
-                            <option value="pro_syna">👦 Jen pro syna</option>
-                          </select>
+                          <>
+                            <select
+                              value={profile.targetGroup || 'pro_vsechny'}
+                              onChange={(e) => updateUserTargetGroup(profile.id!, e.target.value as 'pro_dceru' | 'pro_syna' | 'pro_vsechny')}
+                              className="w-full text-xs font-bold bg-pink-50 text-pink-700 border border-pink-100 rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-pink-100 cursor-pointer"
+                              title="Které AI tipy toto dítě uvidí"
+                            >
+                              <option value="pro_vsechny">👨‍👩‍👧‍👦 Vše</option>
+                              <option value="pro_dceru">👧 Jen pro dceru</option>
+                              <option value="pro_syna">👦 Jen pro syna</option>
+                            </select>
+                            <div className="flex items-center gap-1 w-full">
+                              <span className="text-[9px] text-stone-400 whitespace-nowrap">🎂 nar.</span>
+                              <input
+                                type="number"
+                                min={1990}
+                                max={new Date().getFullYear()}
+                                defaultValue={profile.birthYear || ''}
+                                placeholder="rok"
+                                onBlur={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  if (!isNaN(val) && val !== profile.birthYear) {
+                                    updateUserBirthYear(profile.id!, val);
+                                  }
+                                }}
+                                className="w-full text-xs bg-amber-50 text-amber-700 border border-amber-100 rounded-xl px-2 py-1.5 focus:ring-2 focus:ring-amber-100 focus:outline-none"
+                                title="Rok narození — věk se počítá automaticky"
+                              />
+                            </div>
+                            {!profile.birthYear && (
+                              <div className="text-[9px] text-red-500 font-bold leading-tight mt-1 select-none">
+                                ⚠️ Chybí rok narození (AI použije výchozí věk)
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     ) : null}

@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent, useRef, useMemo } from "react";
+import React, { useState, useEffect, type FormEvent, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Calendar, 
@@ -355,6 +355,22 @@ export default function App() {
     }
   };
 
+  const updateUserBirthYear = async (userId: string, birthYear: number) => {
+    if (isNaN(birthYear) || birthYear < 1990 || birthYear > new Date().getFullYear()) {
+      setError("Neplatný rok narození.");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "users", userId), {
+        birthYear,
+        updatedAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Nepodařilo se uložit rok narození.");
+    }
+  };
+
   const toggleUserBlocked = async (userId: string, currentBlocked: boolean) => {
     if (userId === user?.uid) {
       setError("Nemůžete zablokovat sami sebe.");
@@ -376,12 +392,12 @@ export default function App() {
     
     // Check for admin custom avatars
     if (childName === "Táta") {
-      const tataProfile = Object.values(userProfiles).find(p => p.email?.toLowerCase() === "zefran3@gmail.com");
+      const tataProfile = (Object.values(userProfiles) as UserProfile[]).find(p => p.email?.toLowerCase() === "zefran3@gmail.com");
       if (tataProfile?.avatar) return tataProfile.avatar;
       return "👨";
     }
     if (childName === "Eva") {
-      const evaProfile = Object.values(userProfiles).find(p => p.email?.toLowerCase() === "eva.kubartova@gmail.com");
+      const evaProfile = (Object.values(userProfiles) as UserProfile[]).find(p => p.email?.toLowerCase() === "eva.kubartova@gmail.com");
       if (evaProfile?.avatar) return evaProfile.avatar;
       return "👩";
     }
@@ -1091,7 +1107,7 @@ export default function App() {
       [user.uid]: { grade, changesCount: newChangesCount }
     };
 
-    const gradesArray = Object.values(newUserGrades).map(g => g.grade);
+    const gradesArray = (Object.values(newUserGrades) as { grade: number; changesCount: number }[]).map(g => g.grade);
     const newAverage = Number((gradesArray.reduce((a, b) => a + b, 0) / gradesArray.length).toFixed(2));
 
     try {
@@ -1146,7 +1162,7 @@ export default function App() {
   };
 
   const findChildUserId = (childName: string) => {
-    const match = Object.entries(userProfiles).find(([uid, profile]) => 
+    const match = (Object.entries(userProfiles) as [string, UserProfile][]).find(([uid, profile]) => 
       profile.displayName?.toLowerCase() === childName.toLowerCase() ||
       profile.adminAlias?.toLowerCase() === childName.toLowerCase()
     );
@@ -4291,6 +4307,7 @@ export default function App() {
             updateUserRole={updateUserRole}
             updateUserAdminAlias={updateUserAdminAlias}
             updateUserTargetGroup={updateUserTargetGroup}
+            updateUserBirthYear={updateUserBirthYear}
             toggleUserBlocked={toggleUserBlocked}
             handleGenerateInspirations={handleGenerateInspirations}
             isGeneratingInspiration={isGeneratingInspiration}
