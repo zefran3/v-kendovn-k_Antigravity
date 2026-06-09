@@ -1,5 +1,14 @@
 export type SuggestionStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'draft';
 
+/** Sdílený interface pro výstup webových scraperů (KudyZNudy, JižníMorava, aj.) */
+export interface ScrapedEvent {
+  title: string;
+  date: string;
+  description: string;
+  source_url: string;
+}
+
+
 export interface ActivityComment {
   id: string;
   authorId: string;
@@ -79,9 +88,11 @@ export interface CinemaListing {
 
 // Agregovaný formát pro CineStar scraper (1 záznam = 1 film + všechny časy)
 export interface CineStarListing {
-  film_title: string;
-  showtimes: string;   // např. "14:00, 16:30, 20:15"
+  film: string;
+  time: string;
   url?: string;
+  film_title?: string;
+  showtimes?: string;   // např. "14:00, 16:30, 20:15"
 }
 
 export interface CineStarEvent {
@@ -139,6 +150,7 @@ export interface WishlistItem {
   url?: string;
   imageBase64?: string;
   targetZB: number;       // Cena v ZB (nastavuje rodič)
+  valueKč?: number;        // Schválená cena v Kč (nastavuje rodič)
   status: 'pending' | 'approved' | 'rejected';
   rejectReason?: string;
   createdAt: number;

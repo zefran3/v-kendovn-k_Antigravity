@@ -9,3 +9,23 @@ input::-webkit-inner-spin-button {
 input[type=number] {
   -moz-appearance: textfield;
 }
+
+/* Scrollbar pro cinema listings a podobné scrollovatelné panely */
+.cinema-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.cinema-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cinema-scroll::-webkit-scrollbar-thumb {
+  background: #c7d2fe; /* indigo-200 */
+  border-radius: 999px;
+}
+.cinema-scroll::-webkit-scrollbar-thumb:hover {
+  background: #a5b4fc; /* indigo-300 */
+}
+/* Firefox */
+.cinema-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #c7d2fe transparent;
+}

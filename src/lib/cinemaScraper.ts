@@ -38,14 +38,28 @@ const isKinoUrl = (href: string) => /\/(kino|film|filmy|vstupenky|predstaveni)\b
 const randomDelay = (min: number, max: number): Promise<void> =>
   new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min)) + min));
 
+const BLACKLIST_WORDS = [
+  'vyberte si', 'narozeniny', 'detail filmu', 'koupit', 'vstupenk', 'program', 'kontakt',
+  'o nás', 'zpět', 'menu', 'hledat', 'košík', 'zavřít', 'všechny', 'filtr', 'oslave',
+  'oslavy', 'dárková', 'dárkový', 'pronáj', 'reklam', 'školy', 'kariéra',
+  'novinky', 'ubytování', 'provoz', 'ceník', 'ztráty', 'vstupné', 'otevírací doba', 'vstupenky'
+];
+
 // ─── Čistění názvu ─────────────────────────────────────────────────────────────
-const cleanTitle = (raw: string): string =>
-  raw
+const cleanTitle = (raw: string): string => {
+  const cleaned = raw
     .replace(/(\D)(\d+)\s*min\b/gi, '$1 ($2 min)')
     .replace(/\s*\(?\d{1,2}\+\)?/g, '')
     .replace(/\bPředprodej\b/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+
+  const lower = cleaned.toLowerCase();
+  if (BLACKLIST_WORDS.some(word => lower.includes(word))) {
+    return "";
+  }
+  return cleaned;
+};
 
 // ─── Extrakce HH:MM z textu ─────────────────────────────────────────────────────
 const extractTimes = (text: string): string[] => {
@@ -76,14 +90,14 @@ const getMock = (): MksScraperResult => {
     cinema: [
       {
         title: 'Kino Sokolský dům Vyškov',
-        location: 'Kino Sokolský dům Vyškov',
+        location: 'Kino Sokolský dům Vyškov, Purkyňova 405/2, Vyškov',
         source_url: CINEMA_URL,
         date: satStr,
         cinema_listings: [
-          { film_title: 'Mandalorian a Grogu', showtimes: '17:00, 19:30', url: CINEMA_URL },
-          { film_title: 'Mrzutá rybka', showtimes: '15:30', url: CINEMA_URL },
-          { film_title: 'Pět švestek', showtimes: '16:00', url: CINEMA_URL },
-          { film_title: 'The Amazing Digital Circus: The Last Act', showtimes: '14:00', url: CINEMA_URL },
+          { film: 'Mandalorian a Grogu', time: '17:00, 19:30', film_title: 'Mandalorian a Grogu', showtimes: '17:00, 19:30', url: CINEMA_URL },
+          { film: 'Mrzutá rybka', time: '15:30', film_title: 'Mrzutá rybka', showtimes: '15:30', url: CINEMA_URL },
+          { film: 'Pět švestek', time: '16:00', film_title: 'Pět švestek', showtimes: '16:00', url: CINEMA_URL },
+          { film: 'The Amazing Digital Circus: The Last Act', time: '14:00', film_title: 'The Amazing Digital Circus: The Last Act', showtimes: '14:00', url: CINEMA_URL },
         ]
       }
     ],
@@ -106,7 +120,7 @@ const getMock = (): MksScraperResult => {
 export async function fetchMksVyskovProgram(): Promise<MksScraperResult> {
   const EMPTY_CINEMA: CineStarEvent = {
     title: 'Kino Sokolský dům Vyškov',
-    location: 'Kino Sokolský dům Vyškov',
+    location: 'Kino Sokolský dům Vyškov, Purkyňova 405/2, Vyškov',
     source_url: CINEMA_URL,
     date: TODAY,
     cinema_listings: []
@@ -236,6 +250,7 @@ function parseHtml(html: string, loadedUrl: string): MksScraperResult {
     $('.mui-dztafr').each((_, el) => {
       const heading = $(el);
       const title = cleanTitle(heading.text());
+      if (!title || title.length < 2) return;
       const card = heading.closest('.flex.flex-col.justify-between.gap-2');
       if (card.length === 0) return;
       
@@ -265,6 +280,8 @@ function parseHtml(html: string, loadedUrl: string): MksScraperResult {
         cinemaListingsByDate.set(dateStr, []);
       }
       cinemaListingsByDate.get(dateStr)!.push({
+        film: title,
+        time: showtime,
         film_title: title,
         showtimes: showtime,
         url: ticketUrl
@@ -272,10 +289,10 @@ function parseHtml(html: string, loadedUrl: string): MksScraperResult {
     });
     
     cinemaListingsByDate.forEach((listings, date) => {
-      listings.sort((a, b) => a.showtimes.localeCompare(b.showtimes));
+      listings.sort((a, b) => (a.time || a.showtimes || '').localeCompare(b.time || b.showtimes || ''));
       cinemas.push({
         title: 'Kino Sokolský dům Vyškov',
-        location: 'Kino Sokolský dům Vyškov',
+        location: 'Kino Sokolský dům Vyškov, Purkyňova 405/2, Vyškov',
         source_url: 'https://www.mksvyskov.cz/filmy',
         date,
         cinema_listings: listings
@@ -308,6 +325,8 @@ function parseHtml(html: string, loadedUrl: string): MksScraperResult {
       if (!rawTitle || rawTitle.length < 3) return;
 
       const title      = cleanTitle(rawTitle);
+      if (!title || title.length < 2) return;
+
       const parentText = parent.text();
       const times      = extractTimes(parentText);
 
@@ -316,7 +335,7 @@ function parseHtml(html: string, loadedUrl: string): MksScraperResult {
         || /\b(3D|2D)\b/.test(parentText);
 
       if (isKino) {
-        if (times.length === 0) times.push('Časy na webu');
+        if (times.length === 0) return; // skip if no concrete times are found
         if (!cinemaMap.has(title)) cinemaMap.set(title, new Set());
         times.forEach(t => cinemaMap.get(title)!.add(t));
       } else {
@@ -345,13 +364,14 @@ function parseHtml(html: string, loadedUrl: string): MksScraperResult {
         const containerText = container.text();
         const times  = extractTimes(containerText);
         const title  = cleanTitle(rawTitle);
+        if (!title || title.length < 2) return;
 
         const isKino = isKinoUrl(href)
           || /\b(kino|film|promítání|režie|dabing|titulky|minuty|min\.)\b/i.test(containerText)
           || /\b(3D|2D)\b/.test(containerText);
 
         if (isKino) {
-          if (times.length === 0) times.push('Časy na webu');
+          if (times.length === 0) return; // skip if no concrete times
           if (!cinemaMap.has(title)) cinemaMap.set(title, new Set());
           times.forEach(t => cinemaMap.get(title)!.add(t));
         } else {
@@ -364,13 +384,19 @@ function parseHtml(html: string, loadedUrl: string): MksScraperResult {
       const cinemaListings: CineStarListing[] = [];
       cinemaMap.forEach((timesSet, title) => {
         const sorted = Array.from(timesSet).sort();
-        cinemaListings.push({ film_title: title, showtimes: sorted.join(', '), url: 'https://www.mksvyskov.cz/filmy' });
+        cinemaListings.push({
+          film: title,
+          time: sorted.join(', '),
+          film_title: title,
+          showtimes: sorted.join(', '),
+          url: 'https://www.mksvyskov.cz/filmy'
+        });
       });
-      cinemaListings.sort((a, b) => b.showtimes.split(',').length - a.showtimes.split(',').length);
+      cinemaListings.sort((a, b) => (b.time || b.showtimes || '').split(',').length - (a.time || a.showtimes || '').split(',').length);
       
       cinemas.push({
         title: 'Kino Sokolský dům Vyškov',
-        location: 'Kino Sokolský dům Vyškov',
+        location: 'Kino Sokolský dům Vyškov, Purkyňova 405/2, Vyškov',
         source_url: 'https://www.mksvyskov.cz/filmy',
         date: TODAY,
         cinema_listings: cinemaListings

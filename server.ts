@@ -11,7 +11,6 @@ import { scrapeCineStarOlomouc } from "./src/lib/cineStarOlomouc";
 import { scrapeKudyZnudy } from "./src/services/scrapers/kudyZnudy";
 import { scrapeJizniMorava } from "./src/services/scrapers/jizniMorava";
 import { generateBikeRoute, BikeRouteDifficulty } from "./src/lib/bikeRoutes";
-import { getShoppingDestinations } from "./src/services/scrapers/shopping";
 
 dotenv.config();
 console.log('[API DEBUG] Prvních 10 znaků Gemini klíče:', process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 10) : 'CHYBÍ KLÍČ!');
@@ -328,7 +327,7 @@ async function startServer() {
           if (user.targetGroup === 'pro_dceru') {
             daughterSection += `👧 ${name} (dcera${ageStr}):
   NEMÁ RÁDA (nemá smysl jí je nutit): prohlídky hradů, zámků a obecně akce týkající se prohlídek historických památek.
-  MÁ RÁDA: hudební koncerty (jak festivaly v přírodě, tak klasické koncerty v hale), návštěvy koupališť a aquaparků, nakupování (oblečení, kosmetika).
+  MÁ RÁDA: hudební koncerty (jak festivaly v přírodě, tak klasické koncerty v hale), návštěvy koupališť a aquaparků.
 `;
           } else if (user.targetGroup === 'pro_syna') {
             sonSection += `👦 ${name} (syn${ageStr}):
@@ -351,7 +350,7 @@ async function startServer() {
     if (!daughterSection) {
       daughterSection = `👧 Emma (dcera, 14 let):
   NEMÁ RÁDA (nemá smysl jí je nutit): prohlídky hradů, zámků a obecně akce týkající se prohlídek historických památek.
-  MÁ RÁDA: hudební koncerty (jak festivaly v přírodě, tak klasické koncerty v hale), návštěvy koupališť a aquaparků, nakupování (oblečení, kosmetika).
+  MÁ RÁDA: hudební koncerty (jak festivaly v přírodě, tak klasické koncerty v hale), návštěvy koupališť a aquaparků.
 `;
     }
     if (!sonSection) {
@@ -363,9 +362,9 @@ async function startServer() {
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-    emit('Spouštím scrapery (Kina, Kudy z nudy, Jižní Morava, Nákupy)...');
+    emit('Spouštím scrapery (Kina, Kudy z nudy, Jižní Morava)...');
     
-    const [mksResult, cineStarData, kudyData, jizniMoravaData, shoppingData] = await Promise.all([
+    const [mksResult, cineStarData, kudyData, jizniMoravaData] = await Promise.all([
       (async () => { 
         console.log('[MKS Vyškov] Spouštím scraper...'); 
         return fetchMksVyskovProgram().catch(e => { console.error('[MKS Vyškov] Chyba:', e); return { cinema: [], events: [] }; });
@@ -381,10 +380,6 @@ async function startServer() {
       (async () => { 
         console.log('[Jižní Morava] Spouštím scraper...'); 
         return scrapeJizniMorava().catch(e => { console.error('[Jižní Morava] Chyba:', e); return []; });
-      })(),
-      (async () => {
-        console.log('[Nákupy] Načítám data...');
-        return getShoppingDestinations();
       })()
     ]);
 
@@ -397,8 +392,7 @@ async function startServer() {
     const cineStarCount = (cineStarData as any[]).length;
     const kudyCount = (kudyData as any[]).length;
     const jizniMoravaCount = (jizniMoravaData as any[]).length;
-    const shoppingCount = shoppingData.length;
-    const totalScraped = mksCinemaCount + mksEventsCount + cineStarCount + kudyCount + jizniMoravaCount + shoppingCount;
+    const totalScraped = mksCinemaCount + mksEventsCount + cineStarCount + kudyCount + jizniMoravaCount;
 
     console.log(`[AI Agent] Scraper diagnostika:
       MKS Kino: ${mksCinemaCount} filmů
@@ -406,28 +400,44 @@ async function startServer() {
       CineStar:  ${cineStarCount} položek
       KudyZNudy: ${kudyCount} položek
       JižníMorava: ${jizniMoravaCount} položek
-      Nákupy: ${shoppingCount} položek
       CELKEM: ${totalScraped} položek pro AI`);
 
-    addAdminLog('SCRAPER', `Scraped: MKS kino=${mksCinemaCount}, MKS akce=${mksEventsCount}, CineStar=${cineStarCount}, KudyZNudy=${kudyCount}, JižníMorava=${jizniMoravaCount}, Nákupy=${shoppingCount}`, { totalScraped });
+    addAdminLog('SCRAPER', `Scraped: MKS kino=${mksCinemaCount}, MKS akce=${mksEventsCount}, CineStar=${cineStarCount}, KudyZNudy=${kudyCount}, JižníMorava=${jizniMoravaCount}`, { totalScraped });
 
-    // ── Sestavení datových bloků pro AI prompt ─────────────────────────────
-    const cinemaDataString = mksCinemaCount > 0 ? JSON.stringify(mksCinema, null, 2) : 'ŽÁDNÁ DATA (scraper selhal nebo nenašel nic)';
-    const mksEventsString  = mksEventsCount > 0  ? JSON.stringify(mksEvents, null, 2) : 'ŽÁDNÁ DATA';
-    const cineStarString   = cineStarCount > 0   ? JSON.stringify(cineStarData, null, 2) : 'ŽÁDNÁ DATA';
-    const kudyString       = kudyCount > 0        ? JSON.stringify(kudyData, null, 2) : 'ŽÁDNÁ DATA';
-    const jizniMoravaString = jizniMoravaCount > 0 ? JSON.stringify(jizniMoravaData, null, 2) : 'ŽÁDNÁ DATA';
-    const shoppingString   = JSON.stringify(shoppingData, null, 2);
-
+    // ── Výpočet dat víkendu (sdíleno pro pre-processing i prompt) ─────────────
     const now = new Date();
+    const dow = now.getDay(); // 0=Ne, 1=Po, ..., 6=So
+    const nextSat = new Date(now); nextSat.setDate(now.getDate() + (dow === 6 ? 0 : 6 - dow));
+    const nextSun = new Date(nextSat); nextSun.setDate(nextSat.getDate() + 1);
+    const nextSatISO = nextSat.toISOString().split('T')[0];
     const todayStr = now.toLocaleDateString('cs-CZ', { day: '2-digit', month: 'long', year: 'numeric', weekday: 'long' });
-    const dayOfWeek = now.getDay();
-    const daysUntilSat = dayOfWeek === 6 ? 0 : (6 - dayOfWeek);
-    const daysUntilSun = dayOfWeek === 0 ? 0 : (7 - dayOfWeek);
-    const nextSat = new Date(now); nextSat.setDate(now.getDate() + daysUntilSat);
-    const nextSun = new Date(now); nextSun.setDate(now.getDate() + daysUntilSun);
     const fmtDate = (d: Date) => d.toLocaleDateString('cs-CZ', { day: '2-digit', month: 'long', year: 'numeric' });
     const weekendStr = `${fmtDate(nextSat)} (sobota) – ${fmtDate(nextSun)} (neděle)`;
+
+    // ── Solution C: Pre-processing dat před promptem ───────────────────────────
+    const enrichItems = (items: any[], sourceName: string) =>
+      items.map(item => ({
+        ...item,
+        // Prázdné datum → nejbližší sobota (AI nemusí hádat)
+        date: item.date && item.date.trim() ? item.date.trim() : nextSatISO,
+        // Prázdný nebo generický popis → smysluplnější verze
+        description: (!item.description || item.description.trim().length < 10 ||
+                      item.description === `Akce v Jihomoravském kraji – ${item.title}`)
+          ? `Tip z ${sourceName}: ${item.title}. Více informací na webu akce.`
+          : item.description.trim(),
+      }));
+
+    const enrichedKudy = enrichItems(Array.isArray(kudyData) ? kudyData as any[] : [], 'Kudy z nudy');
+    const enrichedJizni = enrichItems(Array.isArray(jizniMoravaData) ? jizniMoravaData as any[] : [], 'Jižní Morava');
+
+    // ── Sestavení datových bloků pro AI prompt ─────────────────────────────────
+    const cinemaDataString  = mksCinemaCount > 0 ? JSON.stringify(mksCinema, null, 2) : 'ŽÁDNÁ DATA (scraper selhal nebo nenašel nic)';
+    const mksEventsString   = mksEventsCount > 0  ? JSON.stringify(mksEvents, null, 2) : 'ŽÁDNÁ DATA';
+    const cineStarString    = cineStarCount > 0   ? JSON.stringify(cineStarData, null, 2) : 'ŽÁDNÁ DATA';
+    const kudyString        = enrichedKudy.length > 0 ? JSON.stringify(enrichedKudy, null, 2) : 'ŽÁDNÁ DATA';
+    const jizniMoravaString = enrichedJizni.length > 0 ? JSON.stringify(enrichedJizni, null, 2) : 'ŽÁDNÁ DATA';
+
+
 
     const prompt = `Jsi organizátor rodinných aktivit Víkendovník. 📅 DNEŠNÍ DATUM: ${todayStr}, 🗓️ VÍKEND: ${weekendStr}.
 Lokalita rodiny: ${userLocation || 'Vyškov, Jihomoravský kraj'}.
@@ -438,7 +448,6 @@ Lokalita rodiny: ${userLocation || 'Vyškov, Jihomoravský kraj'}.
 [CineStar Olomouc]: ${cineStarString}
 [Kudy z nudy – JM kraj]: ${kudyString}
 [Jižní Morava – Akce]: ${jizniMoravaString}
-[Nákupní centra a nákupy (oblečení, kosmetika)]: ${shoppingString}
 ━━━ KONEC DAT ━━━
 
 Celkem scraped položek pro tento výběr: ${totalScraped}
@@ -452,22 +461,22 @@ ${sonSection}
 
 ━━━ PRAVIDLA PRO POLE target ━━━
 Každý tip musí mít hodnotu target:
-- "pro_dceru"   → tip je ideální hlavně pro dceru (koncert, aquapark, nákupy)
+- "pro_dceru"   → tip je ideální hlavně pro dceru (koncert, aquapark)
 - "pro_syna"    → tip je ideální hlavně pro syna (hokej, armáda, fitko, tech)
-- "pro_vsechny" → tip je vhodný pro celou rodinu (kino, ZOO, cyklovýlet, festival)
+- "pro_vsechny" → tip je vhodný pro celou rodinu (kino, ZOO, festival, výlet)
 Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny".
 
 ━━━ ABSOLUTNÍ PRAVIDLA ━━━
 
-1. ⛔ NIKDY nevymýšlej místa, která nejsou v datech výše. Pokud data neobsahují konkrétní halu, hernu, minigolf nebo atrakci v okolí Vyškova, NENAPIŠ JI.
+1. ⛔ Data scraperů výše jsou tvůj primární zdroj. Pro aktivity s konkrétním datem, časem a cenou čerpej VÝHRADNĚ z těchto dat — nevymýšlej detaily pro akce které v datech nejsou.
 
-2. ⛔ NIKDY nevymýšlej „Herna PlayStation", „Minigolf Vyškov", „Aquapark Vyškov" ani jiné konkrétní zařízení, pokud není v datech výše.
+2. ⛔ Navrhuj POUZE místa která jsou buď (a) přímo ve scraped datech výše, nebo (b) reálně existující místa o jejichž existenci jsi zcela jistý ze svých znalostí (Aquapark Vyškov, ZOO Lešná apod. jsou reálná místa). NIKDY nevymýšlej neexistující zařízení — typické příklady halucinací: „Herna PlayStation Vyškov", „Minigolf park Vyškov centrum", fiktivní sportovní haly. Pokud si nejsi jistý existencí konkrétního místa, NENAPIŠ HO.
 
 3. ✅ Pokud scraper vrátil "ŽÁDNÁ DATA" — zcela ho ignoruj. Přejdi na scraper který data má. NEČERPEJ z prázdného scraperu vůbec nic.
 
-4. ⛔ NIKDY nedoplňuj chybějící tipy vymyšlenými volnočasovými aktivitami (žádné obecné „procházka v přírodě", „domácí vaření" apod. jako výplň). Pokud máš méně než 10 reálných tipů z dat — vrať jen tolik tipů, kolik reálných dat máš. Méně tipů je lepší než vymyšlené tipy.
+4. ⛔ Generuj VŽDY 6–8 tipů pokud je celkový počet scraped položek > 5. Prázdné pole [] je přípustné POUZE tehdy, když všechny scrapery vrátily "ŽÁDNÁ DATA". Nikdy negeneruj méně než 4 tipy pokud existují reálná data.
 
-5. ✅ Priorita zdrojů: CineStar Olomouc, ZOO a nákupní centra mají přednost pro dceru. MKS Vyškov Kino zařaď jako tip pro celou rodinu.
+5. ✅ Priorita zdrojů: CineStar Olomouc a ZOO mají přednost pro dceru. MKS Vyškov Kino zařaď jako tip pro celou rodinu.
 
 6. ✅ Formát výstupu: JSON pole objektů. Každý objekt musí mít PŘESNĚ tato pole:
    title, description, target, location, is_vyskov, date, time, time_type, opening_hours, price, duration, url, indoor, age_recommendation, ticket_url, cinema_listings
@@ -476,37 +485,113 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
 
 8. ⛔ DATUM: Pole "date" NESMÍ být v minulosti. Dnešní datum je ${now.toISOString().split('T')[0]}. Pokud ze scraperu nemáš přesné datum, použij datum nejbližšího víkendu: ${nextSat.toISOString().split('T')[0]}.
 
-9. ⛔ URL: Pole "url" musí být PŘESNÁ URL konkrétní akce z dat výše. NIKDY nepoužívej holou doménu (https://www.kudyznudy.cz/ ani https://www.mksvyskov.cz/ bez cesty). Pokud přesnou URL nemáš → "".
+9. ⛔ URL PRAVIDLA:
+   a) Pro akce se scraped URL (source_url, url z dat) → VŽDY použij tuto URL přímo.
+   b) Pro obecně známá místa (ZOO, jes kyně, hrady, aquaparky, muzea, galerie) → VŽDY
+      zkus uvést jejich oficiální web ze svých znalostí. Příklady:
+      - ZOO Lešná Zlín → https://www.zoozlin.eu
+      - Punkevní jeskyně / Macocha → https://www.caves.cz
+      - Aquapark Vyškov → https://www.aquaparkyskov.cz
+      - Hrad Veveří → https://www.hradVeveri.cz  (nebo podobná logická URL)
+      Pokud si oficiálním webem nejsi absolutně jistý → nech url: "" (NIKDY
+      nepiš URL o které víš že je chybná).
+   c) NIKDY nepoužívej holou doménu bez cesty pro scraper-akce (např.
+      https://www.kudyznudy.cz/ bez slug je zakázáno).
 
-10. ⛔ U kina CineStar Olomouc se nesmí generovat obecná karta pro celkovou návštěvu kina (např. "Návštěva kina CineStar") a zároveň samostatné karty pro konkrétní filmy (představení) v tomto kině. Vygeneruj jednu celkovou kartu kina se všemi promítanými filmy v cinema_listings (ideálně jako tip pro celou rodinu), ale NIKDY negeneruj samostané karty.`;
+10. ⛔ PRO KINA PLATÍ PŘÍSNÝ ZÁKAZ DUPLICIT A SAMOSTATNÝCH KARET PRO FILMY:
+    - Pro kino CineStar Olomouc vygeneruj V CELÉM VÍKENDOVÉM PLÁNU nejvýše 1 jedinou celkovou kartu (tip) pro celou rodinu (target='pro_vsechny').
+    - Pro Kino Sokolský dům Vyškov vygeneruj V CELÉM VÍKENDOVÉM PLÁNU nejvýše 1 jedinou celkovou kartu (tip) pro celou rodinu (target='pro_vsechny').
+    - ⛔ NIKDY negeneruj žádné samostatné karty pro konkrétní filmy z těchto kin (např. samostatná karta pro film 'Mandalorian a Grogu' nebo 'Lumpík Špuntík' je přísně zakázána!). Všechny filmy z programu daného kina musí být uvedeny VÝHRADNĚ v poli 'cinema_listings' dané jediné celkové karty kina.
+    - Každá položka v poli 'cinema_listings' musí mít přesně tuto strukturu objektu: {"film": "Název filmu", "time": "Časy promítání (např. 17:00, 19:30)", "url": "URL odkaz na detail/nákup vstupenek z dat"}.
+    - ⛔ NIKDY pro stejné kino negeneruj více různých karet (např. jednu kartu pro sobotní promítání a druhou pro nedělní promítání, nebo duplicitní karty). Vždy vytvoř maximálně 1 kartu pro CineStar Olomouc a maximálně 1 kartu pro Kino Sokolský dům Vyškov.
+    - ⛔ ADRESY MÍST (location):
+      * Pro kartu kina CineStar Olomouc musí být pole 'location' nastaveno PŘESNĚ a doslova na: "CineStar Olomouc, OC Olomouc City, Pražská 255/41, Olomouc"
+      * Pro kartu kina Kino Sokolský dům Vyškov musí být pole 'location' nastaveno PŘESNĚ a doslova na: "Kino Sokolský dům Vyškov, Purkyňova 405/2, Vyškov"
+      * NIKDY nezkracuj adresy ani nepoužívej obecné názvy v poli 'location'.
+    - ⛔ NIKDY nemíchej ani nekopíruj filmy, časy nebo odkazy z dat jednoho kina do karty druhého kina. Filmy pro CineStar Olomouc musí pocházet výhradně z bloku [CineStar Olomouc] a filmy pro Kino Sokolský dům Vyškov z bloku [MKS Vyškov – Kino].
+    - ⛔ Pokud u filmu chybí konkrétní časy promítání (např. 17:00), zahrň ho do cinema_listings s time=\"viz web kina\". NEVYNECHÁVEJ filmy pouze kvůli chybějícímu času — program kin se mění a časy jsou na webu.
 
-    // gemini-2.5-pro: lepší reasoning, přesnější dodržování složitých instrukcí
-    // Fallback na gemini-2.5-flash pokud Pro selže (quota/dostupnost)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-    let suggestions = [];
+11. ✅ POVINNÉ POUŽITÍ BLOKU [Kudy z nudy – JM kraj]:
+    - Z tohoto bloku VŽDY vygeneruj alespoň 2 tipy (výlety, přírodní atrakce, festivaly, muzea v JM kraji).
+    - Datum je již předvyplněno (pre-processed). Pokud datum vypadá jako ISO date (YYYY-MM-DD), použij ho přímo.
+    - Description je připravena — uprav ji do lákavé formy pro rodinu.
+    - target nastaň dle povahy aktivity: výlet příroda → 'pro_vsechny', kulturní akce → 'pro_dceru', sport → 'pro_syna'.
+    - url nastav z pole source_url položky.
+    - is_vyskov: false (jsou mimo Vyškov).
+    - ⛔ NIKDY tento blok zcela neignoruj — i při nízké kvalitě dat generuj alespoň 1-2 tipy z dostupných položek.
+
+12. ✅ POVINNÉ POUŽITÍ BLOKU [Jižní Morava – Akce]:
+    - Z tohoto bloku VŽDY vygeneruj alespoň 1 tip.
+    - Datum je již předvyplněno. Použij ho přímo.
+    - url nastav z pole source_url položky.
+    - is_vyskov: false.
+    - ⛔ NIKDY tento blok zcela neignoruj.
+
+13. ⛔ ZÁKAZ OBECNÝCH TIPŮ — KAŽDÝ TIP MUSÍ BÝT KONKRÉTNÍ MÍSTO NEBO AKCE:
+    - Zakazuji obecné regiony nebo oblasti jako cíl výletu.
+    - ❌ ZAKÁZÁNO: "Výlet do Moravského krasu", "Objevte Jihomoravský kraj", "Výlet do přírody"
+    - ✅ POVOLENO: "Punkevní jeskyně – plavba na lodičkách", "Propast Macocha – výhled z mostu",
+      "Hrad Buchlov – prohlídka", "Muzeum Brněnského podzemí"
+    - Pokud scraped data jsou příliš obecná (region, kraj) → vyber z dané oblasti
+      KONKRÉTNÍ atrakci ze svých znalostí (jen pokud existuje a jsi si jist).
+    - Každý tip MUSÍ mít v poli 'location' konkrétní adresu nebo alespoň konkrétní
+      název místa (ne kraj ani region jako jediný identifikátor).
+
+14. ⛔ ABSOLUTNÍ ZÁKAZ CYKLOTRAS Z AI:
+    - NIKDY negeneruj tipy jejichž hlavní náplní je cyklistika, cyklovýlet nebo cyklotrasa.
+    - Aplikace Víkendovník má vlastní generátor cyklotras — AI tipy pro cyklo jsou zbytečné
+      a matou uživatele.
+    - Klíčová slova k ignorování: cyklotrasa, cyklovýlet, cyklistika, kolo, bike, bikování.
+    - Pokud scraper vrátí cykloakci → PŘESKOČ ji a vyber jinou aktivitu ze stejné oblasti.`;
+
+    // Primární model: gemini-2.5-flash (stabilní, funguje, dostatečná kvóta)
+    // Fallback: gemini-2.0-flash (separátní kvóta – odlišná generace modelu)
+    // Poznámka: gemini-2.5-pro byl přesunut z primárního kvůli opakovaným 429 chybám.
+    // responseMimeType: 'application/json' = model vrátí čistý JSON bez markdownu
+    const JSON_GENERATION_CONFIG = { responseMimeType: 'application/json' as const };
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', generationConfig: JSON_GENERATION_CONFIG });
+    let suggestions: any[] = [];
+    let usedModel = 'gemini-2.5-flash';
     try {
       emit('AI skládá víkendový plán...');
-      const fullPrompt = prompt + "\n\nDŮLEŽITÉ: Vrať POUZE validní JSON formát. Nepřidávej žádný vysvětlující text a NEPOUŽÍVEJ markdownové značky jako ```json. Výstup musí začínat znakem [ nebo { a končit ] nebo }.";
-      const result = await model.generateContent(fullPrompt);
+      const result = await model.generateContent(prompt);
+      const finishReason = result.response.candidates?.[0]?.finishReason;
+      if (finishReason && finishReason !== 'STOP') {
+        throw new Error(`Neočekávaný finishReason od primárního modelu: ${finishReason}`);
+      }
       const responseText = result.response.text();
       suggestions = JSON.parse(responseText.replace(/```json|```/g, '').trim());
+      // Prázdné pole [] = model odmítl generovat → považujeme za chybu a spustíme fallback
+      if (!Array.isArray(suggestions) || suggestions.length === 0) {
+        console.warn(`[AI] ${usedModel} vrátil prázdné pole. Raw: ${responseText.substring(0, 300)}`);
+        throw new Error(`${usedModel} vrátil prázdné pole tipů (raw: ${responseText.substring(0, 100)})`);
+      }
+      console.log(`[AI] ${usedModel} úspěšně vygeneroval ${suggestions.length} tipů.`);
     } catch (err: any) {
-      // Fallback na Flash pokud Pro selže (quota, rate limit, dostupnost)
-      const isQuotaError = err?.status === 429 || err?.status === 503 || String(err).includes('quota') || String(err).includes('RESOURCE_EXHAUSTED');
-      if (isQuotaError) {
-        console.warn('[AI] gemini-2.5-pro selhalo, zkouším fallback na gemini-2.5-flash...');
-        emit('Přepínám na záložní model...');
-        try {
-          const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-          const fallbackPrompt = prompt + "\n\nDŮLEŽITÉ: Vrať POUZE validní JSON formát. Nepřidávej žádný vysvětlující text a NEPOUŽÍVEJ markdownové značky jako ```json. Výstup musí začínat znakem [ nebo { a končit ] nebo }.";
-          const fallbackResult = await fallbackModel.generateContent(fallbackPrompt);
-          suggestions = JSON.parse(fallbackResult.response.text().replace(/```json|```/g, '').trim());
-        } catch (fallbackErr) {
-          console.error('[AI] Fallback model také selhal:', fallbackErr);
-          suggestions = [];
+      // Fallback na gemini-2.0-flash – má separátní kvótu a jiné rate limity
+      const errInfo = `status=${err?.status}, msg=${String(err).substring(0, 200)}`;
+      console.warn(`[AI] ${usedModel} selhalo (${errInfo}), zkouším fallback na gemini-2.0-flash...`);
+      emit('Přepínám na záložní model...');
+      addAdminLog('ERROR', `[AI] ${usedModel} selhalo, spouštím fallback.`, { error: errInfo });
+      try {
+        usedModel = 'gemini-2.0-flash';
+        const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash', generationConfig: JSON_GENERATION_CONFIG });
+        const fallbackResult = await fallbackModel.generateContent(prompt);
+        const fallbackFinishReason = fallbackResult.response.candidates?.[0]?.finishReason;
+        if (fallbackFinishReason && fallbackFinishReason !== 'STOP') {
+          throw new Error(`Neočekávaný finishReason od fallbacku: ${fallbackFinishReason}`);
         }
-      } else {
-        console.error('AI Generation Error:', err);
+        const fallbackText = fallbackResult.response.text();
+        suggestions = JSON.parse(fallbackText.replace(/```json|```/g, '').trim());
+        if (!Array.isArray(suggestions) || suggestions.length === 0) {
+          console.warn(`[AI] Fallback ${usedModel} vrátil prázdné pole. Raw: ${fallbackText.substring(0, 300)}`);
+          throw new Error(`Fallback ${usedModel} vrátil prázdné pole tipů`);
+        }
+        console.log(`[AI] Fallback ${usedModel} úspěšně vygeneroval ${suggestions.length} tipů.`);
+      } catch (fallbackErr: any) {
+        const fallbackErrInfo = `status=${fallbackErr?.status}, msg=${String(fallbackErr).substring(0, 300)}`;
+        console.error(`[AI] Fallback ${usedModel} také selhal: ${fallbackErrInfo}`);
+        addAdminLog('ERROR', `[AI] Fallback ${usedModel} selhal.`, { error: fallbackErrInfo });
         suggestions = [];
       }
     }
@@ -554,13 +639,29 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
 
     if (admin.apps.length > 0 && suggestions.length > 0) {
       const db = admin.firestore();
-      const oldInspirations = await db.collection('inspirations').where('status', 'not-in', ['draft', 'proposed']).get();
+      // Mažeme VŠECHNY inspirace kromě uživatelských draftů a čekajících na schválení.
+      // Tím odstraníme jak staré tipy (bez pole source, z doby před opravou),
+      // tak nové AI tipy (source='ai') — bez ohledu na jejich stáří.
+      // Bezpečné: uživatelské cyklotrasy mají status 'draft' nebo 'proposed' a zůstávají.
+      const allInspirations = await db.collection('inspirations').get();
       const batch = db.batch();
-      oldInspirations.docs.forEach(doc => batch.delete(doc.ref));
+      allInspirations.docs.forEach(doc => {
+        const data = doc.data();
+        // Zachovej pouze uživatelské drafty a čekající na schválení
+        if (data.status !== 'draft' && data.status !== 'proposed') {
+          batch.delete(doc.ref);
+        }
+      });
 
       suggestions.forEach((s: any) => {
         const docRef = db.collection('inspirations').doc();
-        batch.set(docRef, { ...s, status: 'approved', createdAt: admin.firestore.FieldValue.serverTimestamp() });
+        batch.set(docRef, {
+          ...s,
+          status: 'approved',
+          source: 'ai',                                            // ← označení AI původu
+          generatedAt: admin.firestore.FieldValue.serverTimestamp(), // ← pro 'Nové' badge v UI
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
       });
       await batch.commit();
       addAdminLog('SUCCESS', `Vygenerováno ${suggestions.length} tipů. Scraped celkem: ${totalScraped} položek.`, { totalScraped });
@@ -590,7 +691,12 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
 
     try {
       const suggestions = await generateInspirations(location as string, (msg) => send('status', { message: msg }));
-      send('done', { success: true, suggestions });
+      if (suggestions && suggestions.length > 0) {
+        send('done', { success: true, suggestions });
+      } else {
+        console.error('[STREAM] Generování dokončeno, ale suggestions je prázdné. Viz admin_logs.');
+        send('error', { error: 'AI agent nedokázal vygenerovat žádné tipy. Zkus znovu za chvíli (kvóta modelu) nebo zkontroluj admin logy.' });
+      }
     } catch (error: any) {
       send('error', { error: error.message });
     } finally { res.end(); }

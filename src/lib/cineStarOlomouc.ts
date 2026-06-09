@@ -10,7 +10,7 @@ import * as cheerio from 'cheerio';
 import type { CineStarEvent, CineStarListing } from '../types';
 
 const SOURCE_URL = 'https://cinestar.cz/cz/olomouc/program';
-const LOCATION   = 'CineStar Olomouc';
+const LOCATION   = 'CineStar Olomouc, OC Olomouc City, Pražská 255/41, Olomouc';
 
 /**
  * Parsuje datum z textu tlačítka filtru (např. "So 30. 5.", "Po 1. 6.", "Dnes", "Zítra")
@@ -49,17 +49,30 @@ function parseButtonDate(text: string): string {
   return today.toISOString().split('T')[0];
 }
 
+const BLACKLIST_WORDS = [
+  'vyberte si', 'narozeniny', 'detail filmu', 'koupit', 'vstupenk', 'program', 'kontakt',
+  'o nás', 'zpět', 'menu', 'hledat', 'košík', 'zavřít', 'všechny', 'filtr', 'oslave',
+  'oslavy', 'dárková', 'dárkový', 'pronáj', 'reklam', 'školy', 'kariéra',
+  'novinky', 'ubytování', 'provoz', 'ceník', 'ztráty', 'vstupné', 'otevírací doba', 'vstupenky'
+];
+
 /**
  * Vyčistí název filmu
  */
 const cleanFilmTitle = (raw: string): string => {
-  return raw
+  const cleaned = raw
     .replace(/(\D)(\d+)\s*min\b/gi, '$1 ($2 min)')
     .replace(/\s*\(?\d{1,2}\+\)?/g, '')
     .replace(/\bP\u0159edprodej\b/gi, '')
     .replace(/\bPředprodej\b/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+
+  const lower = cleaned.toLowerCase();
+  if (BLACKLIST_WORDS.some(word => lower.includes(word))) {
+    return "";
+  }
+  return cleaned;
 };
 
 export async function scrapeCineStarOlomouc(): Promise<CineStarEvent[]> {
@@ -83,7 +96,7 @@ export async function scrapeCineStarOlomouc(): Promise<CineStarEvent[]> {
         source_url: SOURCE_URL,
         date: satStr,
         cinema_listings: [
-          { film_title: 'Program kina momentálně nedostupný (zobrazte web pro aktuální informace)', showtimes: 'Zkontrolujte web', url: SOURCE_URL }
+          { film: 'Program kina momentálně nedostupný (zobrazte web pro aktuální informace)', time: 'Zkontrolujte web', film_title: 'Program kina momentálně nedostupný (zobrazte web pro aktuální informace)', showtimes: 'Zkontrolujte web', url: SOURCE_URL }
         ]
       },
       {
@@ -92,7 +105,7 @@ export async function scrapeCineStarOlomouc(): Promise<CineStarEvent[]> {
         source_url: SOURCE_URL,
         date: sunStr,
         cinema_listings: [
-          { film_title: 'Program kina momentálně nedostupný (zobrazte web pro aktuální informace)', showtimes: 'Zkontrolujte web', url: SOURCE_URL }
+          { film: 'Program kina momentálně nedostupný (zobrazte web pro aktuální informace)', time: 'Zkontrolujte web', film_title: 'Program kina momentálně nedostupný (zobrazte web pro aktuální informace)', showtimes: 'Zkontrolujte web', url: SOURCE_URL }
         ]
       }
     ];
@@ -205,6 +218,8 @@ export async function scrapeCineStarOlomouc(): Promise<CineStarEvent[]> {
 
         if (showtimes.length > 0) {
           listings.push({
+            film: filmTitle,
+            time: showtimes.map(s => s.time).join(', '),
             film_title: filmTitle,
             showtimes: showtimes.map(s => s.time).join(', '),
             url: showtimes[0].url || SOURCE_URL
@@ -215,8 +230,8 @@ export async function scrapeCineStarOlomouc(): Promise<CineStarEvent[]> {
       if (listings.length > 0) {
         // Seřadit filmy podle počtu představení (sestupně)
         listings.sort((a, b) => {
-          const countA = a.showtimes.split(',').length;
-          const countB = b.showtimes.split(',').length;
+          const countA = (a.time || a.showtimes || '').split(',').length;
+          const countB = (b.time || b.showtimes || '').split(',').length;
           return countB - countA;
         });
 

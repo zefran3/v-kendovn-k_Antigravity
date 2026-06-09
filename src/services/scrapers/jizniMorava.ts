@@ -1,6 +1,5 @@
 import puppeteer from 'puppeteer';
-
-interface ScrapedEvent { title: string; date: string; description: string; source_url: string; }
+import type { ScrapedEvent } from '../../types';
 
 const BASE_URL = 'https://www.jizni-morava.cz';
 

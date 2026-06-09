@@ -97,6 +97,15 @@ const FAMILY_MEMBERS = ["Emma", "František", "Eva", "Táta", "Ostatní"];
 const AVATAR_OPTIONS = ["🐶", "🐱", "🦊", "🐻", "🐼", "🦁", "🐰", "🐯", "🐨", "🐸", "🐵", "🦄", "⚽", "🎮", "🎨", "🎵", "🚗", "🚀", "👑", "🌟"];
 
 
+// C) Výchozí oprávnění dle role – mimo komponentu (statická konstanta)
+const ROLE_DEFAULTS: Record<UserRole, UserPermissions> = {
+  admin:  { canSuggest: true,  canComment: true,  canApprove: true,  canManageUsers: true },
+  parent: { canSuggest: true,  canComment: true,  canApprove: true,  canManageUsers: false },
+  child:  { canSuggest: true,  canComment: true,  canApprove: false, canManageUsers: false },
+  viewer: { canSuggest: true,  canComment: false, canApprove: false, canManageUsers: false },
+};
+
+
 
 const getWeatherIcon = (wmoCode: number) => {
   let icon = '🌤️';
@@ -182,10 +191,55 @@ export default function App() {
 
    const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
+  const [isDemoMode, setIsDemoMode] = useState(false);
   
-  const currentUserRole = useMemo(() => userProfiles[user?.uid || '']?.role || 'viewer', [userProfiles, user]);
+   const currentUserId = useMemo(() => isDemoMode ? "demo_child_uid" : (user?.uid || ""), [isDemoMode, user]);
+  const realUserRole = useMemo(() => userProfiles[user?.uid || '']?.role || 'viewer', [userProfiles, user]);
+  const currentUserRole = useMemo(() => isDemoMode ? 'child' : realUserRole, [isDemoMode, realUserRole]);
   const canApproveActivities = useMemo(() => currentUserRole === 'admin' || currentUserRole === 'parent', [currentUserRole]);
-  const canManageSystem = useMemo(() => currentUserRole === 'admin', [currentUserRole]);
+  const canManageSystem = useMemo(() => !isDemoMode && realUserRole === 'admin', [realUserRole, isDemoMode]);
+
+  const extendedUserProfiles = useMemo(() => {
+    const profiles = { ...userProfiles };
+    if (isDemoMode) {
+      profiles["demo_child_uid"] = {
+        id: "demo_child_uid",
+        displayName: "Demo Dítě",
+        adminAlias: "Demo Dítě",
+        avatar: "🧪",
+        role: "child",
+        targetGroup: "pro_vsechny",
+        birthYear: 2018
+      };
+    }
+    return profiles;
+  }, [userProfiles, isDemoMode]);
+
+  const dynamicFamilyMembers = useMemo(() => {
+    const members = (Object.values(extendedUserProfiles) as UserProfile[])
+      .filter(p => !p.isBlocked)
+      .map(p => {
+        const name = p.adminAlias || p.displayName || p.email?.split('@')[0] || '';
+        if (name.toLowerCase() === 'zefran3') return 'Táta';
+        return name;
+      })
+      .filter(name => name !== '');
+      
+    const uniqueMembers = Array.from(new Set(members));
+    
+    // Zobrazíme Demo Dítě pouze v demo režimu
+    const filteredMembers = isDemoMode 
+      ? uniqueMembers 
+      : uniqueMembers.filter(m => m !== "Demo Dítě");
+
+    filteredMembers.sort((a, b) => {
+      if (a === 'Táta') return -1;
+      if (b === 'Táta') return 1;
+      return a.localeCompare(b, 'cs');
+    });
+    filteredMembers.push('Ostatní');
+    return filteredMembers;
+  }, [extendedUserProfiles, isDemoMode]);
 
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -294,138 +348,168 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => setError(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [error]);
+    if (!error && !success) return;
+    const timer = setTimeout(() => { setError(null); setSuccess(null); }, 5000);
+    return () => clearTimeout(timer);
+  }, [error, success]);
 
-  useEffect(() => {
-    if (success) {
-      const timer = setTimeout(() => setSuccess(null), 5000);
-      return () => clearTimeout(timer);
+  // B) Generická helper pro update users kolekce – nahrazuje 5 separátních funkcí
+  const updateUserDoc = async (userId: string, fields: Record<string, any>, errorMsg: string) => {
+    try {
+      await updateDoc(doc(db, "users", userId), { ...fields, updatedAt: serverTimestamp() });
+    } catch (err) {
+      console.error(err);
+      setError(errorMsg);
     }
-  }, [success]);
-
-  const ROLE_DEFAULTS: Record<UserRole, UserPermissions> = {
-    admin: { canSuggest: true, canComment: true, canApprove: true, canManageUsers: true },
-    parent: { canSuggest: true, canComment: true, canApprove: true, canManageUsers: false },
-    child: { canSuggest: true, canComment: true, canApprove: false, canManageUsers: false },
-    viewer: { canSuggest: true, canComment: false, canApprove: false, canManageUsers: false },
   };
 
-  const updateUserRole = async (userId: string, role: UserRole) => {
+  const updateUserRole = (userId: string, role: UserRole) => {
     if (userId === user?.uid && role !== 'admin') {
       setError("Nemůžete si odebrat vlastní administrátorská práva.");
       return;
     }
-    try {
-      await updateDoc(doc(db, "users", userId), { 
-        role, 
-        permissions: ROLE_DEFAULTS[role],
-        updatedAt: serverTimestamp() 
-      });
-    } catch (err) {
-      console.error(err);
-      setError("Nepodařilo se aktualizovat práva uživatele.");
-    }
+    return updateUserDoc(userId, { role, permissions: ROLE_DEFAULTS[role] }, "Nepodařilo se aktualizovat práva uživatele.");
   };
 
-  const updateUserAdminAlias = async (userId: string, adminAlias: string) => {
-    try {
-      await updateDoc(doc(db, "users", userId), { 
-        adminAlias, 
-        updatedAt: serverTimestamp() 
-      });
-    } catch (err) {
-      console.error(err);
-      setError("Nepodařilo se aktualizovat poznámku k uživateli.");
-    }
-  };
+  const updateUserAdminAlias = (userId: string, adminAlias: string) =>
+    updateUserDoc(userId, { adminAlias }, "Nepodařilo se aktualizovat poznámku k uživateli.");
 
-  const updateUserTargetGroup = async (userId: string, targetGroup: 'pro_dceru' | 'pro_syna' | 'pro_vsechny') => {
-    try {
-      await updateDoc(doc(db, "users", userId), {
-        targetGroup,
-        updatedAt: serverTimestamp()
-      });
-    } catch (err) {
-      console.error(err);
-      setError("Nepodařilo se aktualizovat skupinu tipů pro uživatele.");
-    }
-  };
+  const updateUserTargetGroup = (userId: string, targetGroup: 'pro_dceru' | 'pro_syna' | 'pro_vsechny') =>
+    updateUserDoc(userId, { targetGroup }, "Nepodařilo se aktualizovat skupinu tipů pro uživatele.");
 
-  const updateUserBirthYear = async (userId: string, birthYear: number) => {
+  const updateUserBirthYear = (userId: string, birthYear: number) => {
     if (isNaN(birthYear) || birthYear < 1990 || birthYear > new Date().getFullYear()) {
-      setError("Neplatný rok narození.");
-      return;
+      setError("Neplatný rok narození."); return;
     }
-    try {
-      await updateDoc(doc(db, "users", userId), {
-        birthYear,
-        updatedAt: serverTimestamp()
-      });
-    } catch (err) {
-      console.error(err);
-      setError("Nepodařilo se uložit rok narození.");
-    }
+    return updateUserDoc(userId, { birthYear }, "Nepodařilo se uložit rok narození.");
   };
 
-  const toggleUserBlocked = async (userId: string, currentBlocked: boolean) => {
-    if (userId === user?.uid) {
-      setError("Nemůžete zablokovat sami sebe.");
-      return;
-    }
-    try {
-      await updateDoc(doc(db, "users", userId), { 
-        isBlocked: !currentBlocked,
-        updatedAt: serverTimestamp() 
-      });
-    } catch (err) {
-      console.error(err);
-      setError("Nepodařilo se změnit stav blokování uživatele.");
-    }
+  const toggleUserBlocked = (userId: string, currentBlocked: boolean) => {
+    if (userId === user?.uid) { setError("Nemůžete zablokovat sami sebe."); return; }
+    return updateUserDoc(userId, { isBlocked: !currentBlocked }, "Nepodařilo se změnit stav blokování uživatele.");
   };
 
+  // F) Avatar načítaný dynamicky z uživatelských profilů
   const getAvatarForChild = (childName: string) => {
     if (!childName) return "👶";
     
-    // Check for admin custom avatars
-    if (childName === "Táta") {
-      const tataProfile = (Object.values(userProfiles) as UserProfile[]).find(p => p.email?.toLowerCase() === "zefran3@gmail.com");
-      if (tataProfile?.avatar) return tataProfile.avatar;
-      return "👨";
+    const removeAccents = (str: string): string => {
+      return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    };
+    
+    const cleanChild = removeAccents(childName.toLowerCase());
+    
+    // Fáze 1: Přesná shoda bez diakritiky
+    let profile = (Object.values(userProfiles) as UserProfile[]).find(p => {
+      const alias = removeAccents((p.adminAlias || "").toLowerCase());
+      const disp = removeAccents((p.displayName || "").toLowerCase());
+      const emailPref = removeAccents((p.email?.split('@')[0] || "").toLowerCase());
+      
+      return (
+        alias === cleanChild ||
+        disp === cleanChild ||
+        emailPref === cleanChild ||
+        (cleanChild === 'tata' && p.email?.toLowerCase() === 'zefran3@gmail.com')
+      );
+    });
+    
+    // Fáze 2: Volnější shoda (startsWith) pouze pokud přesná shoda neexistuje
+    if (!profile) {
+      profile = (Object.values(userProfiles) as UserProfile[]).find(p => {
+        const alias = removeAccents((p.adminAlias || "").toLowerCase());
+        const disp = removeAccents((p.displayName || "").toLowerCase());
+        const emailPref = removeAccents((p.email?.split('@')[0] || "").toLowerCase());
+        
+        return (
+          alias.startsWith(cleanChild) ||
+          disp.startsWith(cleanChild) ||
+          emailPref.startsWith(cleanChild)
+        );
+      });
     }
-    if (childName === "Eva") {
-      const evaProfile = (Object.values(userProfiles) as UserProfile[]).find(p => p.email?.toLowerCase() === "eva.kubartova@gmail.com");
-      if (evaProfile?.avatar) return evaProfile.avatar;
-      return "👩";
-    }
-
-    if (childName === "Emma") return "👧";
-    if (childName === "František") return "👦";
+    
+    if (profile?.avatar) return profile.avatar;
+    
+    // Výchozí emotikony pro známé členy rodiny
+    const defaultAvatars: Record<string, string> = { 
+      'tata': '👨', 
+      'eva': '👩', 
+      'emma': '👧', 
+      'frantisek': '👦' 
+    };
+    if (defaultAvatars[cleanChild]) return defaultAvatars[cleanChild];
     
     let hash = 0;
-    for (let i = 0; i < childName.length; i++) {
-      hash = childName.charCodeAt(i) + ((hash << 5) - hash);
-    }
+    for (let i = 0; i < childName.length; i++) hash = childName.charCodeAt(i) + ((hash << 5) - hash);
     return AVATAR_OPTIONS[Math.abs(hash) % AVATAR_OPTIONS.length];
   };
 
-  const getLoggedInFamilyName = (): string => {
-    const email = user?.email?.toLowerCase();
-    if (email === "zefran3@gmail.com") return "Táta";
-    if (email === "eva.kubartova@gmail.com") return "Eva";
-    if (email === "emasterba@gmail.com") return "Emma";
-    if (email === "frantisek.sterba2010@gmail.com") return "František";
-    return "";
+  const getDynamicNameForChild = (childName: string): string => {
+    if (!childName) return "Neznámý";
+    
+    const removeAccents = (str: string): string => {
+      return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    };
+    
+    const cleanChild = removeAccents(childName.toLowerCase());
+    
+    // Fáze 1: Přesná shoda bez diakritiky
+    let profile = (Object.values(userProfiles) as UserProfile[]).find(p => {
+      const alias = removeAccents((p.adminAlias || "").toLowerCase());
+      const disp = removeAccents((p.displayName || "").toLowerCase());
+      const emailPref = removeAccents((p.email?.split('@')[0] || "").toLowerCase());
+      
+      return (
+        alias === cleanChild ||
+        disp === cleanChild ||
+        emailPref === cleanChild ||
+        (cleanChild === 'tata' && p.email?.toLowerCase() === 'zefran3@gmail.com')
+      );
+    });
+    
+    // Fáze 2: Volnější shoda (startsWith) pouze pokud přesná shoda neexistuje
+    if (!profile) {
+      profile = (Object.values(userProfiles) as UserProfile[]).find(p => {
+        const alias = removeAccents((p.adminAlias || "").toLowerCase());
+        const disp = removeAccents((p.displayName || "").toLowerCase());
+        const emailPref = removeAccents((p.email?.split('@')[0] || "").toLowerCase());
+        
+        return (
+          alias.startsWith(cleanChild) ||
+          disp.startsWith(cleanChild) ||
+          emailPref.startsWith(cleanChild)
+        );
+      });
+    }
+    
+    if (profile) {
+      const name = profile.adminAlias || profile.displayName || profile.email?.split('@')[0] || '';
+      if (name.toLowerCase() === 'zefran3') return 'Táta';
+      return name;
+    }
+    
+    return childName;
+  };
+
+   const getLoggedInFamilyName = (): string => {
+    if (isDemoMode) return "Demo Dítě";
+    if (!user) return '';
+    const profile = userProfiles[user.uid];
+    if (profile) {
+      const name = profile.adminAlias || profile.displayName;
+      if (name) return name;
+    }
+    // Fallback na jméno z Firebase auth nebo část emailu před zavináčem
+    const rawName = user.displayName || user.email?.split('@')[0] || '';
+    if (rawName.toLowerCase() === 'zefran3') return 'Táta';
+    return rawName;
   };
   useEffect(() => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(async (position) => {
         try {
           const { latitude, longitude } = position.coords;
-          const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&timezone=auto`);
+          const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&timezone=auto&past_days=1`);
           const weatherData = await weatherRes.json();
           
           const geoRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=cs`);
@@ -441,24 +525,48 @@ export default function App() {
           });
 
           if (weatherData.daily) {
-             const weekendData = [];
-             for (let i = 0; i < weatherData.daily.time.length; i++) {
-                const dateObj = new Date(weatherData.daily.time[i]);
-                const dayOfWeek = dateObj.getDay();
-                if (dayOfWeek === 6 || dayOfWeek === 0) {
-                   weekendData.push({
-                      dayName: dayOfWeek === 6 ? 'Sobota' : 'Neděle',
-                      date: weatherData.daily.time[i],
-                      maxTemp: Math.round(weatherData.daily.temperature_2m_max[i]),
-                      minTemp: Math.round(weatherData.daily.temperature_2m_min[i]),
-                      precipProb: weatherData.daily.precipitation_probability_max[i] || 0,
-                      windSpeed: Math.round(weatherData.daily.windspeed_10m_max[i]),
-                      icon: getWeatherIcon(weatherData.daily.weathercode[i])
-                   });
-                }
-             }
-             setForecast(weekendData.slice(0, 2));
+             // Výpočet cílové soboty a neděle dle aktuálního dne v týdnu
+             // Sob/Ned → aktuální víkend | Po–Pá → příští víkend
+             const today = new Date();
+             const dow = today.getDay(); // 0=Ne, 1=Po, ..., 6=So
+
+             // Kolik dní přidat/odečíst, abychom dostali sobotu daného víkendu
+             let daysToSat: number;
+             if (dow === 6) daysToSat = 0;        // Dnes je sobota
+             else if (dow === 0) daysToSat = -1;  // Dnes je neděle → sobota byla včera
+             else daysToSat = 6 - dow;            // Po–Pá → příští sobota
+
+             const toISO = (d: Date) => d.toISOString().split('T')[0];
+             const satDate = new Date(today);
+             satDate.setDate(today.getDate() + daysToSat);
+             const sunDate = new Date(satDate);
+             sunDate.setDate(satDate.getDate() + 1);
+
+             const targetSat = toISO(satDate);
+             const targetSun = toISO(sunDate);
+
+             // Mapuj API data na slovník date→data
+             const dayMap: Record<string, any> = {};
+             weatherData.daily.time.forEach((date: string, i: number) => {
+               dayMap[date] = {
+                 date,
+                 maxTemp: Math.round(weatherData.daily.temperature_2m_max[i]),
+                 minTemp: Math.round(weatherData.daily.temperature_2m_min[i]),
+                 precipProb: weatherData.daily.precipitation_probability_max[i] || 0,
+                 windSpeed: Math.round(weatherData.daily.windspeed_10m_max[i]),
+                 icon: getWeatherIcon(weatherData.daily.weathercode[i])
+               };
+             });
+
+             const weekend = [
+               dayMap[targetSat] ? { ...dayMap[targetSat], dayName: 'Sobota' } : null,
+               dayMap[targetSun] ? { ...dayMap[targetSun], dayName: 'Neděle' } : null,
+             ].filter(Boolean);
+
+             if (weekend.length > 0) setForecast(weekend as any);
           }
+
+
         } catch (e) {
           console.error("Failed to fetch weather", e);
         }
@@ -477,12 +585,17 @@ export default function App() {
       if (s.status === 'approved' && s.eventDate && s.type !== 'ride') {
         const eventDateObj = new Date(s.eventDate);
         if (eventDateObj < today) {
-          const childNameKey = s.childName || "Neznámý";
+          const rawName = s.childName || "Neznámý";
+          
+          // Pokud nejsme v demo režimu, ignorujeme záznamy pro "Demo Dítě"
+          if (!isDemoMode && rawName === "Demo Dítě") return;
+          
+          const childNameKey = getDynamicNameForChild(rawName);
           if (!scores[childNameKey]) {
             scores[childNameKey] = {
               childName: childNameKey,
               score: 0,
-              avatar: getAvatarForChild(childNameKey)
+              avatar: getAvatarForChild(rawName)
             };
           }
           scores[childNameKey].score += 1;
@@ -491,7 +604,7 @@ export default function App() {
     });
 
     return Object.values(scores).sort((a, b) => b.score - a.score);
-  }, [suggestions]);
+  }, [suggestions, userProfiles, isDemoMode]);
 
   useEffect(() => {
     localStorage.setItem('likedSuggestions', JSON.stringify(likedSuggestions));
@@ -612,10 +725,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    // AGRESIVNÍ DEBUG v1.4.6
     const urlParams = new URLSearchParams(window.location.search);
     const authTokensBase64 = urlParams.get('auth_tokens');
-    
+
     if (authTokensBase64) {
       try {
         const tokensStr = atob(authTokensBase64);
@@ -624,10 +736,11 @@ export default function App() {
         localStorage.setItem('googleCalendarTokens', tokensStr);
         window.history.replaceState({}, document.title, window.location.pathname);
       } catch (e) {
-        alert("DEBUG CHYBA: " + e.message);
+        console.error('Chyba při dekódování Google tokenů:', e);
+        setError('Nepodařilo se připojit Google kalendář. Zkuste to znovu.');
       }
     } else if (urlParams.get('auth_error')) {
-      alert("DEBUG: Google vrátil chybu");
+      setError('Google přihlášení selhalo. Zkuste to znovu.');
     }
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -658,18 +771,13 @@ export default function App() {
         if (messaging) {
           Notification.requestPermission().then((permission) => {
             if (permission === 'granted') {
-              console.log('Notification permission granted.');
               getToken(messaging, { vapidKey: 'BKgR9vuJB_M_fGqrzFANmtEA7B0i6gzV7xsN9gv05eEotLpgGD1LeyLGWbEOaE_rsCAsKL6uxRnPn46TljVIROk' }).then((currentToken) => {
                 if (currentToken) {
                   setDoc(doc(db, "users", currentUser.uid), { fcmToken: currentToken }, { merge: true }).catch(console.error);
-                } else {
-                  console.log('No registration token available. Request permission to generate one.');
                 }
               }).catch((err) => {
-                console.log('An error occurred while retrieving token. ', err);
+                console.error('Chyba při získávání FCM tokenu:', err);
               });
-            } else {
-              console.log('Unable to get permission to notify.');
             }
           });
         }
@@ -1041,6 +1149,33 @@ export default function App() {
     }
   };
 
+  const handleCleanupSandbox = async () => {
+    try {
+      setLoadingStep("Čistím testovací data...");
+      
+      // 1. Smazání návrhů z Firestore
+      const demoSuggestions = suggestions.filter(s => s.childName === "Demo Dítě");
+      for (const s of demoSuggestions) {
+        await deleteDoc(doc(db, "suggestions", s.id));
+      }
+      
+      // 2. Smazání přání z Wishlistu
+      const { getDocs, query, collection, where } = await import("firebase/firestore");
+      const q = query(collection(db, "wishlists"), where("childName", "==", "Demo Dítě"));
+      const querySnapshot = await getDocs(q);
+      for (const d of querySnapshot.docs) {
+        await deleteDoc(doc(db, "wishlists", d.id));
+      }
+
+      setSuccess("Sandbox byl úspěšně vyčištěn. Všechny stopy po Demo Dítěti byly smazány.");
+    } catch (err) {
+      console.error("Chyba při úklidu sandboxu:", err);
+      setError("Nepodařilo se zcela vyčistit testovací data.");
+    } finally {
+      setLoadingStep("");
+    }
+  };
+
   const handleCloseForm = () => {
     setShowForm(false);
     setFormType("activity");
@@ -1162,7 +1297,7 @@ export default function App() {
   };
 
   const findChildUserId = (childName: string) => {
-    const match = (Object.entries(userProfiles) as [string, UserProfile][]).find(([uid, profile]) => 
+    const match = (Object.entries(extendedUserProfiles) as [string, UserProfile][]).find(([uid, profile]) => 
       profile.displayName?.toLowerCase() === childName.toLowerCase() ||
       profile.adminAlias?.toLowerCase() === childName.toLowerCase()
     );
@@ -1824,23 +1959,32 @@ export default function App() {
                   <span>🏆</span> {leaderboard.find(l => l.authorId === user.uid)?.score}
                 </div>
               ) : null}
-              <button
-                onClick={() => setShowAvatarModal(true)}
-                className="w-10 h-10 rounded-full border-2 border-rose-200 bg-white overflow-hidden shadow-sm flex items-center justify-center hover:border-rose-400 transition-all"
-                title="Změnit avatara"
-              >
-                {userProfiles[user.uid]?.avatar ? (
-                  userProfiles[user.uid].avatar.startsWith("data:") || userProfiles[user.uid].avatar.startsWith("http") ? (
-                    <img src={userProfiles[user.uid].avatar} alt="Avatar" className="w-full h-full object-cover" />
+              {isDemoMode ? (
+                <div
+                  className="w-10 h-10 rounded-full border-2 border-violet-400 bg-violet-50 overflow-hidden shadow-sm flex items-center justify-center cursor-default select-none"
+                  title="Demo Dítě"
+                >
+                  <span className="text-xl leading-none">🧪</span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowAvatarModal(true)}
+                  className="w-10 h-10 rounded-full border-2 border-rose-200 bg-white overflow-hidden shadow-sm flex items-center justify-center hover:border-rose-400 transition-all"
+                  title="Změnit avatara"
+                >
+                  {extendedUserProfiles[currentUserId]?.avatar ? (
+                    extendedUserProfiles[currentUserId].avatar.startsWith("data:") || extendedUserProfiles[currentUserId].avatar.startsWith("http") ? (
+                      <img src={extendedUserProfiles[currentUserId].avatar} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-xl leading-none">{extendedUserProfiles[currentUserId].avatar}</span>
+                    )
+                  ) : user.photoURL ? (
+                      <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" />
                   ) : (
-                    <span className="text-xl leading-none">{userProfiles[user.uid].avatar}</span>
-                  )
-                ) : user.photoURL ? (
-                    <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  <User size={20} className="text-stone-400" />
-                )}
-              </button>
+                    <User size={20} className="text-stone-400" />
+                  )}
+                </button>
+              )}
               <button 
                 onClick={handleLogout}
                 className="p-2 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
@@ -2038,7 +2182,7 @@ export default function App() {
                   <Plus size={24} />
                   <span>Přidat aktivitu</span>
                 </button>
-                {userProfiles[user?.uid || '']?.role !== 'viewer' && (
+                {extendedUserProfiles[currentUserId]?.role !== 'viewer' && (
                   <>
                     <button 
                       onClick={() => {
@@ -2227,34 +2371,44 @@ export default function App() {
                 )}
               </div>
               
-              {inspirations.length > 0 ? (
-                <div className="columns-1 md:columns-2 gap-5 pb-4">
-                  {inspirations
-                    .filter(insp => {
-                      if (showVyskovOnly && !insp.is_vyskov) return false;
-                      // Draft trasy jsou soukromé — vidí je pouze jejich autor
-                      if ((insp as any).status === 'draft') {
-                        return (insp as any).userId === user?.uid;
-                      }
-                      // Proposed trasy (čekají na schválení) — vidí autor + admini/parent
-                      if ((insp as any).status === 'proposed') {
-                        return (insp as any).userId === user?.uid || view === 'parent';
-                      }
-                      // Schválené trasy — filtrování dle role a targetGroup
-                      if (currentUserRole === 'admin' || currentUserRole === 'parent' || view === 'parent') return true;
-                      if (currentUserRole === 'child') {
-                        const myProfile = userProfiles[user?.uid || ''];
-                        const myTargetGroup = myProfile?.targetGroup;
-                        // Pokud child nemá nastavený targetGroup → vidí vše (bezpečný výchozí stav)
-                        if (!myTargetGroup || myTargetGroup === 'pro_vsechny') return true;
-                        // Vidí tipy pro sebe + tipy pro všechny
-                        return insp.target === myTargetGroup || insp.target === 'pro_vsechny';
-                      }
-                      // viewer a ostatní — pouze pro_vsechny
-                      return insp.target === 'pro_vsechny';
-                    })
-                    .map(insp => (
-                    <div id={`insp-${insp.id}`} key={insp.id} className="break-inside-avoid inline-block w-full mb-5 bg-white p-6 rounded-2xl shadow-sm border border-indigo-50 flex flex-col justify-between hover:shadow-md transition-shadow">
+              {inspirations.length > 0 ? (() => {
+                const filtered = inspirations
+                  .filter(insp => {
+                    if (showVyskovOnly && !insp.is_vyskov) return false;
+                    // Draft trasy jsou soukromé — vidí je pouze jejich autor
+                    if ((insp as any).status === 'draft') {
+                      return (insp as any).userId === user?.uid;
+                    }
+                    // Proposed trasy (čekají na schválení) — vidí autor + admini/parent
+                    if ((insp as any).status === 'proposed') {
+                      return (insp as any).userId === user?.uid || view === 'parent';
+                    }
+                    // Schválené trasy — filtrování dle role a targetGroup
+                    if (currentUserRole === 'admin' || currentUserRole === 'parent' || view === 'parent') return true;
+                    if (currentUserRole === 'child') {
+                      const myProfile = extendedUserProfiles[currentUserId];
+                      const myTargetGroup = myProfile?.targetGroup;
+                      // Pokud child nemá nastavený targetGroup → vidí vše (bezpečný výchozí stav)
+                      if (!myTargetGroup || myTargetGroup === 'pro_vsechny') return true;
+                      // Vidí tipy pro sebe + tipy pro všechny
+                      return insp.target === myTargetGroup || insp.target === 'pro_vsechny';
+                    }
+                    // viewer a ostatní — pouze pro_vsechny
+                    return insp.target === 'pro_vsechny';
+                  });
+                const makeCard = (insp: any) => {
+                      // Zjistíme, zda je tip "nový" – vygenerovaný dnes (source='ai' + generatedAt = dnes)
+                      const isNewToday = (() => {
+                        const raw = (insp as any).generatedAt;
+                        if (!raw || (insp as any).source !== 'ai') return false;
+                        const genDate = raw?.toDate ? raw.toDate() : new Date(raw);
+                        const today = new Date();
+                        return genDate.getFullYear() === today.getFullYear() &&
+                               genDate.getMonth() === today.getMonth() &&
+                               genDate.getDate() === today.getDate();
+                      })();
+                      return (
+                    <div id={`insp-${insp.id}`} key={insp.id} className={`w-full bg-white p-6 rounded-2xl shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow self-start ${isNewToday ? 'border-2 border-emerald-300 shadow-emerald-100' : 'border border-indigo-50'}`}>
                       <div>
                         {/* Badge pro draft/proposed cyklotrasy */}
                         {(insp as any).status === 'draft' && (
@@ -2270,6 +2424,15 @@ export default function App() {
                             <span className="text-[10px] font-black bg-indigo-50 text-indigo-600 border border-indigo-200 px-2.5 py-1 rounded-full uppercase tracking-wide flex items-center gap-1">
                               ⏳ Čeká na schválení
                             </span>
+                          </div>
+                        )}
+                        {/* Badge "Nové" pro tipy vygenerované dnes */}
+                        {isNewToday && (
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full uppercase tracking-wide flex items-center gap-1 animate-pulse">
+                              ✨ Nové
+                            </span>
+                            <span className="text-[10px] text-stone-400">Právě vygenerováno</span>
                           </div>
                         )}
                         {view === "parent" && (
@@ -2429,23 +2592,28 @@ export default function App() {
                               )}
 
                               {/* Cinema Listings */}
-                              {insp.cinema_listings && insp.cinema_listings.filter(l => l.film && l.film.trim() !== "").length > 0 && (
+                              {insp.cinema_listings && insp.cinema_listings.filter((l: any) => (l.film || l.film_title) && (l.film || l.film_title).trim() !== "").length > 0 && (
                                 <div className="mt-3 border-t border-indigo-100/50 pt-3">
                                   <div className="font-bold text-indigo-600 text-xs uppercase tracking-wider mb-3 flex items-center gap-1">
                                     <Film size={12} /> Program kina
                                   </div>
-                                  <div className="space-y-2">
+                                  <div className="cinema-scroll max-h-72 overflow-y-auto space-y-2 pr-1">
                                     {insp.cinema_listings
-                                      .filter(listing => listing.film && listing.film.trim() !== "")
-                                      .map((listing: CinemaListing, idx: number) => (
-                                      <div key={idx} className="flex items-center bg-white rounded-lg p-3 border border-indigo-100/50 shadow-sm">
-                                        <div>
-                                          <div className="font-bold text-stone-800 text-sm">{listing.film}</div>
-                                          <div className="text-xs text-stone-500 mt-0.5">🕐 {listing.time || "Dle programu"}</div>
+                                      .filter((listing: any) => (listing.film || listing.film_title) && (listing.film || listing.film_title).trim() !== "")
+                                      .map((listing: any, idx: number) => (
+                                      <div key={idx} className="flex items-start gap-3 bg-white rounded-lg p-3 border border-indigo-100/50 shadow-sm">
+                                        <span className="text-lg flex-shrink-0">🎬</span>
+                                        <div className="min-w-0">
+                                          <div className="font-bold text-stone-800 text-sm leading-tight">{listing.film || listing.film_title}</div>
+                                          <div className="text-xs text-stone-500 mt-0.5">🕐 {listing.time || listing.showtimes || "Dle programu"}</div>
+                                          {listing.url && (
+                                            <a href={listing.url} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:text-indigo-700 font-medium mt-1 inline-block">🎟 Vstupenky →</a>
+                                          )}
                                         </div>
                                       </div>
                                     ))}
                                   </div>
+                                  <p className="text-[10px] text-indigo-300 mt-1 text-right italic">Scroll pro zobrazení více filmů</p>
                                 </div>
                               )}
 
@@ -2482,6 +2650,8 @@ export default function App() {
                                   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(cleanLoc)}&travelmode=bicycling`;
                                 };
                                 
+                                if (extendedUserProfiles[currentUserId]?.role === 'child') return null;
+
                                 if (insp.status === 'draft') {
                                   return (
                                     <button 
@@ -2504,7 +2674,7 @@ export default function App() {
                                   );
                                 }
 
-                                if (userProfiles[user?.uid || '']?.role === 'child') return null;
+                                if (extendedUserProfiles[currentUserId]?.role === 'child') return null;
 
                                 return (
                                   <div className="flex flex-wrap gap-2 mt-3 border-t border-indigo-100/50 pt-3">
@@ -2599,9 +2769,27 @@ export default function App() {
                         })()}
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
+                    );
+                  };
+                  return (
+                    <>
+                      {/* Desktop: 2 skutečně nezávislé flex sloupce.
+                          Rozbalení karty v jednom sloupci NEOVLIVNÍ sloupec vedlejší. */}
+                      <div className="hidden md:flex gap-5 items-start pb-4">
+                        <div className="flex-1 flex flex-col gap-5 min-w-0">
+                          {filtered.filter((_, i) => i % 2 === 0).map(makeCard)}
+                        </div>
+                        <div className="flex-1 flex flex-col gap-5 min-w-0">
+                          {filtered.filter((_, i) => i % 2 !== 0).map(makeCard)}
+                        </div>
+                      </div>
+                      {/* Mobil: jeden sloupec */}
+                      <div className="md:hidden flex flex-col gap-5 pb-4">
+                        {filtered.map(makeCard)}
+                      </div>
+                    </>
+                  );
+                })() : (
                 <div className="flex-grow flex flex-col items-center justify-center text-center p-8 bg-white/50 rounded-2xl border border-indigo-100/50 border-dashed">
                   <div className="text-4xl mb-4 opacity-50">🤖</div>
                   <p className="text-lg text-indigo-800 font-semibold opacity-80 max-w-md">
@@ -2833,6 +3021,12 @@ export default function App() {
                   .filter(suggestion => {
                     if (suggestion.status === "draft") return false;
                     if (suggestion.hiddenFromBoard) return false;
+                    if (currentUserRole === 'child') {
+                      const childName = getLoggedInFamilyName();
+                      if (!suggestion.childName || suggestion.childName.toLowerCase() !== childName.toLowerCase()) {
+                        return false;
+                      }
+                    }
                     if (suggestion.status === "approved" && suggestion.eventDate) {
                       const eventDate = new Date(suggestion.eventDate);
                       const today = new Date();
@@ -3044,7 +3238,7 @@ export default function App() {
                               })()}
                           </div>
                           <div className="text-[11px] text-stone-500 font-semibold">
-                            Navrhl(a): <strong className="font-bold text-stone-700">{suggestion.childName}</strong> • {
+                            Navrhl(a): <strong className="font-bold text-stone-700">{getDynamicNameForChild(suggestion.childName)}</strong> • {
                               suggestion.createdAt ? (
                                 (() => {
                                   let d = new Date();
@@ -3425,7 +3619,7 @@ export default function App() {
                   <div>
                     <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Kdo {formType === "ride" ? "potřebuje odvoz" : "to navrhuje"}?</label>
                     <div className="flex flex-wrap gap-2 mb-2">
-                      {FAMILY_MEMBERS.map(name => (
+                      {dynamicFamilyMembers.map(name => (
                         <button
                           key={name}
                           type="button"
@@ -3866,7 +4060,7 @@ export default function App() {
                               })()}
                          </div>
                          <span className="text-xs font-bold text-stone-500">
-                           {suggestion.childName}
+                           {getDynamicNameForChild(suggestion.childName)}
                          </span>
                          {suggestion.type === "ride" && (
                            <span className="text-xs font-bold px-2 py-1 bg-orange-100 text-orange-600 rounded-lg">🚗 Odvoz</span>
@@ -4248,7 +4442,7 @@ export default function App() {
             >
               <div className="flex items-center justify-between border-b border-stone-100 pb-3">
                 <h2 className="text-xl font-extrabold text-stone-800 tracking-tight flex items-center gap-2">
-                  <span>🏆</span> Úspěchy: {selectedLeaderboardUser}
+                  <span>🏆</span> Úspěchy: {getDynamicNameForChild(selectedLeaderboardUser)}
                 </h2>
                 <button onClick={() => setSelectedLeaderboardUser(null)} className="text-stone-400 hover:text-stone-600 bg-stone-100 p-2 rounded-full cursor-pointer">
                   <X size={20} />
@@ -4257,7 +4451,7 @@ export default function App() {
 
               <div className="overflow-y-auto pr-1 flex flex-col gap-3">
                 {suggestions
-                  .filter(s => s.status === 'approved' && s.type !== 'ride' && (s.childName === selectedLeaderboardUser || (!s.childName && selectedLeaderboardUser === "Neznámý")) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0)))
+                  .filter(s => s.status === 'approved' && s.type !== 'ride' && (getDynamicNameForChild(s.childName || "Neznámý") === selectedLeaderboardUser) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0)))
                   .sort((a, b) => new Date(b.eventDate!).getTime() - new Date(a.eventDate!).getTime())
                   .map(s => (
                     <button 
@@ -4313,6 +4507,13 @@ export default function App() {
             isGeneratingInspiration={isGeneratingInspiration}
             handleApproveBikeRoute={handleApproveBikeRoute}
             currentUserRole={currentUserRole}
+            isDemoMode={isDemoMode}
+            onToggleDemoMode={() => {
+              const next = !isDemoMode;
+              setIsDemoMode(next);
+              setView(next ? "child" : "parent");
+            }}
+            onCleanupSandbox={handleCleanupSandbox}
           />
         )}
       </AnimatePresence>
@@ -4453,10 +4654,10 @@ export default function App() {
         {showGameHub && (
           <GameHub
             suggestions={suggestions}
-            userProfiles={userProfiles}
+            userProfiles={extendedUserProfiles}
             currentUserName={getLoggedInFamilyName()}
-            currentUserId={user?.uid || ""}
-            view={view}
+            currentUserId={currentUserId}
+            view={isDemoMode ? "child" : view}
             onClose={() => setShowGameHub(false)}
             getAvatarForChild={getAvatarForChild}
             onOpenAdminPanel={() => setShowUserManagement(true)}
@@ -4692,6 +4893,32 @@ export default function App() {
               )}
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Sandbox testovací bar */}
+      <AnimatePresence>
+        {isDemoMode && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -50, x: '-50%' }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-xl bg-gradient-to-r from-violet-600/90 to-cyan-600/90 backdrop-blur-md text-white px-6 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between border border-white/20"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-xl animate-pulse">🧪</span>
+              <div className="text-left">
+                <div className="text-xs opacity-75 font-bold uppercase tracking-wider">Testovací Sandbox</div>
+                <div className="text-sm font-black">Jste přihlášeni jako Demo Dítě</div>
+              </div>
+            </div>
+            <button 
+              onClick={() => { setIsDemoMode(false); setView("parent"); }}
+              className="bg-white text-violet-700 font-extrabold text-xs px-4 py-2 rounded-xl shadow-md hover:scale-[1.03] transition-all cursor-pointer"
+            >
+              Zpět na Admina 🔙
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
 

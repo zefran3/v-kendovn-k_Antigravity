@@ -305,8 +305,21 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const [showWishForm, setShowWishForm] = useState(false);
   const [wishName, setWishName] = useState("");
   const [wishUrl, setWishUrl] = useState("");
+  const [wishError, setWishError] = useState<string | null>(null);
   const [approvingWish, setApprovingWish] = useState<WishlistItem | null>(null);
   const [approveZB, setApproveZB] = useState("500");
+  const [approveKč, setApproveKč] = useState("2500");
+  const [lockRatio, setLockRatio] = useState(true);
+  const [tempMaxLimit, setTempMaxLimit] = useState("2500");
+
+  const maxWishLimitCZK = useMemo(() => leagueConfig?.maxWishLimitCZK || 2500, [leagueConfig]);
+  const [showRulesModal, setShowRulesModal] = useState(false);
+
+  useEffect(() => {
+    if (leagueConfig && leagueConfig.maxWishLimitCZK !== undefined) {
+      setTempMaxLimit(leagueConfig.maxWishLimitCZK.toString());
+    }
+  }, [leagueConfig]);
   const [showCreateQuest, setShowCreateQuest] = useState(false);
   const [questTitle, setQuestTitle] = useState("");
   const [questDesc, setQuestDesc] = useState("");
@@ -521,24 +534,35 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   };
 
   const handleAddWish = async () => {
-    if (!wishName.trim()) return;
+    if (!wishName.trim() || !wishUrl.trim()) return;
+    setWishError(null);
+    const cleanName = wishName.trim().toLowerCase();
+    const forbiddenWords = ["penize", "peníze", "hotovost", "cash", "na ruku"];
+    const isCashAmount = /^\d+\s*(kč|czk|kc)?$/i.test(cleanName);
+    const containsForbidden = forbiddenWords.some(word => cleanName.includes(word)) || isCashAmount;
+    if (containsForbidden) {
+      setWishError("⚠️ Přání ve formě peněz nebo hotovosti není povoleno (máš přece kapesné!). Zadej prosím konkrétní hračku, věc nebo zážitek.");
+      return;
+    }
+
     await addDoc(collection(db, 'wishlists'), {
       childName: normalizedCurrentUserName,
       authorId: currentUserId,
       name: wishName.trim(),
-      url: wishUrl.trim() || null,
+      url: wishUrl.trim(),
       targetZB: 0,
       status: 'pending',
       createdAt: serverTimestamp()
     });
-    setWishName(""); setWishUrl(""); setShowWishForm(false);
+    setWishName(""); setWishUrl(""); setShowWishForm(false); setWishError(null);
   };
 
   const handleApproveWish = async () => {
     if (!approvingWish) return;
     await updateDoc(doc(db, 'wishlists', approvingWish.id), {
       status: 'approved',
-      targetZB: parseInt(approveZB) || 500
+      targetZB: parseInt(approveZB) || 500,
+      valueKč: parseFloat(approveKč) || 0
     });
     setApprovingWish(null);
   };
@@ -656,9 +680,56 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
   // ─── Výpočet ZB bodů z reálných dat ─────────────────
   const playerStats = useMemo(() => {
-    const stats: Record<string, UserStats> = {};
+    const sprint: Record<string, UserStats> = {};
+    const maraton: Record<string, UserStats> = {};
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    const getDynamicName = (childName: string): string => {
+      if (!childName) return "Neznámý";
+      
+      const removeAccents = (str: string): string => {
+        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      };
+      
+      const cleanChild = removeAccents(childName.toLowerCase());
+      
+      // Fáze 1: Přesná shoda bez diakritiky
+      let profile = (Object.values(userProfiles) as UserProfile[]).find(p => {
+        const alias = removeAccents((p.adminAlias || "").toLowerCase());
+        const disp = removeAccents((p.displayName || "").toLowerCase());
+        const emailPref = removeAccents((p.email?.split('@')[0] || "").toLowerCase());
+        
+        return (
+          alias === cleanChild ||
+          disp === cleanChild ||
+          emailPref === cleanChild ||
+          (cleanChild === 'tata' && p.email?.toLowerCase() === 'zefran3@gmail.com')
+        );
+      });
+      
+      // Fáze 2: Volnější shoda (startsWith) pouze pokud přesná shoda neexistuje
+      if (!profile) {
+        profile = (Object.values(userProfiles) as UserProfile[]).find(p => {
+          const alias = removeAccents((p.adminAlias || "").toLowerCase());
+          const disp = removeAccents((p.displayName || "").toLowerCase());
+          const emailPref = removeAccents((p.email?.split('@')[0] || "").toLowerCase());
+          
+          return (
+            alias.startsWith(cleanChild) ||
+            disp.startsWith(cleanChild) ||
+            emailPref.startsWith(cleanChild)
+          );
+        });
+      }
+      
+      if (profile) {
+        const name = profile.adminAlias || profile.displayName || profile.email?.split('@')[0] || '';
+        if (name.toLowerCase() === 'zefran3') return 'Táta';
+        return name;
+      }
+      return childName;
+    };
 
     const activeNames = new Set<string>();
     Object.values(userProfiles).forEach(profile => {
@@ -668,8 +739,11 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
           name = "Táta";
         }
         activeNames.add(name);
-        if (!stats[name]) {
-          stats[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+        if (!sprint[name]) {
+          sprint[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+        }
+        if (!maraton[name]) {
+          maraton[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
         }
       }
     });
@@ -679,7 +753,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       : null;
 
     if (!startTimestamp || leagueConfig?.status === 'stopped') {
-      return stats;
+      return { sprint, maraton };
     }
 
     const daysElapsed = (Date.now() - startTimestamp) / (1000 * 60 * 60 * 24);
@@ -694,83 +768,112 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       return new Date(item.createdAt).getTime();
     };
 
-    const filterStartDate = leaderboardMode === "sprint" ? currentSprintStartDate : startTimestamp;
-
     suggestions.forEach(s => {
       if (s.type === "ride") return;
-      let name = s.childName || "Neznámý";
-      if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
-        name = "Táta";
-      }
+      let rawName = s.childName || "Neznámý";
+      let name = getDynamicName(rawName);
       
-      // Do žebříčku započítáváme jen aktivní uživatele přihlášené do aplikace
       if (!activeNames.has(name)) return;
 
-      // Filter by dynamic time window
-      if (getCreatedTime(s) < filterStartDate) return;
+      const createdTime = getCreatedTime(s);
+      
+      // Maraton (celá liga)
+      if (createdTime >= startTimestamp) {
+        if (s.status === "pending" || s.status === "approved" || s.status === "cancelled") {
+          maraton[name].totalIdeas += 1;
+          maraton[name].totalZB += ZB_RULES.BASIC;
 
-      // Anti-spam ochrana: body se přičtou pouze pokud má aktivita status "pending", "approved" nebo "cancelled"
-      if (s.status === "pending" || s.status === "approved" || s.status === "cancelled") {
-        // Základní body za nápad
-        stats[name].totalIdeas += 1;
-        stats[name].totalZB += ZB_RULES.BASIC;
+          if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
+            maraton[name].realized += 1;
+            maraton[name].totalZB += ZB_RULES.REALIZED;
 
-        // Body za realizaci
-        if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
-          stats[name].realized += 1;
-          stats[name].totalZB += ZB_RULES.REALIZED;
+            if (s.approvedDetails || (s.location && s.url)) {
+              maraton[name].withDetails += 1;
+              maraton[name].totalZB += ZB_RULES.LOGISTICS;
+            }
 
-          // Logistický bonus (má lokaci A url NEBO Táta schválil detail)
-          if (s.approvedDetails || (s.location && s.url)) {
-            stats[name].withDetails += 1;
-            stats[name].totalZB += ZB_RULES.LOGISTICS;
+            if (s.approvedFree) {
+              maraton[name].freeActivities += 1;
+              maraton[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+            }
+          } else if (s.status === "cancelled") {
+            if (s.approvedDetails || (s.location && s.url)) {
+              maraton[name].withDetails += 1;
+              maraton[name].totalZB += ZB_RULES.LOGISTICS;
+            }
+
+            if (s.approvedFree) {
+              maraton[name].freeActivities += 1;
+              maraton[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+            }
           }
+        }
+      }
 
-          // Bonus za akci zdarma / sleva
-          if (s.approvedFree) {
-            stats[name].freeActivities += 1;
-            stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
-          }
-        } else if (s.status === "cancelled") {
-          // Zrušená aktivita - bonus za plánování a přípravu bez realizace
-          if (s.approvedDetails || (s.location && s.url)) {
-            stats[name].withDetails += 1;
-            stats[name].totalZB += ZB_RULES.LOGISTICS;
-          }
+      // Sprint (aktuální období)
+      if (createdTime >= currentSprintStartDate) {
+        if (s.status === "pending" || s.status === "approved" || s.status === "cancelled") {
+          sprint[name].totalIdeas += 1;
+          sprint[name].totalZB += ZB_RULES.BASIC;
 
-          if (s.approvedFree) {
-            stats[name].freeActivities += 1;
-            stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+          if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
+            sprint[name].realized += 1;
+            sprint[name].totalZB += ZB_RULES.REALIZED;
+
+            if (s.approvedDetails || (s.location && s.url)) {
+              sprint[name].withDetails += 1;
+              sprint[name].totalZB += ZB_RULES.LOGISTICS;
+            }
+
+            if (s.approvedFree) {
+              sprint[name].freeActivities += 1;
+              sprint[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+            }
+          } else if (s.status === "cancelled") {
+            if (s.approvedDetails || (s.location && s.url)) {
+              sprint[name].withDetails += 1;
+              sprint[name].totalZB += ZB_RULES.LOGISTICS;
+            }
+
+            if (s.approvedFree) {
+              sprint[name].freeActivities += 1;
+              sprint[name].totalZB += ZB_RULES.FREE_DISCOUNT;
+            }
           }
         }
       }
     });
 
-    // Přičtení bodů ze schválených tajných misí (Quests)
     quests.forEach(q => {
       if (q.status === 'approved' && q.completedBy) {
-        let name = q.completedBy;
-        if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
-          name = "Táta";
-        }
+        let rawName = q.completedBy;
+        let name = getDynamicName(rawName);
         
         if (activeNames.has(name)) {
-          if (!stats[name]) {
-            stats[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
-          }
-
-          // Filter by dynamic time window
-          if (getCreatedTime(q) < filterStartDate) return;
-
+          const createdTime = getCreatedTime(q);
           const baseXP = parseFloat(q.bonusMultiplier as any) || 0;
           const bonusXP = parseFloat(q.appliedBonusXP as any) || 0;
-          stats[name].totalZB += (baseXP + bonusXP);
+          const totalQP = baseXP + bonusXP;
+
+          if (createdTime >= startTimestamp) {
+            if (!maraton[name]) {
+              maraton[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+            }
+            maraton[name].totalZB += totalQP;
+          }
+
+          if (createdTime >= currentSprintStartDate) {
+            if (!sprint[name]) {
+              sprint[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+            }
+            sprint[name].totalZB += totalQP;
+          }
         }
       }
     });
 
-    return stats;
-  }, [suggestions, quests, userProfiles, leagueConfig, leaderboardMode]);
+    return { sprint, maraton };
+  }, [suggestions, quests, userProfiles, leagueConfig]);
 
   const playerNameToIdMap = useMemo(() => {
     const mapping: Record<string, string> = {};
@@ -788,7 +891,8 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
   // ─── Žebříček (Vyloučení rodiče/admina podle rolí) ───────────────
   const leaderboardData = useMemo(() => {
-    return (Object.entries(playerStats) as [string, UserStats][])
+    const statsSource = leaderboardMode === 'sprint' ? playerStats.sprint : playerStats.maraton;
+    return (Object.entries(statsSource) as [string, UserStats][])
       .map(([name, stats]) => {
         const badgeBonus = BADGES.filter(b => b.check(stats)).reduce((s, b) => s + b.bonusZB, 0);
         return { name: name || "", ...stats, totalZB: stats.totalZB + badgeBonus, avatar: getAvatarForChild(name || "") };
@@ -799,15 +903,26 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
         return role === 'child';
       })
       .sort((a, b) => b.totalZB - a.totalZB);
-  }, [playerStats, getAvatarForChild, playerNameToIdMap, userProfiles]);
+  }, [playerStats, leaderboardMode, getAvatarForChild, playerNameToIdMap, userProfiles]);
 
-  // ─── Aktivní hráč (Pokud je přihlášen rodič/admin, výchozí je první dítě v žebříčku) ───
+  const kidsCount = useMemo(() => {
+    return Math.max(1, leaderboardData.length);
+  }, [leaderboardData]);
+
+  const maxWishXP = useMemo(() => {
+    return Math.max(1, Math.round(500 / kidsCount));
+  }, [kidsCount]);
+
+  const ratio = useMemo(() => {
+    return maxWishLimitCZK / maxWishXP;
+  }, [maxWishLimitCZK, maxWishXP]);
+
   const activePlayer = useMemo(() => {
-    if (selectedPlayer) return selectedPlayer;
-    if (currentUserRole === "admin" || currentUserRole === "parent") {
-      return leaderboardData[0]?.name || "";
+    if (currentUserRole !== "admin" && currentUserRole !== "parent") {
+      return normalizedCurrentUserName || "";
     }
-    return normalizedCurrentUserName || "";
+    if (selectedPlayer) return selectedPlayer;
+    return leaderboardData[0]?.name || "";
   }, [selectedPlayer, normalizedCurrentUserName, leaderboardData, currentUserRole]);
 
   const activePlayerId = useMemo(() => {
@@ -948,6 +1063,25 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const hasClaimed = !!claimedRewardInCurrentSprint;
   const selectedReward = claimedRewardInCurrentSprint?.rewardTitle || "";
 
+  const renderWishUrl = (url?: string) => {
+    if (!url) return null;
+    const cleanUrl = url.trim();
+    const isLink = cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://") || cleanUrl.startsWith("www.");
+    const hrefUrl = cleanUrl.startsWith("www.") ? `https://${cleanUrl}` : cleanUrl;
+    if (isLink) {
+      return (
+        <a href={hrefUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-cyan-400 hover:text-cyan-300 transition-colors inline-flex items-center gap-1 mt-1 font-semibold hover:underline">
+          🔗 Odkaz na produkt
+        </a>
+      );
+    }
+    return (
+      <span className="text-[11px] text-zinc-400 block mt-1">
+        💰 Cena / Odkaz: <strong className="text-zinc-300">{cleanUrl}</strong>
+      </span>
+    );
+  };
+
   // 1. Bezpečné seřazení a výpočet milníků:
   const sortedMilestones = milestones ? [...milestones].sort((a, b) => a.order - b.order) : [];
 
@@ -966,10 +1100,17 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     );
   }
 
-  const activeStats = playerStats[activePlayer || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+  const activeStats = (leaderboardMode === 'sprint' ? playerStats.sprint : playerStats.maraton)[activePlayer || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
   const unlockedBadges = BADGES.filter(b => b.check(activeStats));
   const activeBadgeBonus = unlockedBadges.reduce((sum, b) => sum + b.bonusZB, 0);
   const activeTotalXP = activeStats.totalZB + activeBadgeBonus; // Skutečné celkové XP
+
+  const activeMaratonStats = playerStats.maraton[activePlayer || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+  const activeMaratonBadgeBonus = BADGES.filter(b => b.check(activeMaratonStats)).reduce((sum, b) => sum + b.bonusZB, 0);
+  const activeMaratonTotalXP = activeMaratonStats.totalZB + activeMaratonBadgeBonus;
+
+
+
   const activeTitle = getTitle(activeTotalXP);
   const nextTitle = getNextTitle(activeTotalXP);
   const maxXP = leaderboardData.length > 0 ? Math.max(...leaderboardData.map(p => p.totalZB)) : 0;
@@ -994,6 +1135,24 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     const wName = (w.childName || "").toLowerCase() === "zefran3" || (w.childName || "").toLowerCase() === "táta" ? "Táta" : w.childName || "";
     return (wName || "").toLowerCase() === (activePlayer || "").toLowerCase();
   });
+
+  const pendingCount = useMemo(() => {
+    return activeWishlist.filter(w => w.status === 'pending').length;
+  }, [activeWishlist]);
+
+  const approvedCount = useMemo(() => {
+    return activeWishlist.filter(w => w.status === 'approved').length;
+  }, [activeWishlist]);
+
+  const totalApprovedKč = useMemo(() => {
+    return activeWishlist
+      .filter(w => w.status === 'approved')
+      .reduce((sum, w) => sum + (w.valueKč || Math.round((w.targetZB || 0) * ratio)), 0);
+  }, [activeWishlist, ratio]);
+
+  const remainingLimit = useMemo(() => {
+    return Math.max(0, maxWishLimitCZK - totalApprovedKč);
+  }, [maxWishLimitCZK, totalApprovedKč]);
   const activeQuests = quests.filter(q => q.active);
 
   const handleSpravSave = async () => {
@@ -1216,7 +1375,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   .filter(p => p.name !== "Táta")
                   .map(player => {
                     const name = player.name;
-                    const stats = playerStats[name] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+                    const stats = (leaderboardMode === 'sprint' ? playerStats.sprint : playerStats.maraton)[name] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
                     
                     const unlockedB = BADGES.filter(b => b.check(stats));
                     const badgeBonus = unlockedB.reduce((s, b) => s + b.bonusZB, 0);
@@ -1459,12 +1618,19 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   {leaderboardData.map((player, idx) => (
                     <button
                       key={player.name}
-                      onClick={() => setSelectedPlayer(player.name === selectedPlayer ? null : player.name)}
+                      onClick={() => {
+                        if (currentUserRole === 'admin' || currentUserRole === 'parent') {
+                          setSelectedPlayer(player.name === selectedPlayer ? null : player.name);
+                        }
+                      }}
                       className={cn(
-                        "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
+                        "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left relative overflow-hidden",
                         player.name === activePlayer
-                          ? "bg-violet-500/10 border-violet-500/20 ring-1 ring-violet-500/20"
-                          : "bg-zinc-800/30 border-white/5 hover:bg-zinc-800/60"
+                          ? "bg-gradient-to-r from-violet-500/20 to-cyan-500/20 border-violet-500/50 shadow-lg shadow-violet-500/5 scale-[1.01] ring-1 ring-violet-500/30"
+                          : "bg-zinc-800/30 border-white/5",
+                        (currentUserRole === 'admin' || currentUserRole === 'parent')
+                          ? "hover:bg-zinc-800/60 cursor-pointer"
+                          : "cursor-default"
                       )}
                     >
                       <div className={cn("w-7 text-center font-black text-sm",
@@ -1738,8 +1904,8 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                 <Gift size={16} className="text-rose-400" />
                 <h3 className="text-sm font-bold text-rose-300 uppercase tracking-wider">Přání (Maraton (6 měs.))</h3>
               </div>
-              {localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && (
-                <button onClick={() => setShowWishForm(!showWishForm)}
+              {localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && pendingCount === 0 && approvedCount < 2 && (approvedCount !== 1 || totalApprovedKč < maxWishLimitCZK) && (
+                <button onClick={() => { setShowWishForm(!showWishForm); setWishError(null); }}
                   className="flex items-center gap-1 text-xs font-bold text-rose-400 hover:text-rose-300 transition-colors bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20"
                 >
                   <Plus size={12} /> Přidat přání
@@ -1747,15 +1913,67 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
               )}
             </div>
 
+            {/* Notices for child when they cannot add a wish */}
+            {localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && (
+              <div className="mb-3">
+                {pendingCount > 0 && (
+                  <div className="text-xs text-amber-400 bg-amber-500/5 border border-amber-500/10 px-3 py-2.5 rounded-xl">
+                    ⏳ Máš jedno přání čekající na schválení. Jakmile ho rodič schválí, uvidíš, zda ti zbývá limit na případné druhé přání.
+                  </div>
+                )}
+                {approvedCount >= 2 && (
+                  <div className="text-xs text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-3 py-2.5 rounded-xl">
+                    🎉 Dosáhl(a) jsi maximálního počtu 2 schválených přání pro tento maraton.
+                  </div>
+                )}
+                {approvedCount === 1 && totalApprovedKč >= maxWishLimitCZK && (
+                  <div className="text-xs text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-3 py-2.5 rounded-xl">
+                    🎉 Tvoje schválené přání vyčerpalo celý limit {maxWishLimitCZK} Kč.
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Wish form */}
             <AnimatePresence>
-              {showWishForm && localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && (
+              {showWishForm && localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && pendingCount === 0 && approvedCount < 2 && (approvedCount !== 1 || totalApprovedKč < maxWishLimitCZK) && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-3">
                   <div className="bg-zinc-800/50 border border-rose-500/10 rounded-xl p-4 space-y-3">
                     <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Přání od: {normalizedCurrentUserName}</div>
-                    <input value={wishName} onChange={e => setWishName(e.target.value)} placeholder="Co si přeješ? (např. Steam kredit 500 Kč)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
-                    <input value={wishUrl} onChange={e => setWishUrl(e.target.value)} placeholder="Odkaz (volitelné)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
-                    <button onClick={handleAddWish} disabled={!wishName.trim()} className="w-full bg-rose-500 text-white font-bold text-xs py-2.5 rounded-lg hover:bg-rose-400 transition-colors disabled:opacity-30">Odeslat ke schválení</button>
+                    
+                    <div className="flex flex-col gap-2 bg-zinc-900/40 p-3 rounded-lg border border-white/5 text-xs text-zinc-400">
+                      <div className="flex items-center justify-between w-full">
+                        <span className="font-semibold text-zinc-300">💡 Přání mají svá pravidla.</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowRulesModal(true)}
+                          className="text-xs font-bold text-rose-400 hover:text-rose-300 transition-colors bg-rose-500/10 px-2.5 py-1 rounded-md border border-rose-500/20 cursor-pointer"
+                        >
+                          Jak to funguje?
+                        </button>
+                      </div>
+                      
+                      {approvedCount === 1 ? (
+                        <div className="text-[11px] text-amber-400 border-t border-white/5 pt-2 mt-1">
+                          ℹ️ Tvoje první přání mělo hodnotu <strong>{totalApprovedKč} Kč</strong>. Na druhé přání ti zbývá limit <strong>{remainingLimit} Kč</strong>.
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-zinc-500 border-t border-white/5 pt-2 mt-1">
+                          ℹ️ Maximální povolená celková hodnota přání je <strong>{maxWishLimitCZK} Kč</strong>.
+                        </div>
+                      )}
+                    </div>
+
+                    <input value={wishName} onChange={e => { setWishName(e.target.value); setWishError(null); }} placeholder="Co si přeješ? (např. Steam kredit)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
+                    <input value={wishUrl} onChange={e => { setWishUrl(e.target.value); setWishError(null); }} placeholder="Odkaz na produkt nebo cena v Kč (povinné)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
+                    
+                    {wishError && (
+                      <div className="text-[11px] text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg font-medium leading-relaxed">
+                        {wishError}
+                      </div>
+                    )}
+                    
+                    <button onClick={handleAddWish} disabled={!wishName.trim() || !wishUrl.trim()} className="w-full bg-rose-500 text-white font-bold text-xs py-2.5 rounded-lg hover:bg-rose-400 transition-colors disabled:opacity-30">Odeslat ke schválení</button>
                   </div>
                 </motion.div>
               )}
@@ -1773,7 +1991,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                       {w.url && <a href={w.url} target="_blank" rel="noopener" className="text-[10px] text-cyan-400 ml-2 hover:underline">🔗</a>}
                     </div>
                     <div className="flex gap-1.5">
-                      <button onClick={() => { setApprovingWish(w); setApproveZB("500"); }} className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"><Check size={14} /></button>
+                      <button onClick={() => { setApprovingWish(w); setApproveZB(maxWishXP.toString()); setApproveKč(Math.round(maxWishXP * ratio).toString()); setLockRatio(true); }} className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"><Check size={14} /></button>
                       <button onClick={() => { setRejectingWish(w); setRejectReason(""); }} className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30"><X size={14} /></button>
                     </div>
                   </div>
@@ -1784,13 +2002,13 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             {/* Admin View: Children goals overview instead of personal Admin wishlist */}
             {localView === "parent" ? (
               <div className="space-y-4">
-                <div className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Admin: Přehled cílů dětí</div>
+                <div className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Admin: Přehled cílů – {activePlayer}</div>
                 <div className="grid gap-3">
                   {wishlists
-                    .filter(w => w.status === 'approved' && w.targetZB > 0 && w.childName?.toLowerCase() !== "zefran3" && w.childName?.toLowerCase() !== "táta")
+                    .filter(w => w.status === 'approved' && w.targetZB > 0 && w.childName === activePlayer)
                     .map(wish => {
                       const childName = wish.childName || "Neznámý";
-                      const childStats = playerStats[childName] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+                      const childStats = playerStats.maraton[childName] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
                       const childBadgeBonus = BADGES.filter(b => b.check(childStats)).reduce((s, b) => s + b.bonusZB, 0);
                       const childTotalXP = childStats.totalZB + childBadgeBonus;
                       
@@ -1799,12 +2017,10 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                       
                       return (
                         <div key={wish.id} className={cn("rounded-xl border p-4 transition-all relative overflow-hidden", completed ? "bg-emerald-500/10 border-emerald-500/20" : "bg-zinc-800/50 border-white/5")}>
-                          <div className="absolute top-0 right-0 bg-zinc-800 text-[9px] text-zinc-400 px-2 py-0.5 rounded-bl font-bold uppercase tracking-wider border-l border-b border-white/5">
-                            {childName}
-                          </div>
                           <div className="flex items-center justify-between mb-2">
                             <div>
                               <span className="text-sm font-bold text-white block">{wish.name}</span>
+                              {renderWishUrl(wish.url)}
                             </div>
                             <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full", completed ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-700 text-zinc-400")}>
                               {completed ? "✓ Splněno!" : `${childTotalXP} / ${wish.targetZB} XP`}
@@ -1817,8 +2033,8 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                         </div>
                       );
                     })}
-                  {wishlists.filter(w => w.status === 'approved' && w.targetZB > 0 && w.childName?.toLowerCase() !== "zefran3" && w.childName?.toLowerCase() !== "táta").length === 0 && (
-                    <div className="text-center py-4 text-zinc-600 text-xs">Zatím žádná schválená přání dětí.</div>
+                  {wishlists.filter(w => w.status === 'approved' && w.targetZB > 0 && w.childName === activePlayer).length === 0 && (
+                    <div className="text-center py-4 text-zinc-600 text-xs">Zatím žádná schválená přání pro vybrané dítě.</div>
                   )}
                 </div>
               </div>
@@ -1845,14 +2061,17 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                 {/* Approved wishes with progress */}
                 <div className="grid gap-3">
                   {activeWishlist.filter(w => w.status === 'approved' && w.targetZB > 0).map(wish => {
-                    const progress = Math.min(100, (activeTotalXP / wish.targetZB) * 100);
-                    const completed = activeTotalXP >= wish.targetZB;
+                    const progress = Math.min(100, (activeMaratonTotalXP / wish.targetZB) * 100);
+                    const completed = activeMaratonTotalXP >= wish.targetZB;
                     return (
                       <div key={wish.id} className={cn("rounded-xl border p-4 transition-all", completed ? "bg-emerald-500/10 border-emerald-500/20" : "bg-zinc-800/50 border-white/5")}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-bold text-white">{wish.name}</span>
+                          <div>
+                            <span className="text-sm font-bold text-white block">{wish.name}</span>
+                            {renderWishUrl(wish.url)}
+                          </div>
                           <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full", completed ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-700 text-zinc-400")}>
-                            {completed ? "✓ Splněno!" : `${activeTotalXP} / ${wish.targetZB} XP`}
+                            {completed ? "✓ Splněno!" : `${activeMaratonTotalXP} / ${wish.targetZB} XP`}
                           </span>
                         </div>
                         <div className="h-2 bg-zinc-700/50 rounded-full overflow-hidden">
@@ -1920,10 +2139,78 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             >
               <h3 className="text-sm font-black text-white">Schválit přání</h3>
               <p className="text-xs text-zinc-400">„{approvingWish.name}" od {approvingWish.childName}</p>
-              <div>
-                <label className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1 block">Cena v XP</label>
-                <input value={approveZB} onChange={e => setApproveZB(e.target.value)} type="number" className="w-full bg-zinc-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-emerald-500/30" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1 block">Hodnota v Kč</label>
+                  <input
+                    value={approveKč}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setApproveKč(val);
+                      if (lockRatio) {
+                        const num = parseFloat(val);
+                        if (!isNaN(num)) {
+                          setApproveZB(Math.round(num / ratio).toString());
+                        } else {
+                          setApproveZB("");
+                        }
+                      }
+                    }}
+                    type="number"
+                    placeholder="Např. 2500"
+                    className="w-full bg-zinc-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-emerald-500/30 bg-zinc-800"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1 block">Cena v XP</label>
+                  <input
+                    value={approveZB}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setApproveZB(val);
+                      if (lockRatio) {
+                        const num = parseInt(val, 10);
+                        if (!isNaN(num)) {
+                          setApproveKč(Math.round(num * ratio).toString());
+                        } else {
+                          setApproveKč("");
+                        }
+                      }
+                    }}
+                    type="number"
+                    placeholder="Např. 500"
+                    className="w-full bg-zinc-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-emerald-500/30 bg-zinc-800"
+                  />
+                </div>
               </div>
+              
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  type="checkbox"
+                  id="lock-ratio-checkbox"
+                  checked={lockRatio}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    setLockRatio(checked);
+                    if (checked) {
+                      const num = parseFloat(approveKč);
+                      if (!isNaN(num)) {
+                        setApproveZB(Math.round(num / ratio).toString());
+                      }
+                    }
+                  }}
+                  className="w-4 h-4 rounded bg-zinc-800 border-white/10 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                />
+                <label htmlFor="lock-ratio-checkbox" className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider cursor-pointer select-none">
+                  🔒 Uzamknout poměr (přepočítávat)
+                </label>
+              </div>
+
+              {parseFloat(approveKč) > maxWishLimitCZK && (
+                <div className="text-[10px] text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-1.5 rounded-lg">
+                  ⚠️ Hodnota přesahuje maximální limit {maxWishLimitCZK} Kč!
+                </div>
+              )}
               <div className="flex gap-2">
                 <button onClick={() => setApprovingWish(null)} className="flex-1 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold hover:bg-zinc-700">Zrušit</button>
                 <button onClick={handleApproveWish} className="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-400">Schválit za {approveZB} XP</button>
@@ -1951,6 +2238,86 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                 <button onClick={() => setRejectingWish(null)} className="flex-1 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-bold hover:bg-zinc-700">Zrušit</button>
                 <button onClick={handleRejectWishWithReason} className="flex-1 py-2 rounded-lg bg-red-500 text-white text-xs font-bold hover:bg-red-400">Zamítnout</button>
               </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ RULES MODAL ═══ */}
+      <AnimatePresence>
+        {showRulesModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowRulesModal(false)}
+              className="fixed inset-0 bg-black/60 z-[110]"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-md bg-zinc-900 border border-white/10 rounded-2xl p-6 z-[110] space-y-4 max-h-[85vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                <h3 className="text-base font-black text-white flex items-center gap-2">
+                  <span>🎁 Jak fungují přání v Maratonu?</span>
+                </h3>
+                <button
+                  onClick={() => setShowRulesModal(false)}
+                  className="text-zinc-500 hover:text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="text-xs text-zinc-300 space-y-3.5 leading-relaxed">
+                <p>
+                  Marathon trvá 6 měsíců a tvým hlavním cílem je získat zvolené přání. Aby to bylo spravedlivé, platí následující pravidla:
+                </p>
+
+                <div className="space-y-3 bg-zinc-950/40 p-3.5 rounded-xl border border-white/5">
+                  <div>
+                    <span className="font-bold text-rose-400 block mb-0.5">Celkový limit:</span>
+                    <span>Můžeš si přát věci v celkové hodnotě až <strong>{maxWishLimitCZK} Kč</strong> (hodnota se automaticky převede na XP).</span>
+                  </div>
+
+                  <div>
+                    <span className="font-bold text-rose-400 block mb-0.5">Maximálně 2 přání:</span>
+                    <span>V rámci jednoho maratonu můžeš mít nejvýše 2 schválená přání, jejichž společná hodnota nepřekročí celkový limit.</span>
+                    <span className="block text-zinc-400 text-[11px] mt-1 bg-zinc-900/50 p-2 rounded border border-white/5">
+                      💡 <strong>Příklad:</strong> Pokud si přeješ hru za 1500 Kč, zbývá ti limit 1000 Kč, za který si můžeš přidat jedno další přání. Pokud tvé první přání vyčerpá celý limit (např. 2500 Kč), druhé přání už přidat nemůžeš.
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="font-bold text-rose-400 block mb-0.5">Povinná cena nebo odkaz:</span>
+                    <span>Vždy musíš uvést buď webový odkaz na vyhlédnutou věc, nebo napsat její cenu, aby rodič věděl, kolik stojí.</span>
+                  </div>
+
+                  <div>
+                    <span className="font-bold text-rose-400 block mb-0.5">Žádné peníze na ruku:</span>
+                    <span>Přej si konkrétní věc (Lego, knihu, hru) nebo zážitek. Přání ve formě samotné hotovosti nejsou povolená (máš kapesné).</span>
+                  </div>
+
+                  <div>
+                    <span className="font-bold text-rose-400 block mb-0.5">Schválení rodičem:</span>
+                    <span>Každé přání musí nejprve schválit rodič. Kolik XP bude pro splnění určí systém na základě spravedlivého algoritmu.</span>
+                  </div>
+                </div>
+
+                <p className="text-center font-bold text-amber-400 text-sm pt-1 border-t border-white/5">
+                  ✨ A to nejdůležitější na závěr. Svého cíle může dosáhnout každý.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowRulesModal(false)}
+                className="w-full py-2.5 rounded-lg bg-zinc-800 text-white font-bold text-xs hover:bg-zinc-700 transition-colors"
+              >
+                Rozumím
+              </button>
             </motion.div>
           </>
         )}
@@ -2344,6 +2711,42 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                     <span className="font-black text-[11px] leading-tight uppercase tracking-wider">Resetovat Ligu</span>
                     <span className="text-[8px] text-zinc-500 leading-normal">Úplný start od nuly</span>
                   </button>
+                </div>
+
+                {/* Nastavení limitu maratonského přání */}
+                <div className="border-t border-white/5 pt-4 space-y-2.5">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
+                      Limit maratonského přání (max Kč)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={tempMaxLimit}
+                        onChange={e => setTempMaxLimit(e.target.value)}
+                        className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500 w-full bg-zinc-900 text-white"
+                        placeholder="Výchozí: 2500"
+                        min="1"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const val = parseFloat(tempMaxLimit);
+                          if (!isNaN(val) && val > 0) {
+                            await setDoc(doc(db, 'settings', 'league_config'), {
+                              maxWishLimitCZK: val
+                            }, { merge: true }).catch(console.error);
+                          }
+                        }}
+                        className="px-4 py-2 bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                      >
+                        Uložit limit
+                      </button>
+                    </div>
+                    <p className="text-[9px] text-zinc-500 mt-1 leading-normal">
+                      Při limitu {tempMaxLimit || 2500} Kč má 1 XP hodnotu {((parseFloat(tempMaxLimit) || 2500) / 500).toFixed(2)} Kč. Maximální hodnota přání (500 XP) odpovídá nastavené částce.
+                    </p>
+                  </div>
                 </div>
               </div>
             </motion.div>

@@ -1,6 +1,6 @@
 import puppeteer from 'puppeteer';
+import type { ScrapedEvent } from '../../types';
 
-interface ScrapedEvent { title: string; date: string; description: string; source_url: string; }
 
 const BASE_URL = 'https://www.kudyznudy.cz';
 
@@ -140,10 +140,25 @@ async function fetchKudyZNudyViaFetch(): Promise<ScrapedEvent[]> {
 
         const fullUrl = `${BASE_URL}${slug}`;
 
+        // Pokus extrahovat datum ze slugu (např. /akce/2026-06-14-nazev nebo obsahuje rok)
+        const dateFromSlug = slug.match(/(\d{4}-\d{2}-\d{2})/)?.[1] || '';
+
+        // Pokus o stručnější, reálnější description z okolního HTML
+        // Hledáme text v krátkém okně za href (do 400 znaků)
+        const hrefPos = html.indexOf(`href="${slug}"`);
+        let descFromContext = '';
+        if (hrefPos !== -1) {
+          const window = html.substring(hrefPos, hrefPos + 600);
+          // Hledáme první <p> nebo <span class="*perex*"> v okně
+          const perexMatch = window.match(/<p[^>]*>([^<]{15,200})<\/p>/);
+          const spanMatch = window.match(/<span[^>]*class="[^"]*(?:perex|desc|text)[^"]*"[^>]*>([^<]{10,150})<\/span>/i);
+          descFromContext = (perexMatch?.[1] || spanMatch?.[1] || '').trim().replace(/\s+/g, ' ');
+        }
+
         events.push({
           title: linkText,
-          date: '',  // Datum necháme prázdné — AI použije datum víkendu
-          description: `Akce v Jihomoravském kraji – ${linkText}`,
+          date: dateFromSlug,   // Prázdné = server pre-processing doplní nextSat
+          description: descFromContext || `Akce v Jihomoravském kraji: ${linkText}`,
           source_url: fullUrl,
         });
 

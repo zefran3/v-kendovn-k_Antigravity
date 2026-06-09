@@ -28,6 +28,9 @@ interface AdminPanelProps {
   isGeneratingInspiration: boolean;
   handleApproveBikeRoute: (id: string) => void;
   currentUserRole?: string;
+  isDemoMode?: boolean;
+  onToggleDemoMode?: () => void;
+  onCleanupSandbox?: () => void;
 }
 
 export default function AdminPanel({
@@ -41,7 +44,10 @@ export default function AdminPanel({
   handleGenerateInspirations,
   isGeneratingInspiration,
   handleApproveBikeRoute,
-  currentUserRole
+  currentUserRole,
+  isDemoMode = false,
+  onToggleDemoMode,
+  onCleanupSandbox
 }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions">("users");
   const [logs, setLogs] = useState<AdminLog[]>([]);
@@ -152,6 +158,7 @@ export default function AdminPanel({
 
           {activeTab === "actions" && (
             <div className="flex flex-col gap-4">
+              {/* AI Agent Section */}
               <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 flex flex-col gap-3">
                 <div className="font-bold text-indigo-800 flex items-center gap-2">
                   <Bot size={20} /> Manuální spuštění AI Agent
@@ -180,6 +187,44 @@ export default function AdminPanel({
                         Generuji tipy...
                       </>
                     ) : 'Vygenerovat tipy NYNÍ'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Testovací Sandbox Section */}
+              <div className="bg-violet-50 p-6 rounded-2xl border border-violet-100 flex flex-col gap-3">
+                <div className="font-bold text-violet-800 flex items-center gap-2">
+                  <Bot size={20} className="text-violet-500" /> Testovací Sandbox (Demo Dítě)
+                </div>
+                <p className="text-sm text-violet-600">
+                  Přepne aplikaci do testovacího režimu. Budete moci testovat rozhraní pro děti, GameHub, Wishlist a sbírání bodů pod virtuálním profilem <strong>Demo Dítě</strong>.
+                </p>
+                <div className="flex flex-wrap gap-3 mt-2">
+                  <button 
+                    onClick={() => {
+                      onToggleDemoMode?.();
+                      onClose();
+                    }}
+                    className={cn(
+                      "px-6 py-3 rounded-xl font-bold text-sm shadow-sm transition-all cursor-pointer",
+                      isDemoMode 
+                        ? "bg-stone-600 text-white hover:bg-stone-700" 
+                        : "bg-violet-600 text-white hover:bg-violet-700 hover:shadow-md"
+                    )}
+                  >
+                    {isDemoMode ? "Ukončit Sandbox" : "Vstoupit do Sandboxu"}
+                  </button>
+
+                  <button 
+                    onClick={() => {
+                      if (window.confirm("Opravdu chcete trvale smazat všechny testovací stopy (návrhy a přání) po Demo Dítěti?")) {
+                        onCleanupSandbox?.();
+                        onClose();
+                      }
+                    }}
+                    className="px-6 py-3 rounded-xl bg-rose-500 text-white font-bold text-sm shadow-sm hover:bg-rose-600 hover:shadow-md transition-all cursor-pointer"
+                  >
+                    🧹 Uklidit sandbox
                   </button>
                 </div>
               </div>
