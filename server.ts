@@ -333,7 +333,8 @@ async function startServer() {
             sonSection += `👦 ${name} (syn${ageStr}):
   NEMÁ RÁD: ležení u vody a rodinné výlety na koupaliště (s kamarády by mu to nevadilo, ale s rodinou ne).
   MÁ RÁD: hokej — zejména HC Kometa Brno a hokej obecně, vojenskou techniku a armádní akce (Dny NATO jsou pro něj svátek), počítačové hry (Kingdom Come: Deliverance) a PlayStation hry všeho druhu, posilování ve fitcentru.
-  POZNÁMKA: Herní centrum PlayStation ve Vyškově NEEXISTUJE — nikdy jej nenabízej jako konkrétní místo.
+  POZNÁMKA 1: Herní centrum PlayStation ve Vyškově NEEXISTUJE — nikdy jej nenabízej jako konkrétní místo.
+  POZNÁMKA 2: "Fitness centrum Vyškov" je zakázáno jako příliš obecné. Pro fitness nabízej VÝHRADNĚ konkrétní a reálné posilovny, např. "Fitness Gym Vyškov" (Dobrovského 4, Vyškov) nebo "L-Fitness Vyškov" (Brněnská 122/41, Vyškov).
 `;
           }
         });
@@ -357,7 +358,8 @@ async function startServer() {
       sonSection = `👦 František (syn, 15 let):
   NEMÁ RÁD: ležení u vody a rodinné výlety na koupaliště (s kamarády by mu to nevadilo, ale s rodinou ne).
   MÁ RÁD: hokej — zejména HC Kometa Brno a hokej obecně, vojenskou techniku a armádní akce (Dny NATO jsou pro něj svátek), počítačové hry (Kingdom Come: Deliverance) a PlayStation hry všeho druhu, posilování ve fitcentru.
-  POZNÁMKA: Herní centrum PlayStation ve Vyškově NEEXISTUJE — nikdy jej nenabízej jako konkrétní místo.
+  POZNÁMKA 1: Herní centrum PlayStation ve Vyškově NEEXISTUJE — nikdy jej nenabízej jako konkrétní místo.
+  POZNÁMKA 2: "Fitness centrum Vyškov" je zakázáno jako příliš obecné. Pro fitness nabízej VÝHRADNĚ konkrétní a reálné posilovny, např. "Fitness Gym Vyškov" (Dobrovského 4, Vyškov) nebo "L-Fitness Vyškov" (Brněnská 122/41, Vyškov).
 `;
     }
 
@@ -410,9 +412,17 @@ async function startServer() {
     const nextSat = new Date(now); nextSat.setDate(now.getDate() + (dow === 6 ? 0 : 6 - dow));
     const nextSun = new Date(nextSat); nextSun.setDate(nextSat.getDate() + 1);
     const nextSatISO = nextSat.toISOString().split('T')[0];
+    const nextSunISO = nextSun.toISOString().split('T')[0];
     const todayStr = now.toLocaleDateString('cs-CZ', { day: '2-digit', month: 'long', year: 'numeric', weekday: 'long' });
     const fmtDate = (d: Date) => d.toLocaleDateString('cs-CZ', { day: '2-digit', month: 'long', year: 'numeric' });
     const weekendStr = `${fmtDate(nextSat)} (sobota) – ${fmtDate(nextSun)} (neděle)`;
+
+    // Profiltrujeme programy kin pouze na dny víkendu, abychom zmenšili prompt a AI se soustředila jen na ně
+    const filterWeekendCinema = (events: any[]) =>
+      events.filter(e => e.date === nextSatISO || e.date === nextSunISO);
+
+    const weekendMksCinema = filterWeekendCinema(mksCinema);
+    const weekendCineStar = filterWeekendCinema(cineStarData);
 
     // ── Solution C: Pre-processing dat před promptem ───────────────────────────
     const enrichItems = (items: any[], sourceName: string) =>
@@ -431,9 +441,9 @@ async function startServer() {
     const enrichedJizni = enrichItems(Array.isArray(jizniMoravaData) ? jizniMoravaData as any[] : [], 'Jižní Morava');
 
     // ── Sestavení datových bloků pro AI prompt ─────────────────────────────────
-    const cinemaDataString  = mksCinemaCount > 0 ? JSON.stringify(mksCinema, null, 2) : 'ŽÁDNÁ DATA (scraper selhal nebo nenašel nic)';
+    const cinemaDataString  = weekendMksCinema.length > 0 ? JSON.stringify(weekendMksCinema, null, 2) : 'ŽÁDNÁ DATA (scraper selhal nebo nenašel nic)';
     const mksEventsString   = mksEventsCount > 0  ? JSON.stringify(mksEvents, null, 2) : 'ŽÁDNÁ DATA';
-    const cineStarString    = cineStarCount > 0   ? JSON.stringify(cineStarData, null, 2) : 'ŽÁDNÁ DATA';
+    const cineStarString    = weekendCineStar.length > 0   ? JSON.stringify(weekendCineStar, null, 2) : 'ŽÁDNÁ DATA';
     const kudyString        = enrichedKudy.length > 0 ? JSON.stringify(enrichedKudy, null, 2) : 'ŽÁDNÁ DATA';
     const jizniMoravaString = enrichedJizni.length > 0 ? JSON.stringify(enrichedJizni, null, 2) : 'ŽÁDNÁ DATA';
 
@@ -470,7 +480,7 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
 
 1. ⛔ Data scraperů výše jsou tvůj primární zdroj. Pro aktivity s konkrétním datem, časem a cenou čerpej VÝHRADNĚ z těchto dat — nevymýšlej detaily pro akce které v datech nejsou.
 
-2. ⛔ Navrhuj POUZE místa která jsou buď (a) přímo ve scraped datech výše, nebo (b) reálně existující místa o jejichž existenci jsi zcela jistý ze svých znalostí (Aquapark Vyškov, ZOO Lešná apod. jsou reálná místa). NIKDY nevymýšlej neexistující zařízení — typické příklady halucinací: „Herna PlayStation Vyškov", „Minigolf park Vyškov centrum", fiktivní sportovní haly. Pokud si nejsi jistý existencí konkrétního místa, NENAPIŠ HO.
+2. ⛔ Navrhuj POUZE místa která jsou buď (a) přímo ve scraped datech výše, nebo (b) reálně existující místa o jejichž existenci jsi zcela jistý ze svých znalostí (Aquapark Vyškov, ZOO Lešná apod. jsou reálná místa). NIKDY nevymýšlej neexistující zařízení — typické příklady halucinací: „Herna PlayStation Vyškov", „Minigolf park Vyškov centrum", „Fitness centrum Vyškov" (obecný název bez konkrétního místa). Pokud si nejsi jistý existencí konkrétního místa, NENAPIŠ HO. Pro posilování syna Františka použij výhradně reálná fitness centra, např. „Fitness Gym Vyškov" (Dobrovského 4, Vyškov) nebo „L-Fitness Vyškov" (Brněnská 122/41, Vyškov).
 
 3. ✅ Pokud scraper vrátil "ŽÁDNÁ DATA" — zcela ho ignoruj. Přejdi na scraper který data má. NEČERPEJ z prázdného scraperu vůbec nic.
 
@@ -501,7 +511,8 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
 10. ⛔ PRO KINA PLATÍ PŘÍSNÝ ZÁKAZ DUPLICIT A SAMOSTATNÝCH KARET PRO FILMY:
     - Pro kino CineStar Olomouc vygeneruj V CELÉM VÍKENDOVÉM PLÁNU nejvýše 1 jedinou celkovou kartu (tip) pro celou rodinu (target='pro_vsechny').
     - Pro Kino Sokolský dům Vyškov vygeneruj V CELÉM VÍKENDOVÉM PLÁNU nejvýše 1 jedinou celkovou kartu (tip) pro celou rodinu (target='pro_vsechny').
-    - ⛔ NIKDY negeneruj žádné samostatné karty pro konkrétní filmy z těchto kin (např. samostatná karta pro film 'Mandalorian a Grogu' nebo 'Lumpík Špuntík' je přísně zakázána!). Všechny filmy z programu daného kina musí být uvedeny VÝHRADNĚ v poli 'cinema_listings' dané jediné celkové karty kina.
+    - ⛔ NIKDY negeneruj žádné samostatné karty pro konkrétní filmy z těchto kin (např. samostatná karta pro film 'Mandalorian a Grogu' nebo 'Lumpík Špuntík' je přísně zakázána!). Všechny filmy z programu daného kina pro daný víkendový den (sobota, neděle) musí být uvedeny VÝHRADNĚ v poli 'cinema_listings' dané jediné celkové karty kina.
+    - ✅ UVEĎ KOMPLETNÍ PROGRAM: V poli 'cinema_listings' uveď VŠECHNY dostupné filmy, které se v daném kině o víkendu promítají. Nic nezkracuj ani nevynechávej, uveď i více než 5-10 filmů pokud jsou v datech!
     - Každá položka v poli 'cinema_listings' musí mít přesně tuto strukturu objektu: {"film": "Název filmu", "time": "Časy promítání (např. 17:00, 19:30)", "url": "URL odkaz na detail/nákup vstupenek z dat"}.
     - ⛔ NIKDY pro stejné kino negeneruj více různých karet (např. jednu kartu pro sobotní promítání a druhou pro nedělní promítání, nebo duplicitní karty). Vždy vytvoř maximálně 1 kartu pro CineStar Olomouc a maximálně 1 kartu pro Kino Sokolský dům Vyškov.
     - ⛔ ADRESY MÍST (location):
@@ -549,9 +560,9 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
     // Poznámka: gemini-2.5-pro byl přesunut z primárního kvůli opakovaným 429 chybám.
     // responseMimeType: 'application/json' = model vrátí čistý JSON bez markdownu
     const JSON_GENERATION_CONFIG = { responseMimeType: 'application/json' as const };
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', generationConfig: JSON_GENERATION_CONFIG });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite', generationConfig: JSON_GENERATION_CONFIG });
     let suggestions: any[] = [];
-    let usedModel = 'gemini-2.5-flash';
+    let usedModel = 'gemini-3.1-flash-lite';
     try {
       emit('AI skládá víkendový plán...');
       const result = await model.generateContent(prompt);
@@ -568,14 +579,14 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
       }
       console.log(`[AI] ${usedModel} úspěšně vygeneroval ${suggestions.length} tipů.`);
     } catch (err: any) {
-      // Fallback na gemini-2.0-flash – má separátní kvótu a jiné rate limity
+      // Fallback na gemini-3.1-flash-lite-preview – má separátní kvótu a jiné rate limity
       const errInfo = `status=${err?.status}, msg=${String(err).substring(0, 200)}`;
-      console.warn(`[AI] ${usedModel} selhalo (${errInfo}), zkouším fallback na gemini-2.0-flash...`);
+      console.warn(`[AI] ${usedModel} selhalo (${errInfo}), zkouším fallback na gemini-3.1-flash-lite-preview...`);
       emit('Přepínám na záložní model...');
       addAdminLog('ERROR', `[AI] ${usedModel} selhalo, spouštím fallback.`, { error: errInfo });
       try {
-        usedModel = 'gemini-2.0-flash';
-        const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash', generationConfig: JSON_GENERATION_CONFIG });
+        usedModel = 'gemini-3.1-flash-lite-preview';
+        const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview', generationConfig: JSON_GENERATION_CONFIG });
         const fallbackResult = await fallbackModel.generateContent(prompt);
         const fallbackFinishReason = fallbackResult.response.candidates?.[0]?.finishReason;
         if (fallbackFinishReason && fallbackFinishReason !== 'STOP') {
@@ -610,6 +621,14 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
     ];
 
     suggestions = suggestions.map((s: any) => {
+      const normalizeStr = (str: string) =>
+        str
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "") // odstranění diakritiky
+          .replace(/[^a-z0-9]/g, "") // odstranění speciálních znaků a mezer
+          .trim();
+
       // 1. Oprava data v minulosti
       if (s.date) {
         // Pokus o parsování data z různých formátů (ISO nebo česky)
@@ -632,6 +651,56 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
           console.warn(`[Post-process] Holá URL domény: "${s.url}" → nahrazuji prázdným stringem`);
           s.url = '';
         }
+      }
+
+      // 3. Oprava odkazů na vstupenky v cinema_listings (nahrazení zkomolených URL originálními ze scraperů)
+      if (Array.isArray(s.cinema_listings)) {
+        // Agregujeme všechny dostupné originální cinema listings ze scraperů pro spárování
+        const originalListings: any[] = [];
+        if (Array.isArray(mksCinema)) {
+          mksCinema.forEach(c => {
+            if (Array.isArray(c.cinema_listings)) originalListings.push(...c.cinema_listings);
+          });
+        }
+        if (Array.isArray(cineStarData)) {
+          cineStarData.forEach(c => {
+            if (Array.isArray(c.cinema_listings)) originalListings.push(...c.cinema_listings);
+          });
+        }
+
+        s.cinema_listings = s.cinema_listings.map((item: any) => {
+          const titleKey = normalizeStr(item.film || item.film_title || '');
+          if (titleKey) {
+            const match = originalListings.find(orig => {
+              const origKey = normalizeStr(orig.film || orig.film_title || '');
+              return origKey === titleKey || origKey.includes(titleKey) || titleKey.includes(origKey);
+            });
+            if (match && match.url) {
+              console.log(`[Post-process] Opravuji URL filmu "${item.film || item.film_title}": "${item.url}" → "${match.url}"`);
+              return {
+                ...item,
+                url: match.url
+              };
+            }
+          }
+          return item;
+        });
+      }
+
+      // 4. Oprava obecného Fitness centra Vyškov na konkrétní reálné místo
+      const isObecneFitko = s.title && (
+        normalizeStr(s.title).includes('fitnesscentrumvyskov') ||
+        normalizeStr(s.title).includes('fitcentrumvyskov') ||
+        normalizeStr(s.title) === 'fitnessvyskov' ||
+        (normalizeStr(s.title).includes('fitness') && normalizeStr(s.title).includes('vyskov') && !normalizeStr(s.title).includes('gym') && !normalizeStr(s.title).includes('lfitness'))
+      );
+      if (isObecneFitko) {
+        console.log(`[Post-process] Opravuji obecné fitness centrum "${s.title}" -> "Fitness Gym Vyškov"`);
+        s.title = "Fitness Gym Vyškov";
+        s.location = "Dobrovského 4, Vyškov";
+        s.description = "Konkrétní moderní posilovna Fitness Gym Vyškov, která nabízí skvělé stroje a zázemí pro silový trénink syna Františka.";
+        s.url = "";
+        s.ticket_url = "";
       }
 
       return s;

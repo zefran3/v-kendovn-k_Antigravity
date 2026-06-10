@@ -320,6 +320,7 @@ export default function App() {
   const [deleteFilterStatus, setDeleteFilterStatus] = useState<"rejected" | "cancelled" | null>(null);
   const [showNothingToDeleteModal, setShowNothingToDeleteModal] = useState(false);
   const [showGradeLimitModal, setShowGradeLimitModal] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showGameHub, setShowGameHub] = useState(false);
   const [showBikeGenerator, setShowBikeGenerator] = useState(false);
   useEffect(() => {
@@ -902,10 +903,14 @@ export default function App() {
     } catch (err) { console.error(err); }
   };
 
-  const handleDeleteInspiration = async (id: string) => {
-    if (!user) return;
-    if (!window.confirm("Opravdu chcete tento návrh smazat?")) return;
-    
+  const handleDeleteInspiration = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDeleteInspiration = async () => {
+    if (!user || !deleteConfirmId) return;
+    const id = deleteConfirmId;
+    setDeleteConfirmId(null);
     try {
       await deleteDoc(doc(db, 'suggestions', id));
       // Okamžitý update UI pro lepší pocit z aplikace
@@ -4891,6 +4896,52 @@ export default function App() {
                   </div>
                 </div>
               )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deleteConfirmId && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDeleteConfirmId(null)}
+              className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[110] transition-opacity"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85%] max-w-xs bg-white rounded-[24px] p-5 shadow-2xl z-[110] flex flex-col gap-4 border-2 border-indigo-50"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-extrabold text-stone-800 tracking-tight flex items-center gap-2">
+                  <span>🗑️</span> Smazat návrh?
+                </h2>
+              </div>
+
+              <div className="text-sm text-stone-600 leading-relaxed">
+                Opravdu chcete tento návrh smazat? Tato akce je nevratná.
+              </div>
+
+              <div className="flex justify-end gap-2 mt-1">
+                <button 
+                  onClick={() => setDeleteConfirmId(null)}
+                  className="px-4 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl font-bold text-sm transition-colors"
+                >
+                  Zrušit
+                </button>
+                <button 
+                  onClick={confirmDeleteInspiration}
+                  className="px-4 py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold text-sm shadow-md transition-colors"
+                >
+                  Smazat
+                </button>
+              </div>
             </motion.div>
           </>
         )}

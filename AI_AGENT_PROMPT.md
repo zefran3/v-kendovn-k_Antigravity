@@ -174,8 +174,8 @@ Tím AI vždy dostane použitelná data i z fallback scraperů.
 
 | Parametr | Hodnota |
 |---|---|
-| Primární model | `gemini-2.5-flash` |
-| Fallback model | `gemini-2.0-flash` |
+| Primární model | `gemini-3.1-flash-lite` |
+| Fallback model | `gemini-3.1-flash-lite-preview` |
 | Formát odpovědi | `responseMimeType: application/json` |
 | Prázdné `[]` = chyba | ✅ Ano → spustí fallback model |
 | Mazání starých tipů | Všechny `status != draft/proposed` |

@@ -11,10 +11,10 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Simulace velkého promptu (přibližná délka reálného s JSON daty ze scraperů)
 // Vygenerujeme fake scraper data podobné velikosti
-const fakeScrapedData = Array.from({length: 10}, (_, i) => ({
+const fakeScrapedData = Array.from({ length: 10 }, (_, i) => ({
   title: `Film ${i}: Velký název filmu s dlouhým popisem ${i}`,
   description: `Detailní popis ${i}: Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam quis nostrud exercitation.`,
-  date: `2026-06-${7+i}`,
+  date: `2026-06-${7 + i}`,
   time: '18:00',
   url: `https://example.com/akce/${i}`,
   location: `Vyškov, náměstí Svobody ${i}`,
@@ -43,7 +43,7 @@ const flashModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 try {
   const countResult = await flashModel.countTokens(bigPrompt);
   console.log('Token count:', countResult.totalTokens);
-} catch(e) {
+} catch (e) {
   console.log('Token count error:', (e as Error).message?.substring(0, 200));
 }
 
@@ -56,11 +56,11 @@ try {
   console.log('finishReason:', finishReason);
   console.log('Response text length:', text.length);
   console.log('First 100 chars:', JSON.stringify(text.substring(0, 100)));
-  
+
   try {
     const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
     console.log('✅ JSON parse OK! Items:', parsed.length);
-  } catch(pe) {
+  } catch (pe) {
     console.log('❌ JSON parse FAILED:', (pe as Error).message);
     console.log('Last 200 chars of response:', JSON.stringify(text.substring(text.length - 200)));
     // Check if truncated
@@ -68,6 +68,6 @@ try {
       console.log('=> REASON: MAX_TOKENS - output was truncated!');
     }
   }
-} catch(e: any) {
+} catch (e: any) {
   console.log('Generate ERROR:', e.status, e.message?.substring(0, 300));
 }

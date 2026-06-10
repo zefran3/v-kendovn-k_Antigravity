@@ -279,7 +279,7 @@ export default function BikeRouteGenerator({ userCity, userId, authorName, onGen
                   disabled={isLoading}
                   whileTap={{ scale: 0.97 }}
                   className={cn(
-                    "flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 text-center font-semibold transition-all shadow-sm whitespace-nowrap",
+                    "flex-1 min-w-0 py-3 px-4 rounded-xl flex items-center justify-center gap-2 text-center font-semibold transition-all shadow-sm whitespace-nowrap",
                     isLoading
                       ? "bg-stone-200 text-stone-400 cursor-not-allowed"
                       : difficulty === "easy"
@@ -292,7 +292,11 @@ export default function BikeRouteGenerator({ userCity, userId, authorName, onGen
                   {isLoading ? (
                     <>
                       <Loader2 size={16} className="animate-spin flex-shrink-0" />
-                      <span className="truncate">{loadingMsg || "Generuji..."}</span>
+                      <span className="truncate">
+                        {loadingMsg.startsWith("Hledám reálné místo: ")
+                          ? loadingMsg.replace("Hledám reálné místo: ", "Hledám: ")
+                          : loadingMsg || "Generuji..."}
+                      </span>
                     </>
                   ) : (
                     <>
@@ -307,7 +311,7 @@ export default function BikeRouteGenerator({ userCity, userId, authorName, onGen
                   disabled={isLoading}
                   whileTap={{ scale: 0.97 }}
                   className={cn(
-                    "flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 text-center font-semibold transition-all shadow-sm whitespace-nowrap",
+                    "flex-1 min-w-0 py-3 px-4 rounded-xl flex items-center justify-center gap-2 text-center font-semibold transition-all shadow-sm whitespace-nowrap",
                     isLoading
                       ? "bg-stone-100 border-2 border-stone-200 text-stone-400 cursor-not-allowed"
                       : difficulty === "easy"
@@ -318,7 +322,7 @@ export default function BikeRouteGenerator({ userCity, userId, authorName, onGen
                   )}
                 >
                   <Dice5 size={16} className="flex-shrink-0" />
-                  <span>Překvap mě</span>
+                  <span className="truncate">Překvap mě</span>
                 </motion.button>
               </div>
 
