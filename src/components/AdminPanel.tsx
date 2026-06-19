@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { X, Bot, Shield, AlertCircle, CheckCircle, Database, Bike } from "lucide-react";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import { collection, query, orderBy, limit, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc } from "firebase/firestore";
 import { cn } from "../lib/utils";
 import { UserProfile, UserRole } from "../types";
@@ -14,6 +14,15 @@ interface AdminLog {
   type: 'SUCCESS' | 'ERROR' | 'LIMIT' | 'SCRAPER';
   message: string;
   details?: any;
+}
+
+interface KnownLocation {
+  id: string;
+  name: string;
+  keywords: string[];
+  exactLocation: string;
+  exactUrl: string;
+  isVyskov?: boolean;
 }
 
 interface AdminPanelProps {
@@ -49,8 +58,143 @@ export default function AdminPanel({
   onToggleDemoMode,
   onCleanupSandbox
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions">("users");
+  const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions" | "locations">("users");
   const [logs, setLogs] = useState<AdminLog[]>([]);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [locations, setLocations] = useState<KnownLocation[]>([]);
+  const [isAddingLocation, setIsAddingLocation] = useState(false);
+  const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
+
+  // Form states
+  const [locName, setLocName] = useState("");
+  const [locKeywords, setLocKeywords] = useState("");
+  const [locExactLocation, setLocExactLocation] = useState("");
+  const [locExactUrl, setLocExactUrl] = useState("");
+  const [locIsVyskov, setLocIsVyskov] = useState(false);
+  const [locError, setLocError] = useState("");
+
+  const fetchLocations = async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    try {
+      const response = await fetch(`/api/locations?uid=${uid}`);
+      if (response.ok) {
+        const data = await response.json();
+        data.sort((a: any, b: any) => a.name.localeCompare(b.name));
+        setLocations(data);
+      } else {
+        console.error("Chyba při načítání lokací přes API:", response.statusText);
+      }
+    } catch (err) {
+      console.error("Chyba při načítání lokací:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchLocations();
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        fetchLocations();
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleSaveLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!locName.trim() || !locExactLocation.trim()) {
+      setLocError("Název a Adresa jsou povinné.");
+      return;
+    }
+
+    const keywordsArray = locKeywords
+      .split(",")
+      .map(k => k.trim().toLowerCase())
+      .filter(k => k.length > 0);
+
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setLocError("Uživatel není přihlášen.");
+      return;
+    }
+
+    const locData = {
+      uid,
+      name: locName.trim(),
+      keywords: keywordsArray,
+      exactLocation: locExactLocation.trim(),
+      exactUrl: locExactUrl.trim(),
+      isVyskov: locIsVyskov
+    };
+
+    try {
+      if (editingLocationId) {
+        const res = await fetch(`/api/locations/${editingLocationId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(locData)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      } else {
+        const res = await fetch(`/api/locations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(locData)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }
+      resetLocForm();
+      await fetchLocations();
+    } catch (err: any) {
+      console.error("Chyba při ukládání známého místa:", err);
+      setLocError("Chyba při ukládání: " + err.message);
+    }
+  };
+
+  const handleEditLocation = (loc: KnownLocation) => {
+    setEditingLocationId(loc.id);
+    setLocName(loc.name);
+    setLocKeywords(loc.keywords.join(", "));
+    setLocExactLocation(loc.exactLocation);
+    setLocExactUrl(loc.exactUrl);
+    setLocIsVyskov(!!loc.isVyskov);
+    setIsAddingLocation(true);
+    setLocError("");
+
+    // Smooth scroll back to the top where the edit form is
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const handleDeleteLocation = async (id: string) => {
+    if (window.confirm("Opravdu chcete toto známé místo smazat?")) {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      try {
+        const res = await fetch(`/api/locations/${id}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        await fetchLocations();
+      } catch (err) {
+        console.error("Chyba při mazání:", err);
+      }
+    }
+  };
+
+  const resetLocForm = () => {
+    setLocName("");
+    setLocKeywords("");
+    setLocExactLocation("");
+    setLocExactUrl("");
+    setLocIsVyskov(false);
+    setIsAddingLocation(false);
+    setEditingLocationId(null);
+    setLocError("");
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'admin_logs'), orderBy('timestamp', 'desc'), limit(15));
@@ -128,9 +272,18 @@ export default function AdminPanel({
           >
             Akce
           </button>
+          <button 
+            onClick={() => setActiveTab("locations")}
+            className={cn("px-4 py-2 font-bold text-sm rounded-lg transition-colors", activeTab === "locations" ? "bg-indigo-50 text-indigo-600" : "text-stone-500 hover:bg-stone-50")}
+          >
+            Správa Míst
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 min-h-[300px] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div 
+          ref={scrollContainerRef}
+          className="flex-1 overflow-y-auto px-2 min-h-[300px] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {activeTab === "logs" && (
             <div className="flex flex-col gap-2">
               {(logs || []).length === 0 ? (
@@ -372,6 +525,171 @@ export default function AdminPanel({
 
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "locations" && (
+            <div className="flex flex-col gap-4">
+              <div className="flex justify-between items-center bg-stone-50 p-4 rounded-2xl border border-stone-100">
+                <div className="pr-2">
+                  <div className="font-bold text-stone-800 text-sm">Správa známých míst a ověřených URL</div>
+                  <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">
+                    Zde spravujete adresy a weby pro opakující se akce. Server při generování AI tipů automaticky nahradí vygenerovanou adresu a URL podle klíčových slov.
+                  </p>
+                </div>
+                {!isAddingLocation && (
+                  <button
+                    onClick={() => {
+                      resetLocForm();
+                      setIsAddingLocation(true);
+                      if (scrollContainerRef.current) {
+                        scrollContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
+                      }
+                    }}
+                    className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer whitespace-nowrap animate-none"
+                  >
+                    Přidat místo
+                  </button>
+                )}
+              </div>
+
+              {isAddingLocation ? (
+                <form onSubmit={handleSaveLocation} className="bg-stone-50 p-5 rounded-2xl border border-stone-100 flex flex-col gap-3 text-sm">
+                  <div className="font-bold text-stone-700">{editingLocationId ? "Upravit místo" : "Nové známé místo"}</div>
+                  
+                  {locError && <div className="text-xs text-rose-500 font-bold">{locError}</div>}
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] font-bold text-stone-500 uppercase">Název místa</label>
+                      <input 
+                        type="text" 
+                        value={locName} 
+                        onChange={e => setLocName(e.target.value)} 
+                        placeholder="ZOO Zlín - Lešná"
+                        className="bg-white border border-stone-200 rounded-xl px-3 py-2 text-stone-700 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+                      />
+                    </div>
+                    
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] font-bold text-stone-500 uppercase">Klíčová slova (oddělená čárkou)</label>
+                      <input 
+                        type="text" 
+                        value={locKeywords} 
+                        onChange={e => setLocKeywords(e.target.value)} 
+                        placeholder="zoo zlin, zoo lesna, lesna"
+                        className="bg-white border border-stone-200 rounded-xl px-3 py-2 text-stone-700 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-stone-500 uppercase">Přesná adresa</label>
+                    <input 
+                      type="text" 
+                      value={locExactLocation} 
+                      onChange={e => setLocExactLocation(e.target.value)} 
+                      placeholder="ZOO Zlín - Lešná, Lukovská 112, Zlín"
+                      className="bg-white border border-stone-200 rounded-xl px-3 py-2 text-stone-700 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr_120px] gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] font-bold text-stone-500 uppercase">Oficiální webová URL</label>
+                      <input 
+                        type="text" 
+                        value={locExactUrl} 
+                        onChange={e => setLocExactUrl(e.target.value)} 
+                        placeholder="https://www.zoozlin.eu"
+                        className="bg-white border border-stone-200 rounded-xl px-3 py-2 text-stone-700 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1 justify-end">
+                      <label className="flex items-center gap-2 cursor-pointer py-2 text-xs font-bold text-stone-600 select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={locIsVyskov} 
+                          onChange={e => setLocIsVyskov(e.target.checked)}
+                          className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-stone-300"
+                        />
+                        <span>Přímo ve Vyškově</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 justify-end mt-2">
+                    <button 
+                      type="button" 
+                      onClick={resetLocForm}
+                      className="px-4 py-2 border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 font-bold text-xs rounded-xl shadow-sm cursor-pointer"
+                    >
+                      Zrušit
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
+                    >
+                      {editingLocationId ? "Uložit změny" : "Vytvořit lokaci"}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              <div className="flex flex-col mt-2 gap-3 pb-8">
+                {locations.length === 0 ? (
+                  <div className="text-stone-400 text-center py-8">Zatím žádné uložené lokace.</div>
+                ) : (
+                  locations.map(loc => (
+                    <div key={loc.id} className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm hover:shadow transition-shadow flex flex-col gap-2 text-left">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="font-extrabold text-stone-800 text-sm flex items-center gap-2">
+                            {loc.name} {loc.isVyskov && <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded font-bold">🏰 Vyškov</span>}
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {loc.keywords.map((kw, i) => (
+                              <span key={i} className="text-[9px] bg-stone-100 text-stone-500 px-1.5 py-0.5 rounded border border-stone-200/50">
+                                {kw}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => handleEditLocation(loc)}
+                            className="text-xs font-bold text-indigo-500 hover:text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                          >
+                            Upravit
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteLocation(loc.id)}
+                            className="text-xs font-bold text-rose-500 hover:text-rose-600 bg-rose-50/50 hover:bg-rose-50 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                          >
+                            Smazat
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="text-xs text-stone-600 flex flex-col gap-1 border-t border-stone-50 pt-2 mt-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-stone-400 w-16">Adresa:</span>
+                          <span className="font-medium text-stone-700 truncate" title={loc.exactLocation}>{loc.exactLocation}</span>
+                        </div>
+                        {loc.exactUrl && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-stone-400 w-16">Web:</span>
+                            <a href={loc.exactUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-500 hover:underline truncate" title={loc.exactUrl}>
+                              {loc.exactUrl}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}

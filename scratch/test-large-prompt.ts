@@ -39,7 +39,7 @@ DŮLEŽITÉ: Vrať POUZE validní JSON formát. Nepřidávej žádný vysvětluj
 console.log('Total prompt size:', bigPrompt.length, 'chars');
 
 // Test token count
-const flashModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const flashModel = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
 try {
   const countResult = await flashModel.countTokens(bigPrompt);
   console.log('Token count:', countResult.totalTokens);

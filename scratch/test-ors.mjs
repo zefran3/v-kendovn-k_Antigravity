@@ -32,8 +32,11 @@ try {
     const data = await res.json();
     console.log('Full response keys:', Object.keys(data));
     console.log('Full JSON (first 1000 chars):', JSON.stringify(data).substring(0, 1000));
-    const summary = data.features?.[0]?.properties?.summary;
+    // ORS /v2/directions vrací { routes: [{ summary: { distance, duration, ascent, descent } }] }
+    const summary = data.routes?.[0]?.summary;
     console.log('Summary:', JSON.stringify(summary, null, 2));
+    // features je undefined pro tento endpoint (byl chybný předpoklad)
+    console.log('features check:', data.features?.[0]?.properties?.summary ?? 'undefined (správně)');
   } else {
     const err = await res.text();
     console.log('Chyba:', err.substring(0, 300));

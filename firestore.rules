@@ -101,6 +101,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /known_locations/{docId} {
+      // Všichni přihlášení uživatelé mohou číst známá místa
+      allow read: if isAuthenticated();
+      // Pouze administrátor může přidávat/upravovat/mazat známá místa
+      allow write: if isAdmin();
+    }
+
     match /admin_logs/{logId} {
       // Pouze admini mohou číst logy z aplikace
       allow read: if isAdmin();

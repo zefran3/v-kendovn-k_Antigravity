@@ -78,7 +78,7 @@ async function snapMultipleWaypoints(waypoints: any[]): Promise<any[] | null> {
     way["tourism"~"viewpoint|museum|attraction|information|picnic_site|theme_park"](around:1200, ${wp.lat}, ${wp.lon});
     node["historic"~"castle|ruins|monument|memorial|archaeological_site"](around:1200, ${wp.lat}, ${wp.lon});
     way["historic"~"castle|ruins|monument|memorial|archaeological_site"](around:1200, ${wp.lat}, ${wp.lon});
-    
+
     // Přírodní body a občerstvení
     node["natural"~"peak|spring|cave_entrance"](around:1200, ${wp.lat}, ${wp.lon});
     node["amenity"~"restaurant|pub|cafe"](around:1200, ${wp.lat}, ${wp.lon});
@@ -90,8 +90,10 @@ async function snapMultipleWaypoints(waypoints: any[]): Promise<any[] | null> {
     way["highway"~"cycleway|path|track|residential|tertiary|secondary"](around:1200, ${wp.lat}, ${wp.lon});
   `).join("\n");
 
+  // FIX 2: Overpass timeout snížen na 8s; AbortController má 12s buffer
+  // (dříve: timeout:10 + AbortController 6s → klient přerušoval před Overpassem)
   const query = `
-    [out:json][timeout:10];
+    [out:json][timeout:8];
     (
       ${aroundStatements}
     );
@@ -100,7 +102,7 @@ async function snapMultipleWaypoints(waypoints: any[]): Promise<any[] | null> {
 
   for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const timeoutId = setTimeout(() => controller.abort(), 12000); // FIX 2: bylo 6000
     try {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -116,6 +118,7 @@ async function snapMultipleWaypoints(waypoints: any[]): Promise<any[] | null> {
       if (response.ok) {
         const data = await response.json();
         if (data.elements && data.elements.length > 0) {
+          console.log(`[BIKE GENERATOR] Overpass úspěch (${endpoint}): ${data.elements.length} elementů`);
           return data.elements;
         }
       }
@@ -159,20 +162,37 @@ export async function generateBikeRoute({
   const diffLabel = DIFFICULTY_MAP[finalDifficulty].label;
   const diffHint  = DIFFICULTY_PROMPT_HINT[finalDifficulty];
 
+  // Dynamický počet průjezdních bodů podle délky trasy.
+  // Kotvy: ≤15 km = min 4, 51–80 km = min 8 (zadání uživatele).
+  // Střední vzdálenosti lineárně interpolovány.
+  const waypointCount: { min: number; max: number } =
+    finalDistance <= 15 ? { min: 4, max: 5  } :
+    finalDistance <= 30 ? { min: 5, max: 6  } :
+    finalDistance <= 50 ? { min: 6, max: 8  } :
+                          { min: 8, max: 10 };
+
+  console.log(`[BIKE GENERATOR] Délka ${finalDistance} km → průjezdní body: ${waypointCount.min}–${waypointCount.max}`);
+
   emit?.("AI navrhuje trasu a průjezdní body...");
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-  const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
 
-  const systemPrompt = `Jsi expert na cyklistiku na jižní Moravě a plánovač tras. 
+  // FIX 6: Poloměr kružnice vypočítáme server-side – AI nemůže dělat matematiku spolehlivě.
+  // Geometrická logika: okruh N bodů na kružnici poloměru r má délku ≈ 2π·r,
+  // průměrné waypointCount.max bodů → r ≈ distance / (2 · sin(π/N) · N) ≈ distance / 6.3
+  const radiusKm = Math.round((finalDistance / 6.3) * 10) / 10;
+
+  // FIX 4: Upřesněný prompt – AI musí volit souřadnice středů obcí, ne krajiny
+  const systemPrompt = `Jsi expert na cyklistiku na jižní Moravě a plánovač tras.
 Uživatel požaduje cyklotrasu o délce ${finalDistance} km a obtížnosti ${diffLabel}. Tvá úloha je vygenerovat průjezdní body (waypoints) tak, aby po jejich spojení do okruhu (start -> body -> cíl) trasa měřila přibližně tuto vzdálenost.
 
 Pravidla pro výpočet:
-- Představ si kružnici kolem startu. Průjezdní body musí ležet na obvodu této kružnice, kde poloměr je zhruba ${finalDistance} / 6.5 km.
-- Vygeneruj 3 až 5 bodů tak, aby tvořily logický okruh (např. postupně ve směru hodinových ručiček). Trasu můžeš plánovat kterýmkoliv směrem (sever, jih, východ, západ).
+- Start a cíl je na souřadnicích 49.2844N, 16.989E (Vyškov). Průjezdní body musí být vzdáleny od této polohy přibližně ${radiusKm} km vzdušnou čarou (ne méně než ${Math.max(1, radiusKm - 2)} km, ne více než ${radiusKm + 3} km).
+- Vygeneruj přesně ${waypointCount.min} až ${waypointCount.max} bodů tak, aby tvořily logický okruh (postupně ve směru hodinových ručiček nebo i proti). Trasu můžeš plánovat kterýmkoliv směrem. Delší trasa = více bodů rovnoměrně po celém obvodu.
 - ZAKÁZÁNO: Body nesmí ležet těsně vedle sebe! Musí být rovnoměrně rozprostřeny po trase.
-- ZAKÁZÁNO: Vyhni se dálnici D1. Nikdy negeneruj body, které leží přímo na dálničním tělese, v dálničních křižovatkách, na dálničních sjezdech nebo uprostřed polí bez jakýchkoliv cest.
-- ZAKÁZÁNO: Negeneruj body uvnitř uzavřených pěších zón, placených areálů nebo v Zoo Vyškov! Vybírej reálné cíle (obce, křižovatky cyklotras, lesní cesty, přírodní památky, rozcestí) v okolí. Pro polohy bodů raději vol souřadnice reálných obcí nebo památek v daném směru, aby se předešlo bodům uprostřed polí.
-- Start a cíl je na souřadnicích 49.2844189N, 16.9890503E. Tyto body do výstupu nepiš, vrať POUZE průjezdní body v poli "waypoints".
+- ZAKÁZÁNO: Vyhni se dálnici D1. Nikdy negeneruj body, které leží přímo na dálničním tělese, v dálničních křižovatkách nebo na dálničních sjezdech.
+- ZAKÁZÁNO: Negeneruj body uvnitř uzavřených pěších zón, placených areálů nebo v Zoo Vyškov!
+- POVINNÉ: Každý bod MUSÍ být umístěn na souřadnice STŘEDU konkrétní obce nebo reálné turistické atrakce. NIKDY neumísťuj body do otevřené krajiny, polí nebo lesů bez sídla. Příklady správných bodů v okolí Vyškova: střed obce Drnovice (49.300, 17.027), střed obce Ivanovice na Hané (49.305, 17.097), střed obce Bučovice (49.148, 17.002), střed obce Křižanovice (49.265, 17.044), střed obce Pustiměř (49.318, 17.046), střed obce Olšany u Prostějova (49.389, 17.062). Takto konkrétně vol i ostatní body.
+- Start ani cíl do výstupu nepiš, vrať POUZE průjezdní body v poli "waypoints".
 
 VÝSTUP MUSÍ BÝT JSON OBJEKT:
 {
@@ -185,16 +205,50 @@ VÝSTUP MUSÍ BÝT JSON OBJEKT:
 
 DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
 
-  const result = await model.generateContent(systemPrompt);
-  const responseText = result.response.text();
-  const bikeData = JSON.parse(responseText.replace(/```json|```/g, "").trim());
+  // FIX 9: Fallback model pro případ selhání primárního (kvóta, timeout, neplatný model).
+  // Bez fallbacku by jakákoliv chyba Gemini shodila celé generování.
+  let bikeData: any;
+  const PRIMARY_MODEL   = "gemini-3.1-flash-lite";
+  const FALLBACK_MODEL  = "gemini-3.1-flash-lite-preview";
+
+  const parseGeminiResponse = (text: string) => {
+    const cleaned = text.replace(/```json|```/g, "").trim();
+    return JSON.parse(cleaned);
+  };
+
+  try {
+    console.log(`[BIKE GENERATOR] Generuji trasu modelem ${PRIMARY_MODEL}...`);
+    const primaryModel = genAI.getGenerativeModel({ model: PRIMARY_MODEL });
+    const result = await primaryModel.generateContent(systemPrompt);
+    const responseText = result.response.text();
+    bikeData = parseGeminiResponse(responseText);
+    if (!bikeData?.waypoints?.length) throw new Error("Prázdné waypoints od primárního modelu");
+    console.log(`[BIKE GENERATOR] ${PRIMARY_MODEL} vrátil ${bikeData.waypoints.length} bodů.`);
+  } catch (primaryErr: any) {
+    console.warn(`[BIKE GENERATOR] ${PRIMARY_MODEL} selhal (${primaryErr.message}), zkouším fallback ${FALLBACK_MODEL}...`);
+    emit?.("Přepínám na záložní model...");
+    try {
+      const fallbackModel = genAI.getGenerativeModel({ model: FALLBACK_MODEL });
+      const fallbackResult = await fallbackModel.generateContent(systemPrompt);
+      const fallbackText = fallbackResult.response.text();
+      bikeData = parseGeminiResponse(fallbackText);
+      if (!bikeData?.waypoints?.length) throw new Error("Prázdné waypoints od fallback modelu");
+      console.log(`[BIKE GENERATOR] Fallback ${FALLBACK_MODEL} vrátil ${bikeData.waypoints.length} bodů.`);
+    } catch (fallbackErr: any) {
+      throw new Error(`Generování tras selhal o na oběma modelech. Primární: ${primaryErr.message}. Fallback: ${fallbackErr.message}`);
+    }
+  }
 
   // HYBRIDNÍ MODEL: Přitažení bodů z Gemini k realitě přes Overpass (hromadně)
   const geminiWaypoints = bikeData.waypoints || [];
   emit?.("Hledám reálná místa na trase...");
   const elements = await snapMultipleWaypoints(geminiWaypoints);
   const snappedWaypoints: any[] = [];
-  
+
+  // FIX 1: Sledujeme použitá OSM ID, aby dva různé waypoints neskončily na stejném místě.
+  // Klíč: "${type}/${id}" – unikátní pro každý OSM element.
+  const usedElementIds = new Set<string>();
+
   for (const wp of geminiWaypoints) {
     let candidate = wp;
     if (elements && elements.length > 0) {
@@ -210,12 +264,16 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
         const dist = getDistance(wp.lat, wp.lon, eLat, eLon);
         if (dist > 1200) continue;
 
+        // FIX 1: Přeskočit elementy již použité jiným waypointem
+        const elemKey = `${elem.type}/${elem.id}`;
+        if (usedElementIds.has(elemKey)) continue;
+
         const tags = elem.tags || {};
         const hasAttr = tags.tourism || tags.historic || tags.natural || tags.amenity;
         const isPlace = tags.place;
         const isRoad  = tags.highway;
 
-        const item = { elem, dist, lat: eLat, lon: eLon };
+        const item = { elem, dist, lat: eLat, lon: eLon, key: elemKey };
 
         if (hasAttr) {
           catA.push(item);
@@ -246,13 +304,19 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
 
       if (best) {
         const elem = best.elem;
+        // FIX 1: Zaregistrovat použité OSM ID
+        usedElementIds.add(best.key);
+
         // Název: z Kategorie A a B vezmeme reálný název z OSM,
         // z Kategorie C (cesty) ponecháme původní název z Gemini, aby to nebylo obecné "Zajímavé místo"
         let name = wp.name;
         if (selectedCat === "A" || selectedCat === "B") {
           name = elem.tags?.name || elem.tags?.tourism || elem.tags?.historic || wp.name;
         }
+        console.log(`[BIKE GENERATOR] Snap WP "${wp.name}" → "${name}" (kat. ${selectedCat}, ${Math.round(best.dist)}m)`);
         candidate = { ...wp, lat: best.lat, lon: best.lon, name };
+      } else {
+        console.log(`[BIKE GENERATOR] Snap WP "${wp.name}" → žádný kandidát, fallback na AI souřadnice`);
       }
     }
 
@@ -260,7 +324,8 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
     if (snappedWaypoints.length > 0) {
       const last = snappedWaypoints[snappedWaypoints.length - 1];
       if (last.lat === candidate.lat && last.lon === candidate.lon) {
-        continue; // Duplicitní souřadnice po sobě jdoucích bodů by crashly Mapy.cz
+        console.warn(`[BIKE GENERATOR] Duplicitní waypoint "${candidate.name}" po snappingu – přeskakuji`);
+        continue;
       }
     }
 
@@ -296,9 +361,25 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
           }
         );
         clearTimeout(timeoutId);
-        if (!orsResponse.ok) return null;
+        if (!orsResponse.ok) {
+          const errText = await orsResponse.text();
+          console.warn(`[BIKE GENERATOR] ORS HTTP ${orsResponse.status}: ${errText.substring(0, 200)}`);
+          return null;
+        }
         const orsData = await orsResponse.json();
-        return orsData.routes?.[0]?.summary ?? null;
+        // FIX 3: ORS /v2/directions vrací { routes: [{ summary }] }.
+        // Ověřeno živým testem — routes[0].summary je primární cesta.
+        // Fallback na features[0].properties.summary pro případ budoucí změny formátu.
+        const summary =
+          orsData.routes?.[0]?.summary ??
+          orsData.features?.[0]?.properties?.summary ??
+          null;
+        if (summary) {
+          console.log(`[BIKE GENERATOR] ORS summary: dist=${Math.round(summary.distance)}m, ascent=${Math.round(summary.ascent)}m`);
+        } else {
+          console.warn("[BIKE GENERATOR] ORS: summary nenalezeno. Klíče:", Object.keys(orsData));
+        }
+        return summary;
       } catch {
         clearTimeout(timeoutId);
         console.warn("[BIKE GENERATOR] ORS selhalo, výška nebude k dispozici.");
@@ -339,7 +420,14 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
 
   // Sestavení Mapy.cz URL (použijeme snappedWaypoints pro reálné cíle)
   const wpParam = snappedWaypoints.map((p: any) => `${p.lon},${p.lat}`).join(";");
-  const routeType = "bike_mountain";
+  // FIX 5: routeType odpovídá obtížnosti – easy = asfaltové/turistické cyklotrasy,
+  // medium/hard = horské trasy (smíšený povrch)
+  const MAPY_ROUTE_TYPE: Record<BikeRouteDifficulty, string> = {
+    easy:   "bike_road",
+    medium: "bike_mountain",
+    hard:   "bike_mountain",
+  };
+  const routeType = MAPY_ROUTE_TYPE[finalDifficulty];
   const mapyUrl = `https://mapy.cz/fnc/v1/route?routeType=${routeType}&start=${HOME_COORDS[0]},${HOME_COORDS[1]}&end=${HOME_COORDS[0]},${HOME_COORDS[1]}${wpParam ? "&waypoints=" + wpParam : ""}`;
 
   const suggestion = {
