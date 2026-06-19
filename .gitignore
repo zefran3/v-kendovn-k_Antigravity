@@ -7,3 +7,12 @@ coverage/
 .env*
 !.env.example
 *-firebase-adminsdk-*.json
+public/
+assets/
+*.svg
+*.png
+*.ico
+*.jpg
+*.csv
+*.json
+*TODO.md
