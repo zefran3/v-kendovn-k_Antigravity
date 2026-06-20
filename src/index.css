@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Prevence horizontálního scrollu bez blokování position:sticky u potomků.
+   overflow-x: clip (na rozdíl od hidden) nevytváří nový scroll-context. */
+html, body {
+  overflow-x: clip;
+}
+
 /* Skrytí šipek u číselných inputů na desktopu */
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {

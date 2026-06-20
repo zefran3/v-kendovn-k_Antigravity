@@ -1967,7 +1967,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen text-stone-800 font-sans selection:bg-rose-100 overflow-x-hidden w-full max-w-full" style={{ backgroundImage: "url('/bg.png')", backgroundSize: 'cover', backgroundPosition: 'center bottom', backgroundAttachment: 'fixed' }}>
+    <div className="min-h-screen text-stone-800 font-sans selection:bg-rose-100 w-full max-w-full" style={{ backgroundImage: "url('/bg.png')", backgroundSize: 'cover', backgroundPosition: 'center bottom', backgroundAttachment: 'fixed' }}>
       {/* Header */}
       <header className={cn(
         "z-50 bg-white border-b-2 border-stone-200 px-4 md:px-8 transition-all duration-300 flex items-center justify-between w-full box-border",
@@ -2969,10 +2969,10 @@ export default function App() {
             <>
               <div 
                 className={cn(
-                  "sticky top-0 z-40 bg-white/85 backdrop-blur-xl shadow-sm border-b border-stone-200/50 mb-2",
+                  "sticky z-40 bg-white/85 backdrop-blur-xl shadow-sm border-b border-stone-200/50 mb-2",
                   isLandscape 
-                    ? "mx-0 px-2 py-1.5 flex flex-col gap-1.5 rounded-xl" 
-                    : "-mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
+                    ? "top-0 mx-0 px-2 py-1.5 flex flex-col gap-1.5 rounded-xl" 
+                    : "top-[56px] md:top-[80px] -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
                 )}
               >
                 {!isLandscape && (
