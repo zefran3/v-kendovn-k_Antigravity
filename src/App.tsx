@@ -1967,17 +1967,17 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen text-stone-800 font-sans selection:bg-rose-100 overflow-x-hidden" style={{ backgroundImage: "url('/bg.png')", backgroundSize: 'cover', backgroundPosition: 'center bottom', backgroundAttachment: 'fixed' }}>
+    <div className="min-h-screen text-stone-800 font-sans selection:bg-rose-100 overflow-x-hidden w-full max-w-full" style={{ backgroundImage: "url('/bg.png')", backgroundSize: 'cover', backgroundPosition: 'center bottom', backgroundAttachment: 'fixed' }}>
       {/* Header */}
       <header className={cn(
-        "z-50 bg-white border-b-2 border-stone-200 px-4 md:px-8 transition-all duration-300 flex items-center justify-between",
+        "z-50 bg-white border-b-2 border-stone-200 px-4 md:px-8 transition-all duration-300 flex items-center justify-between w-full box-border",
         isLandscape 
           ? isHeaderExpandedLandscape 
             ? "sticky top-0 h-12 py-1" 
-            : "fixed top-0 right-0 bg-transparent border-b-0 shadow-none justify-end pointer-events-none py-1" 
+            : "hidden"
           : "sticky top-0 py-2 md:py-2.5 overflow-hidden"
       )}>
-        <div className={cn("flex items-center", isLandscape && !isHeaderExpandedLandscape && "hidden")}>
+        <div className="flex items-center">
           <img 
             src="/logo.png" 
             alt="Víkendovník" 
@@ -2002,10 +2002,7 @@ export default function App() {
         )}
         
         <div 
-          className={cn(
-            "flex items-center gap-3 ml-auto z-10 pointer-events-auto", 
-            isLandscape && !isHeaderExpandedLandscape ? "fixed top-[52px] right-4 z-50" : "ml-0"
-          )}
+          className="flex items-center gap-3 ml-auto z-10 pointer-events-auto"
         >
           {user ? (
             <>
@@ -2073,7 +2070,7 @@ export default function App() {
                       <User size={20} className="text-stone-400" />
                     )}
                   </button>
-                  {isLandscape && isHeaderExpandedLandscape && (
+                  {!(isLandscape && !isHeaderExpandedLandscape) && (
                     <button
                       onClick={() => setShowAvatarModal(true)}
                       className="p-1.5 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-500 hover:text-stone-700 transition-colors cursor-pointer"
@@ -2097,6 +2094,39 @@ export default function App() {
           ) : null}
         </div>
       </header>
+
+      {/* Floating avatar button — visible only in landscape with collapsed header */}
+      {isLandscape && !isHeaderExpandedLandscape && user && (
+        <div className="fixed top-2 right-3 z-[60] pointer-events-auto">
+          {isDemoMode ? (
+            <div
+              onClick={handleAvatarClickLandscape}
+              className="w-9 h-9 rounded-full border-2 border-violet-400 bg-violet-50 overflow-hidden shadow-lg flex items-center justify-center cursor-pointer select-none"
+              title="Rozbalit lištu"
+            >
+              <span className="text-xl leading-none">🧪</span>
+            </div>
+          ) : (
+            <button
+              onClick={handleAvatarClickLandscape}
+              className="w-9 h-9 rounded-full border-2 border-rose-300 bg-white overflow-hidden shadow-lg flex items-center justify-center hover:border-rose-500 transition-all cursor-pointer"
+              title="Rozbalit lištu"
+            >
+              {extendedUserProfiles[currentUserId]?.avatar ? (
+                extendedUserProfiles[currentUserId].avatar.startsWith("data:") || extendedUserProfiles[currentUserId].avatar.startsWith("http") ? (
+                  <img src={extendedUserProfiles[currentUserId].avatar} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-lg leading-none">{extendedUserProfiles[currentUserId].avatar}</span>
+                )
+              ) : user.photoURL ? (
+                <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <User size={18} className="text-stone-400" />
+              )}
+            </button>
+          )}
+        </div>
+      )}
 
       <AnimatePresence mode="wait">
       {!user ? (
@@ -2170,7 +2200,12 @@ export default function App() {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -10 }}
         transition={{ duration: 0.3 }}
-        className="grid grid-cols-1 landscape:grid-cols-[260px_1fr] md:grid-cols-[320px_1fr] gap-6 landscape:p-4 md:p-6 max-w-6xl mx-auto flex-grow box-border pb-32 md:pb-6 relative"
+        className={cn(
+          "flex-grow relative box-border",
+          isLandscape
+            ? "grid grid-cols-[220px_1fr] gap-3 p-2 w-full"
+            : "grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 md:p-6 max-w-6xl mx-auto pb-32 md:pb-6 px-4"
+        )}
       >
         {/* Error Notification */}
         <AnimatePresence>
@@ -2210,14 +2245,13 @@ export default function App() {
         
         <aside 
           className={cn(
-            "flex flex-col gap-5 md:sticky md:top-[80px] md:h-fit md:max-h-[calc(100vh-100px)] overflow-y-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:pb-4 md:mx-0 md:px-0",
+            "flex flex-col gap-5 overflow-y-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
             isLandscape 
-              ? "sticky h-fit pb-4 mx-0 px-0" 
-              : "-mx-2 px-2"
+              ? "sticky top-0 h-screen pb-4 mx-0 px-0 pt-1" 
+              : "md:sticky md:top-[80px] md:h-fit md:max-h-[calc(100vh-100px)] md:pb-4 md:mx-0 md:px-0 -mx-2 px-2"
           )}
           style={{ 
-            top: isLandscape ? (isHeaderExpandedLandscape ? '58px' : '10px') : undefined,
-            maxHeight: isLandscape ? (isHeaderExpandedLandscape ? 'calc(100vh - 78px)' : 'calc(100vh - 30px)') : undefined
+            maxHeight: isLandscape ? '100vh' : undefined
           }}
         >
           {/* Welcome Section */}
@@ -2470,11 +2504,10 @@ export default function App() {
 
         {/* Suggestions List */}
         <section 
-          className="flex flex-col gap-5"
-          style={isLandscape && !isHeaderExpandedLandscape ? {
-            marginTop: '-16px',
-            paddingTop: '5px'
-          } : undefined}
+          className={cn(
+            "flex flex-col gap-5",
+            isLandscape ? "overflow-y-auto h-screen" : ""
+          )}
         >
           {showInspirationsView ? (
             <div ref={inspirationsRef} className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-[24px] p-5 md:p-8 border border-indigo-100 shadow-[inset_0_4px_8px_rgba(255,255,255,0.8),inset_0_-3px_6px_rgba(0,0,0,0.02),0_6px_12px_-2px_rgba(0,0,0,0.05)] flex flex-col gap-6 min-h-[400px]">
@@ -2936,14 +2969,11 @@ export default function App() {
             <>
               <div 
                 className={cn(
-                  "sticky z-40 bg-white/85 backdrop-blur-xl shadow-sm border-b border-stone-200/50 mb-2",
+                  "sticky top-0 z-40 bg-white/85 backdrop-blur-xl shadow-sm border-b border-stone-200/50 mb-2",
                   isLandscape 
                     ? "mx-0 px-2 py-1.5 flex flex-col gap-1.5 rounded-xl" 
                     : "-mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
                 )}
-                style={isLandscape ? {
-                  top: isHeaderExpandedLandscape ? '48px' : '5px'
-                } : undefined}
               >
                 {!isLandscape && (
                   <div className="text-[13px] uppercase tracking-widest text-stone-500 font-bold flex items-center justify-center md:justify-start gap-2 drop-shadow-sm">
