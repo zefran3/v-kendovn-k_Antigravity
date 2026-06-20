@@ -3033,9 +3033,8 @@ export default function App() {
               </div>
             )}
 
-          <div className="columns-1 md:columns-2 gap-4">
-            <AnimatePresence mode="popLayout">
-                {suggestions
+          {(() => {
+            const filteredBoardSuggestions = suggestions
                   .filter(suggestion => {
                     if (suggestion.status === "draft") return false;
                     if (suggestion.hiddenFromBoard) return false;
@@ -3093,8 +3092,9 @@ export default function App() {
                     const timeA = getMillis(a.createdAt);
                     const timeB = getMillis(b.createdAt);
                     return timeB - timeA;
-                  })
-                  .map((suggestion) => (
+                  });
+
+            const renderBoardCard = (suggestion: any) => (
                   <motion.div
                     key={suggestion.id}
                     layout
@@ -3594,27 +3594,57 @@ export default function App() {
                       </div>
                     )}
                   </motion.div>
-                ))
-              }
-              
-              {view === "child" && (
+                );
+
+            const newIdeaCard = view === "child" ? (
                 <motion.div
+                  key="new-idea"
+                  layout
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
                   onClick={() => {
                     setFormType("activity");
                     setNewSuggestion(prev => ({ ...prev, childName: getLoggedInFamilyName() }));
                     setShowForm(true);
                   }}
-                  className="break-inside-avoid inline-block w-full mb-4 rounded-[20px] p-5 border-2 border-dashed border-stone-200 flex flex-col justify-center items-center min-h-[160px] cursor-pointer hover:bg-stone-50 transition-colors"
+                  className="w-full mb-4 rounded-[20px] p-5 border-2 border-dashed border-stone-200 flex flex-col justify-center items-center min-h-[160px] cursor-pointer hover:bg-stone-50 transition-colors"
                 >
                   <div className="text-center text-stone-400">
                     <div className="text-3xl font-light mb-1">+</div>
                     <div className="text-sm font-bold">Další nápad</div>
                   </div>
                 </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-            </>
+            ) : null;
+
+            return (
+              <>
+                {/* Desktop: 2 flex sloupce */}
+                <div className="hidden md:flex gap-4 items-start pb-4">
+                  <div className="flex-1 flex flex-col min-w-0">
+                    <AnimatePresence mode="popLayout">
+                      {filteredBoardSuggestions.filter((_, i) => i % 2 === 0).map(renderBoardCard)}
+                      {filteredBoardSuggestions.length % 2 === 0 && newIdeaCard}
+                    </AnimatePresence>
+                  </div>
+                  <div className="flex-1 flex flex-col min-w-0">
+                    <AnimatePresence mode="popLayout">
+                      {filteredBoardSuggestions.filter((_, i) => i % 2 !== 0).map(renderBoardCard)}
+                      {filteredBoardSuggestions.length % 2 !== 0 && newIdeaCard}
+                    </AnimatePresence>
+                  </div>
+                </div>
+                {/* Mobil */}
+                <div className="md:hidden flex flex-col pb-4">
+                  <AnimatePresence mode="popLayout">
+                    {filteredBoardSuggestions.map(renderBoardCard)}
+                    {newIdeaCard}
+                  </AnimatePresence>
+                </div>
+              </>
+            );
+          })()}
+          </>
           )}
         </section>
       </motion.main>
