@@ -1967,16 +1967,27 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen text-stone-800 font-sans selection:bg-rose-100" style={{ backgroundImage: "url('/bg.png')", backgroundSize: 'cover', backgroundPosition: 'center bottom', backgroundAttachment: 'fixed' }}>
+    <div className="min-h-screen text-stone-800 font-sans selection:bg-rose-100 overflow-x-hidden" style={{ backgroundImage: "url('/bg.png')", backgroundSize: 'cover', backgroundPosition: 'center bottom', backgroundAttachment: 'fixed' }}>
       {/* Header */}
       <header className={cn(
         "z-50 bg-white border-b-2 border-stone-200 px-4 md:px-8 transition-all duration-300 flex items-center justify-between",
-        isLandscape && !isHeaderExpandedLandscape 
-          ? "fixed top-0 right-0 bg-transparent border-b-0 shadow-none justify-end pointer-events-none py-1" 
-          : "sticky top-0 py-2 md:py-2.5 overflow-hidden relative"
+        isLandscape 
+          ? isHeaderExpandedLandscape 
+            ? "sticky top-0 h-12 py-1" 
+            : "fixed top-0 right-0 bg-transparent border-b-0 shadow-none justify-end pointer-events-none py-1" 
+          : "sticky top-0 py-2 md:py-2.5 overflow-hidden"
       )}>
         <div className={cn("flex items-center", isLandscape && !isHeaderExpandedLandscape && "hidden")}>
-          <img src="/logo.png" alt="Víkendovník" className="h-12 md:h-16 w-auto object-contain scale-[1.3] md:scale-[1.5] origin-left border-none outline-none" />
+          <img 
+            src="/logo.png" 
+            alt="Víkendovník" 
+            className={cn(
+              "w-auto object-contain border-none outline-none origin-left",
+              isLandscape 
+                ? "h-10 scale-100" 
+                : "h-12 md:h-16 scale-[1.3] md:scale-[1.5]"
+            )} 
+          />
         </div>
 
         {weather && !(isLandscape && !isHeaderExpandedLandscape) && (
@@ -2012,7 +2023,10 @@ export default function App() {
                     setExpandedInspiration(null);
                     setExpandedSuggestion(null);
                   }}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-stone-500 hover:bg-rose-50 hover:text-rose-500 transition-colors text-sm font-semibold"
+                  className={cn(
+                    "flex items-center gap-2 px-3 rounded-lg text-stone-500 hover:bg-rose-50 hover:text-rose-500 transition-colors text-sm font-semibold",
+                    isLandscape ? "py-1" : "py-2"
+                  )}
                 >
                   {view === "parent" ? <User size={16} /> : <Settings size={16} />}
                   {view === "parent" ? "Rodina" : "Administrátor"}
@@ -2196,12 +2210,14 @@ export default function App() {
         
         <aside 
           className={cn(
-            "flex flex-col gap-5 md:sticky md:top-[80px] md:h-fit md:max-h-[calc(100vh-100px)] overflow-y-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:pb-4 -mx-2 px-2 md:mx-0 md:px-0",
-            isLandscape ? "sticky h-fit pb-4" : ""
+            "flex flex-col gap-5 md:sticky md:top-[80px] md:h-fit md:max-h-[calc(100vh-100px)] overflow-y-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:pb-4 md:mx-0 md:px-0",
+            isLandscape 
+              ? "sticky h-fit pb-4 mx-0 px-0" 
+              : "-mx-2 px-2"
           )}
           style={{ 
-            top: isLandscape ? (isHeaderExpandedLandscape ? '70px' : '10px') : undefined,
-            maxHeight: isLandscape ? (isHeaderExpandedLandscape ? 'calc(100vh - 90px)' : 'calc(100vh - 30px)') : undefined
+            top: isLandscape ? (isHeaderExpandedLandscape ? '58px' : '10px') : undefined,
+            maxHeight: isLandscape ? (isHeaderExpandedLandscape ? 'calc(100vh - 78px)' : 'calc(100vh - 30px)') : undefined
           }}
         >
           {/* Welcome Section */}
@@ -2920,13 +2936,13 @@ export default function App() {
             <>
               <div 
                 className={cn(
-                  "sticky z-40 bg-white/85 backdrop-blur-xl -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl shadow-sm border-b md:border border-stone-200/50 mb-2",
+                  "sticky z-40 bg-white/85 backdrop-blur-xl shadow-sm border-b border-stone-200/50 mb-2",
                   isLandscape 
-                    ? "py-1.5 flex flex-col gap-1.5" 
-                    : "top-[60px] md:top-[80px] py-4 flex flex-col gap-3"
+                    ? "mx-0 px-2 py-1.5 flex flex-col gap-1.5 rounded-xl" 
+                    : "-mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
                 )}
                 style={isLandscape ? {
-                  top: isHeaderExpandedLandscape ? '64px' : '5px'
+                  top: isHeaderExpandedLandscape ? '48px' : '5px'
                 } : undefined}
               >
                 {!isLandscape && (
