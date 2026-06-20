@@ -94,10 +94,10 @@ const getMock = (): MksScraperResult => {
         source_url: CINEMA_URL,
         date: satStr,
         cinema_listings: [
-          { film: 'Mandalorian a Grogu', time: '17:00, 19:30', film_title: 'Mandalorian a Grogu', showtimes: '17:00, 19:30', url: CINEMA_URL },
-          { film: 'Mrzutá rybka', time: '15:30', film_title: 'Mrzutá rybka', showtimes: '15:30', url: CINEMA_URL },
-          { film: 'Pět švestek', time: '16:00', film_title: 'Pět švestek', showtimes: '16:00', url: CINEMA_URL },
-          { film: 'The Amazing Digital Circus: The Last Act', time: '14:00', film_title: 'The Amazing Digital Circus: The Last Act', showtimes: '14:00', url: CINEMA_URL },
+          { film: 'Mandalorian a Grogu', time: '17:00, 19:30', film_title: 'Mandalorian a Grogu', showtimes: '17:00, 19:30', url: CINEMA_URL, times: [{time: '17:00', url: CINEMA_URL}, {time: '19:30', url: CINEMA_URL}] },
+          { film: 'Mrzutá rybka', time: '15:30', film_title: 'Mrzutá rybka', showtimes: '15:30', url: CINEMA_URL, times: [{time: '15:30', url: CINEMA_URL}] },
+          { film: 'Pět švestek', time: '16:00', film_title: 'Pět švestek', showtimes: '16:00', url: CINEMA_URL, times: [{time: '16:00', url: CINEMA_URL}] },
+          { film: 'The Amazing Digital Circus: The Last Act', time: '14:00', film_title: 'The Amazing Digital Circus: The Last Act', showtimes: '14:00', url: CINEMA_URL, times: [{time: '14:00', url: CINEMA_URL}] },
         ]
       }
     ],
@@ -284,7 +284,8 @@ function parseHtml(html: string, loadedUrl: string): MksScraperResult {
         time: showtime,
         film_title: title,
         showtimes: showtime,
-        url: ticketUrl
+        url: ticketUrl,
+        times: [{ time: showtime, url: ticketUrl }]
       });
     });
     
@@ -389,7 +390,8 @@ function parseHtml(html: string, loadedUrl: string): MksScraperResult {
           time: sorted.join(', '),
           film_title: title,
           showtimes: sorted.join(', '),
-          url: 'https://www.mksvyskov.cz/filmy'
+          url: 'https://www.mksvyskov.cz/filmy',
+          times: sorted.map(t => ({ time: t, url: 'https://www.mksvyskov.cz/filmy' }))
         });
       });
       cinemaListings.sort((a, b) => (b.time || b.showtimes || '').split(',').length - (a.time || a.showtimes || '').split(',').length);

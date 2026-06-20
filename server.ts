@@ -865,7 +865,8 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
           s.cinema_listings = matchingDay.cinema_listings.map((item: any) => ({
             film: item.film || item.film_title,
             time: item.time || item.showtimes,
-            url: item.url || (isCineStar ? 'https://cinestar.cz/cz/olomouc/program' : 'https://www.mksvyskov.cz/filmy')
+            url: item.url || (isCineStar ? 'https://cinestar.cz/cz/olomouc/program' : 'https://www.mksvyskov.cz/filmy'),
+            times: item.times || []
           }));
         }
       } else {

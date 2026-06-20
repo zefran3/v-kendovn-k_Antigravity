@@ -622,7 +622,8 @@ export default function App() {
     rideFrom: "",
     rideTo: "",
     claimedDetails: false,
-    claimedFree: false
+    claimedFree: false,
+    cinemaListings: [] as any[]
   });
 
   const handleImageCompress = (file: File): Promise<string> => {
@@ -2610,8 +2611,19 @@ export default function App() {
                                         <span className="text-lg flex-shrink-0">🎬</span>
                                         <div className="min-w-0">
                                           <div className="font-bold text-stone-800 text-sm leading-tight">{listing.film || listing.film_title}</div>
-                                          <div className="text-xs text-stone-500 mt-0.5">🕐 {listing.time || listing.showtimes || "Dle programu"}</div>
-                                          {listing.url && (
+                                          <div className="text-xs text-stone-500 mt-0.5 flex flex-wrap gap-1 items-center">
+                                            🕐 
+                                            {listing.times && listing.times.length > 0 ? (
+                                              listing.times.map((t: any, tidx: number) => (
+                                                <a key={tidx} href={t.url} target="_blank" rel="noopener noreferrer" className="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100 hover:bg-indigo-100 transition-colors cursor-pointer">
+                                                  {t.time}
+                                                </a>
+                                              ))
+                                            ) : (
+                                              <span>{listing.time || listing.showtimes || "Dle programu"}</span>
+                                            )}
+                                          </div>
+                                          {listing.url && (!listing.times || listing.times.length === 0) && (
                                             <a href={listing.url} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:text-indigo-700 font-medium mt-1 inline-block">🎟 Vstupenky →</a>
                                           )}
                                         </div>
@@ -2755,7 +2767,8 @@ export default function App() {
                                   eventTime: insp.time || "",
                                   location: insp.location || "",
                                   url: insp.url || "",
-                                  childName: getLoggedInFamilyName()
+                                  childName: getLoggedInFamilyName(),
+                                  cinemaListings: insp.cinema_listings || []
                                 }));
                                 setFormType("activity");
                                 setShowForm(true);
@@ -3205,15 +3218,30 @@ export default function App() {
                                       : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(suggestion.location.replace(/\s*\(.*?\)\s*/g, '').trim())}`;
 
                                     return (
-                                      <a 
-                                        href={navUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-rose-200 text-rose-500 font-bold text-xs hover:bg-rose-50 transition-colors shadow-sm"
-                                      >
-                                        <Navigation size={14} />
-                                        {isCycling ? "Naplánovat trasu" : "Navigovat"}
-                                      </a>
+                                      <>
+                                        <a 
+                                          href={navUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-rose-200 text-rose-500 font-bold text-xs hover:bg-rose-50 transition-colors shadow-sm"
+                                        >
+                                          <Navigation size={14} />
+                                          {isCycling ? "Naplánovat trasu" : "Navigovat"}
+                                        </a>
+                                        {suggestion.url && (!suggestion.url.includes('mapy.cz') || !isCycling) && (
+                                          <a 
+                                            href={suggestion.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-indigo-200 text-indigo-600 font-bold text-xs hover:bg-indigo-50 transition-colors shadow-sm"
+                                          >
+                                            {(suggestion.title.toLowerCase().includes('kino') || suggestion.url.includes('cinestar') || suggestion.url.includes('mksvyskov')) 
+                                              ? <><Film size={14} /> Koupit vstupenky</>
+                                              : <><ExternalLink size={14} /> Více informací</>
+                                            }
+                                          </a>
+                                        )}
+                                      </>
                                     );
                                   })()}
                                 </div>
@@ -3653,6 +3681,43 @@ export default function App() {
                   
                   {formType === "activity" ? (
                     <>
+                      {newSuggestion.cinemaListings && newSuggestion.cinemaListings.length > 0 && (
+                        <div>
+                          <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Které představení?</label>
+                          <select 
+                            className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-rose-500 outline-none transition-all text-sm mb-4"
+                            onChange={(e) => {
+                              const [filmIdx, timeIdx] = e.target.value.split('-');
+                              if (filmIdx === "" || !newSuggestion.cinemaListings[Number(filmIdx)]) return;
+                              const listing = newSuggestion.cinemaListings[Number(filmIdx)];
+                              const timeObj = listing.times?.[Number(timeIdx)];
+                              setNewSuggestion(prev => ({
+                                ...prev,
+                                title: `Kino: ${listing.film || listing.film_title}`,
+                                description: `Návrh na představení v čase ${timeObj?.time || listing.time || listing.showtimes}.`,
+                                url: timeObj?.url || listing.url || prev.url
+                              }));
+                            }}
+                          >
+                            <option value="">-- Vyberte představení --</option>
+                            {newSuggestion.cinemaListings.map((listing: any, fIdx: number) => {
+                               if (listing.times && listing.times.length > 0) {
+                                  return listing.times.map((t: any, tIdx: number) => (
+                                    <option key={`${fIdx}-${tIdx}`} value={`${fIdx}-${tIdx}`}>
+                                      {listing.film || listing.film_title} ({t.time})
+                                    </option>
+                                  ));
+                               } else {
+                                  return (
+                                    <option key={`${fIdx}-0`} value={`${fIdx}-0`}>
+                                      {listing.film || listing.film_title} ({listing.time || listing.showtimes})
+                                    </option>
+                                  );
+                               }
+                            })}
+                          </select>
+                        </div>
+                      )}
                       <div>
                         <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Co budeme dělat?</label>
                         <input 

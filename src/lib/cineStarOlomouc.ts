@@ -222,7 +222,8 @@ export async function scrapeCineStarOlomouc(): Promise<CineStarEvent[]> {
             time: showtimes.map(s => s.time).join(', '),
             film_title: filmTitle,
             showtimes: showtimes.map(s => s.time).join(', '),
-            url: showtimes[0].url || SOURCE_URL
+            url: showtimes[0].url || SOURCE_URL,
+            times: showtimes
           });
         }
       });

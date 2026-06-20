@@ -84,6 +84,7 @@ export interface CinemaListing {
   film: string;
   time: string;
   url?: string;
+  times?: { time: string; url: string }[];
 }
 
 // Agregovaný formát pro CineStar scraper (1 záznam = 1 film + všechny časy)
@@ -93,6 +94,7 @@ export interface CineStarListing {
   url?: string;
   film_title?: string;
   showtimes?: string;   // např. "14:00, 16:30, 20:15"
+  times?: { time: string; url: string }[];
 }
 
 export interface CineStarEvent {
