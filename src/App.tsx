@@ -43,6 +43,7 @@ import AdminPanel from "./components/AdminPanel";
 import BikeRouteGenerator from "./components/BikeRouteGenerator";
 import { cn } from "./lib/utils";
 import { ActivitySuggestion, WeekendEvent, UserProfile, UserRole, UserPermissions, ActivityComment, Inspiration, CinemaListing } from "./types";
+import { calculateLeagueStats, BADGES } from "./lib/gameHubUtils";
 import GameHub from "./GameHub";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
 import { cs } from "date-fns/locale";
@@ -245,6 +246,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<"parent" | "child">("child");
   const [suggestions, setSuggestions] = useState<ActivitySuggestion[]>([]);
+  const [leagueConfig, setLeagueConfig] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
   const [formType, setFormType] = useState<"activity" | "ride">("activity");
   const [googleTokens, setGoogleTokens] = useState<any>(() => {
@@ -578,34 +580,52 @@ export default function App() {
   }, []);
 
   const leaderboard = useMemo(() => {
-    const scores: Record<string, { childName: string; score: number; avatar: string }> = {};
+    const scores: Record<string, { childName: string; score: number; avatar: string; xp: number; authorId: string; role: string }> = {};
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // Call shared utility for XP calculation without duplicating logic
+    const { maraton } = calculateLeagueStats(suggestions, [], userProfiles, leagueConfig);
+
+    // Initialize all active (non-blocked) users from User Management
+    Object.values(extendedUserProfiles).forEach((p: any) => {
+      if (p.isBlocked) return;
+      let name = p.adminAlias || p.displayName || p.email?.split('@')[0] || '';
+      if (name.toLowerCase() === 'zefran3') name = 'Táta';
+      if (!name) return;
+
+      // Zobrazujeme Demo Dítě pouze v demo režimu
+      if (!isDemoMode && name === "Demo Dítě") return;
+
+      // Include dynamic maraton XP
+      const userStats = maraton[name] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+      const badgeBonus = BADGES.filter(b => b.check(userStats)).reduce((sum, b) => sum + b.bonusZB, 0);
+
+      scores[name] = {
+        childName: name,
+        score: 0,
+        avatar: p.avatar || getAvatarForChild(name),
+        xp: userStats.totalZB + badgeBonus,
+        authorId: p.id || "",
+        role: p.role || "viewer"
+      };
+    });
 
     suggestions.forEach(s => {
       if (s.status === 'approved' && s.eventDate && s.type !== 'ride') {
         const eventDateObj = new Date(s.eventDate);
         if (eventDateObj < today) {
           const rawName = s.childName || "Neznámý";
-          
-          // Pokud nejsme v demo režimu, ignorujeme záznamy pro "Demo Dítě"
-          if (!isDemoMode && rawName === "Demo Dítě") return;
-          
           const childNameKey = getDynamicNameForChild(rawName);
-          if (!scores[childNameKey]) {
-            scores[childNameKey] = {
-              childName: childNameKey,
-              score: 0,
-              avatar: getAvatarForChild(rawName)
-            };
+          if (scores[childNameKey]) {
+            scores[childNameKey].score += 1;
           }
-          scores[childNameKey].score += 1;
         }
       }
     });
 
     return Object.values(scores).sort((a, b) => b.score - a.score);
-  }, [suggestions, userProfiles, isDemoMode]);
+  }, [suggestions, extendedUserProfiles, userProfiles, isDemoMode, leagueConfig]);
 
   useEffect(() => {
     localStorage.setItem('likedSuggestions', JSON.stringify(likedSuggestions));
@@ -830,10 +850,19 @@ export default function App() {
       setInspirations(data);
     });
 
+    const unsubscribeLeagueConfig = onSnapshot(doc(db, 'settings', 'league_config'), (docSnap) => {
+      if (docSnap.exists()) {
+        setLeagueConfig(docSnap.data());
+      } else {
+        setLeagueConfig({ status: 'stopped', leagueStartDate: null });
+      }
+    });
+
     return () => {
       unsubscribeUsers();
       unsubscribeSuggestions();
       unsubscribeInspirations();
+      unsubscribeLeagueConfig();
     };
   }, [user]);
 
@@ -2303,31 +2332,35 @@ export default function App() {
               className="bg-gradient-to-b from-amber-50 to-orange-50 border text-center border-amber-200 rounded-2xl p-5 shadow-[inset_0_4px_8px_rgba(255,255,255,0.8),inset_0_-3px_6px_rgba(0,0,0,0.04),0_6px_12px_-2px_rgba(0,0,0,0.07)]"
             >
               <div className="text-[13px] uppercase tracking-widest text-amber-600 mb-4 font-extrabold flex items-center justify-center gap-2">
-                <span>🏆</span> Žebříček úspěchů
+                Souhrn aktivit
               </div>
               <div className="flex flex-col gap-2">
-                {leaderboard.map((l, idx) => (
-                  <button 
-                    key={l.childName} 
-                    onClick={() => setSelectedLeaderboardUser(l.childName)}
-                    className="w-full flex items-center justify-between bg-white p-3 rounded-xl border border-amber-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:bg-orange-50 transition-all cursor-pointer text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={cn("font-black w-5 text-left", idx === 0 ? "text-amber-500 text-lg" : idx === 1 ? "text-stone-400" : idx === 2 ? "text-amber-700" : "text-stone-300 text-sm")}>
-                        {idx + 1}.
+                {leaderboard.map((l) => {
+                  const isChild = l.role === 'child';
+
+                  return (
+                    <button 
+                      key={l.childName} 
+                      onClick={() => setSelectedLeaderboardUser(l.childName)}
+                      className="w-full flex items-center justify-between bg-white p-3 rounded-xl border border-amber-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:bg-orange-50 transition-all cursor-pointer text-left"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full overflow-hidden bg-white border border-stone-200 flex items-center justify-center flex-shrink-0">
+                          {l.avatar.startsWith('http') || l.avatar.startsWith('data:') ? (
+                            <img src={l.avatar} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-base leading-none">{l.avatar}</span>
+                          )}
+                        </div>
+                        <span className="font-bold text-stone-700 text-sm">
+                          {l.childName}
+                          {isChild && <span className="text-stone-400 font-semibold ml-2">({l.xp} XP)</span>}
+                        </span>
                       </div>
-                      <div className="w-8 h-8 rounded-full overflow-hidden bg-white border border-stone-200 flex items-center justify-center flex-shrink-0">
-                        {l.avatar.startsWith('http') || l.avatar.startsWith('data:') ? (
-                          <img src={l.avatar} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-base leading-none">{l.avatar}</span>
-                        )}
-                      </div>
-                      <span className="font-bold text-stone-700 text-sm">{l.childName}</span>
-                    </div>
-                    <div className="text-sm font-extrabold text-white bg-amber-400 px-3 py-1 rounded-full">{l.score}</div>
-                  </button>
-                ))}
+                      <div className="text-sm font-extrabold text-white bg-amber-400 px-3 py-1 rounded-full">{l.score}</div>
+                    </button>
+                  );
+                })}
               </div>
             </motion.div>
           )}
@@ -4583,7 +4616,7 @@ export default function App() {
                     </button>
                 ))}
                 
-                {suggestions.filter(s => s.status === 'approved' && s.type !== 'ride' && (s.childName === selectedLeaderboardUser || (!s.childName && selectedLeaderboardUser === "Neznámý")) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0))).length === 0 && (
+                {suggestions.filter(s => s.status === 'approved' && s.type !== 'ride' && (getDynamicNameForChild(s.childName || "Neznámý") === selectedLeaderboardUser) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0))).length === 0 && (
                   <div className="text-center p-5 text-stone-400 text-sm italic">Žádné realizované výlety nenalezeny.</div>
                 )}
               </div>

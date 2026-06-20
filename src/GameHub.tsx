@@ -7,16 +7,9 @@ import {
 } from "lucide-react";
 import { cn } from "./lib/utils";
 import { ActivitySuggestion, UserProfile, WishlistItem, MysteryQuest, BattlePassMilestone, BattlePassClaim } from "./types";
+import { calculateLeagueStats, getDynamicName, ZB_RULES, BADGES, UserStats } from "./lib/gameHubUtils";
 import { db } from "./firebase";
 import { collection, addDoc, updateDoc, setDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "firebase/firestore";
-
-// ─── ZB Bodovací systém ──────────────────────────────────
-const ZB_RULES = {
-  BASIC: 5,         // Zapsání nápadu
-  REALIZED: 20,     // Schválená + absolvovaná akce
-  LOGISTICS: 5,     // Dodány detaily (lokace + url)
-  FREE_DISCOUNT: 10 // Akce zdarma
-};
 
 // ─── Tituly podle celkových ZB ───────────────────────────
 const TITLES = [
@@ -43,18 +36,6 @@ function getNextTitle(zb: number) {
   return null;
 }
 
-// ─── Odznaky ─────────────────────────────────────────────
-const BADGES = [
-  { id: "first_idea", name: "První jiskra", desc: "Zadej svůj první nápad", icon: "⚡", bonusZB: 5, check: (stats: UserStats) => stats.totalIdeas >= 1 },
-  { id: "five_ideas", name: "Generátor nápadů", desc: "Zadej 5 nápadů", icon: "💡", bonusZB: 10, check: (stats: UserStats) => stats.totalIdeas >= 5 },
-  { id: "detail_master", name: "Detailista", desc: "Dodej detaily u 3 aktivit", icon: "📋", bonusZB: 10, check: (stats: UserStats) => stats.withDetails >= 3 },
-  { id: "streak_3", name: "Série 3", desc: "3 schválené aktivity v řadě", icon: "🔥", bonusZB: 10, check: (stats: UserStats) => stats.realized >= 3 },
-  { id: "culture", name: "Kulturní maniak", desc: "3 realizované kulturní akce", icon: "🎭", bonusZB: 15, check: (stats: UserStats) => stats.realized >= 3 },
-  { id: "mountain", name: "Horský kamzík", desc: "Realizuj outdoorovou aktivitu", icon: "🏔️", bonusZB: 15, check: (stats: UserStats) => stats.realized >= 2 },
-  { id: "discount_hunter", name: "Lovec slev", desc: "Najdi 3 akce zcela zdarma", icon: "💰", bonusZB: 15, check: (stats: UserStats) => stats.freeActivities >= 3 },
-  { id: "ten_realized", name: "Dekáda výletů", desc: "10 realizovaných aktivit", icon: "🏆", bonusZB: 20, check: (stats: UserStats) => stats.realized >= 10 },
-];
-
 // ─── Sprint odměny ───────────────────────────────────────
 const SPRINT_REWARDS = [
   { icon: "🍽️", title: "Žolík na mytí nádobí", desc: "Celý týden bez nádobí" },
@@ -71,14 +52,6 @@ export const DEFAULT_BATTLE_PASS_MILESTONES: BattlePassMilestone[] = [
   { id: "bp_5", pointsRequired: 120, title: "Návštěva kina / Lístek do kina", icon: "🎬", description: "Společný filmový večer nebo výlet do kina na film podle výběru.", order: 5 },
   { id: "bp_6", pointsRequired: 150, title: "Herní čas / Mega Odměna", icon: "🎮", description: "Získáš herní čas na PC/konzoli nebo jinou super mega odměnu!", order: 6 },
 ];
-
-interface UserStats {
-  totalIdeas: number;
-  realized: number;
-  freeActivities: number;
-  withDetails: number;
-  totalZB: number;
-}
 
 // ─── Props ───────────────────────────────────────────────
 interface GameHubProps {
@@ -680,199 +653,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
   // ─── Výpočet ZB bodů z reálných dat ─────────────────
   const playerStats = useMemo(() => {
-    const sprint: Record<string, UserStats> = {};
-    const maraton: Record<string, UserStats> = {};
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const getDynamicName = (childName: string): string => {
-      if (!childName) return "Neznámý";
-      
-      const removeAccents = (str: string): string => {
-        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      };
-      
-      const cleanChild = removeAccents(childName.toLowerCase());
-      
-      // Fáze 1: Přesná shoda bez diakritiky
-      let profile = (Object.values(userProfiles) as UserProfile[]).find(p => {
-        const alias = removeAccents((p.adminAlias || "").toLowerCase());
-        const disp = removeAccents((p.displayName || "").toLowerCase());
-        const emailPref = removeAccents((p.email?.split('@')[0] || "").toLowerCase());
-        
-        return (
-          alias === cleanChild ||
-          disp === cleanChild ||
-          emailPref === cleanChild ||
-          (cleanChild === 'tata' && p.email?.toLowerCase() === 'zefran3@gmail.com')
-        );
-      });
-      
-      // Fáze 2: Volnější shoda (startsWith) pouze pokud přesná shoda neexistuje
-      if (!profile) {
-        profile = (Object.values(userProfiles) as UserProfile[]).find(p => {
-          const alias = removeAccents((p.adminAlias || "").toLowerCase());
-          const disp = removeAccents((p.displayName || "").toLowerCase());
-          const emailPref = removeAccents((p.email?.split('@')[0] || "").toLowerCase());
-          
-          return (
-            alias.startsWith(cleanChild) ||
-            disp.startsWith(cleanChild) ||
-            emailPref.startsWith(cleanChild)
-          );
-        });
-      }
-      
-      if (profile) {
-        const name = profile.adminAlias || profile.displayName || profile.email?.split('@')[0] || '';
-        if (name.toLowerCase() === 'zefran3') return 'Táta';
-        return name;
-      }
-      return childName;
-    };
-
-    const activeNames = new Set<string>();
-    Object.values(userProfiles).forEach(profile => {
-      if (!profile.isBlocked) {
-        let name = profile.adminAlias || profile.displayName || profile.email?.split('@')[0] || "Neznámý";
-        if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
-          name = "Táta";
-        }
-        activeNames.add(name);
-        if (!sprint[name]) {
-          sprint[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
-        }
-        if (!maraton[name]) {
-          maraton[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
-        }
-      }
-    });
-
-    const startTimestamp = leagueConfig?.leagueStartDate
-      ? (leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : new Date(leagueConfig.leagueStartDate).getTime())
-      : null;
-
-    if (!startTimestamp || leagueConfig?.status === 'stopped') {
-      return { sprint, maraton };
-    }
-
-    const daysElapsed = (Date.now() - startTimestamp) / (1000 * 60 * 60 * 24);
-    const sprintLengthDays = 60;
-    const completedSprints = Math.floor(daysElapsed / sprintLengthDays);
-    const currentSprintStartDate = startTimestamp + (completedSprints * sprintLengthDays * 24 * 60 * 60 * 1000);
-
-    const getCreatedTime = (item: any) => {
-      if (!item.createdAt) return 0;
-      if (typeof item.createdAt === 'number') return item.createdAt;
-      if (item.createdAt.toMillis) return item.createdAt.toMillis();
-      return new Date(item.createdAt).getTime();
-    };
-
-    suggestions.forEach(s => {
-      if (s.type === "ride") return;
-      let rawName = s.childName || "Neznámý";
-      let name = getDynamicName(rawName);
-      
-      if (!activeNames.has(name)) return;
-
-      const createdTime = getCreatedTime(s);
-      
-      // Maraton (celá liga)
-      if (createdTime >= startTimestamp) {
-        if (s.status === "pending" || s.status === "approved" || s.status === "cancelled") {
-          maraton[name].totalIdeas += 1;
-          maraton[name].totalZB += ZB_RULES.BASIC;
-
-          if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
-            maraton[name].realized += 1;
-            maraton[name].totalZB += ZB_RULES.REALIZED;
-
-            if (s.approvedDetails || (s.location && s.url)) {
-              maraton[name].withDetails += 1;
-              maraton[name].totalZB += ZB_RULES.LOGISTICS;
-            }
-
-            if (s.approvedFree) {
-              maraton[name].freeActivities += 1;
-              maraton[name].totalZB += ZB_RULES.FREE_DISCOUNT;
-            }
-          } else if (s.status === "cancelled") {
-            if (s.approvedDetails || (s.location && s.url)) {
-              maraton[name].withDetails += 1;
-              maraton[name].totalZB += ZB_RULES.LOGISTICS;
-            }
-
-            if (s.approvedFree) {
-              maraton[name].freeActivities += 1;
-              maraton[name].totalZB += ZB_RULES.FREE_DISCOUNT;
-            }
-          }
-        }
-      }
-
-      // Sprint (aktuální období)
-      if (createdTime >= currentSprintStartDate) {
-        if (s.status === "pending" || s.status === "approved" || s.status === "cancelled") {
-          sprint[name].totalIdeas += 1;
-          sprint[name].totalZB += ZB_RULES.BASIC;
-
-          if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
-            sprint[name].realized += 1;
-            sprint[name].totalZB += ZB_RULES.REALIZED;
-
-            if (s.approvedDetails || (s.location && s.url)) {
-              sprint[name].withDetails += 1;
-              sprint[name].totalZB += ZB_RULES.LOGISTICS;
-            }
-
-            if (s.approvedFree) {
-              sprint[name].freeActivities += 1;
-              sprint[name].totalZB += ZB_RULES.FREE_DISCOUNT;
-            }
-          } else if (s.status === "cancelled") {
-            if (s.approvedDetails || (s.location && s.url)) {
-              sprint[name].withDetails += 1;
-              sprint[name].totalZB += ZB_RULES.LOGISTICS;
-            }
-
-            if (s.approvedFree) {
-              sprint[name].freeActivities += 1;
-              sprint[name].totalZB += ZB_RULES.FREE_DISCOUNT;
-            }
-          }
-        }
-      }
-    });
-
-    quests.forEach(q => {
-      if (q.status === 'approved' && q.completedBy) {
-        let rawName = q.completedBy;
-        let name = getDynamicName(rawName);
-        
-        if (activeNames.has(name)) {
-          const createdTime = getCreatedTime(q);
-          const baseXP = parseFloat(q.bonusMultiplier as any) || 0;
-          const bonusXP = parseFloat(q.appliedBonusXP as any) || 0;
-          const totalQP = baseXP + bonusXP;
-
-          if (createdTime >= startTimestamp) {
-            if (!maraton[name]) {
-              maraton[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
-            }
-            maraton[name].totalZB += totalQP;
-          }
-
-          if (createdTime >= currentSprintStartDate) {
-            if (!sprint[name]) {
-              sprint[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
-            }
-            sprint[name].totalZB += totalQP;
-          }
-        }
-      }
-    });
-
-    return { sprint, maraton };
+    return calculateLeagueStats(suggestions, quests, userProfiles, leagueConfig);
   }, [suggestions, quests, userProfiles, leagueConfig]);
 
   const playerNameToIdMap = useMemo(() => {
@@ -892,10 +673,63 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   // ─── Žebříček (Vyloučení rodiče/admina podle rolí) ───────────────
   const leaderboardData = useMemo(() => {
     const statsSource = leaderboardMode === 'sprint' ? playerStats.sprint : playerStats.maraton;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Calculate current sprint and league boundaries
+    let currentSprintStartDate = 0;
+    let startTimestamp = 0;
+    if (leagueConfig?.leagueStartDate) {
+      startTimestamp = leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : new Date(leagueConfig.leagueStartDate).getTime();
+      const daysElapsed = (Date.now() - startTimestamp) / (1000 * 60 * 60 * 24);
+      const sprintLengthDays = 60;
+      const completedSprints = Math.floor(daysElapsed / sprintLengthDays);
+      currentSprintStartDate = startTimestamp + (completedSprints * sprintLengthDays * 24 * 60 * 60 * 1000);
+    }
+
     return (Object.entries(statsSource) as [string, UserStats][])
       .map(([name, stats]) => {
         const badgeBonus = BADGES.filter(b => b.check(stats)).reduce((s, b) => s + b.bonusZB, 0);
-        return { name: name || "", ...stats, totalZB: stats.totalZB + badgeBonus, avatar: getAvatarForChild(name || "") };
+
+        // Spočítáme čekající (pending) body z budoucích schválených výletů
+        let pendingXP = 0;
+        suggestions.forEach(s => {
+          if (s.type === 'ride') return;
+          const rawName = s.childName || "Neznámý";
+          const childName = getDynamicName(rawName, userProfiles);
+          if (childName !== name) return;
+
+          // Kontrola stavu a eventDate (pouze schválené a budoucí/dnešní)
+          if (s.status === 'approved' && s.eventDate) {
+            const eventDateObj = new Date(s.eventDate);
+            if (eventDateObj >= today) {
+              // Kontrola časového období (sprint / liga)
+              const createdTime = s.createdAt 
+                ? (typeof s.createdAt === 'number' ? s.createdAt : ((s.createdAt as any).toMillis ? (s.createdAt as any).toMillis() : new Date(s.createdAt as any).getTime()))
+                : 0;
+
+              if (leaderboardMode === 'sprint' && currentSprintStartDate > 0 && createdTime < currentSprintStartDate) return;
+              if (leaderboardMode === 'liga' && startTimestamp > 0 && createdTime < startTimestamp) return;
+
+              // Bodování: realizace + volitelně schválené detaily a schválené slevy
+              pendingXP += ZB_RULES.REALIZED; // 20 XP
+              if (s.approvedDetails || (s.location && s.url)) {
+                pendingXP += ZB_RULES.LOGISTICS; // 5 XP
+              }
+              if (s.approvedFree) {
+                pendingXP += ZB_RULES.FREE_DISCOUNT; // 10 XP
+              }
+            }
+          }
+        });
+
+        return { 
+          name: name || "", 
+          ...stats, 
+          totalZB: stats.totalZB + badgeBonus, 
+          pendingZB: pendingXP,
+          avatar: getAvatarForChild(name || "") 
+        };
       })
       .filter(p => {
         const uid = playerNameToIdMap[p.name];
@@ -903,7 +737,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
         return role === 'child';
       })
       .sort((a, b) => b.totalZB - a.totalZB);
-  }, [playerStats, leaderboardMode, getAvatarForChild, playerNameToIdMap, userProfiles]);
+  }, [playerStats, leaderboardMode, getAvatarForChild, playerNameToIdMap, userProfiles, suggestions, leagueConfig]);
 
   const kidsCount = useMemo(() => {
     return Math.max(1, leaderboardData.length);
@@ -941,107 +775,8 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     return `sprint_${completedSprints}`;
   }, [leagueConfig]);
 
-  const sprintStats = useMemo(() => {
-    const stats: Record<string, UserStats> = {};
-    const activeNames = new Set(Object.values(userProfiles || {}).map(p => p.adminAlias || p.displayName || p.email?.split('@')[0]));
-    
-    Object.values(userProfiles || {}).forEach(p => {
-      let name = p.adminAlias || p.displayName || p.email?.split('@')[0];
-      if (name) {
-        if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
-          name = "Táta";
-        }
-        activeNames.add(name);
-        if (!stats[name]) {
-          stats[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
-        }
-      }
-    });
-
-    const startTimestamp = leagueConfig?.leagueStartDate
-      ? (leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : new Date(leagueConfig.leagueStartDate).getTime())
-      : null;
-
-    if (!startTimestamp || leagueConfig?.status === 'stopped') {
-      return stats;
-    }
-
-    const daysElapsed = (Date.now() - startTimestamp) / (1000 * 60 * 60 * 24);
-    const sprintLengthDays = 60;
-    const completedSprints = Math.floor(daysElapsed / sprintLengthDays);
-    const currentSprintStartDate = startTimestamp + (completedSprints * sprintLengthDays * 24 * 60 * 60 * 1000);
-
-    const getCreatedTime = (item: any) => {
-      if (!item.createdAt) return 0;
-      if (typeof item.createdAt === 'number') return item.createdAt;
-      if (item.createdAt.toMillis) return item.createdAt.toMillis();
-      return new Date(item.createdAt).getTime();
-    };
-
-    const today = new Date();
-
-    suggestions.forEach(s => {
-      if (s.type === "ride") return;
-      let name = s.childName || "Neznámý";
-      if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
-        name = "Táta";
-      }
-      if (!activeNames.has(name)) return;
-      if (getCreatedTime(s) < currentSprintStartDate) return;
-
-      // Anti-spam ochrana: body se přičtou pouze pokud má aktivita status "pending", "approved" nebo "cancelled"
-      if (s.status === "pending" || s.status === "approved" || s.status === "cancelled") {
-        stats[name].totalIdeas += 1;
-        stats[name].totalZB += ZB_RULES.BASIC;
-
-        if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
-          stats[name].realized += 1;
-          stats[name].totalZB += ZB_RULES.REALIZED;
-
-          if (s.approvedDetails || (s.location && s.url)) {
-            stats[name].withDetails += 1;
-            stats[name].totalZB += ZB_RULES.LOGISTICS;
-          }
-
-          if (s.approvedFree) {
-            stats[name].freeActivities += 1;
-            stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
-          }
-        } else if (s.status === "cancelled") {
-          // Zrušená aktivita - bonus za plánování a přípravu bez realizace
-          if (s.approvedDetails || (s.location && s.url)) {
-            stats[name].withDetails += 1;
-            stats[name].totalZB += ZB_RULES.LOGISTICS;
-          }
-
-          if (s.approvedFree) {
-            stats[name].freeActivities += 1;
-            stats[name].totalZB += ZB_RULES.FREE_DISCOUNT;
-          }
-        }
-      }
-    });
-
-    quests.forEach(q => {
-      if (q.status === 'approved' && q.completedBy) {
-        let name = q.completedBy;
-        if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
-          name = "Táta";
-        }
-        if (activeNames.has(name)) {
-          if (!stats[name]) {
-            stats[name] = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
-          }
-          if (getCreatedTime(q) < currentSprintStartDate) return;
-          const baseXP = parseFloat(q.bonusMultiplier as any) || 0;
-          const bonusXP = parseFloat(q.appliedBonusXP as any) || 0;
-          stats[name].totalZB += (baseXP + bonusXP);
-        }
-      }
-    });
-
-    return stats;
-  }, [suggestions, quests, userProfiles, leagueConfig]);
+  // sprintStats — přímo ze sdíleného calculateLeagueStats (playerStats.sprint), bez duplicitní logiky
+  const sprintStats = playerStats.sprint;
 
   const currentSprintXP = useMemo(() => {
     const pStats = sprintStats?.[normalizedCurrentUserName || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
@@ -1104,6 +839,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const unlockedBadges = BADGES.filter(b => b.check(activeStats));
   const activeBadgeBonus = unlockedBadges.reduce((sum, b) => sum + b.bonusZB, 0);
   const activeTotalXP = activeStats.totalZB + activeBadgeBonus; // Skutečné celkové XP
+  const activePendingXP = leaderboardData.find(p => p.name === activePlayer)?.pendingZB || 0;
 
   const activeMaratonStats = playerStats.maraton[activePlayer || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
   const activeMaratonBadgeBonus = BADGES.filter(b => b.check(activeMaratonStats)).reduce((sum, b) => sum + b.bonusZB, 0);
@@ -1467,6 +1203,11 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   <div className="flex items-center gap-2 mt-1">
                     <Zap size={14} className="text-amber-400" />
                     <span className="text-lg font-black text-amber-400">{activeTotalXP}</span>
+                    {activePendingXP > 0 && (
+                      <span className="text-xs text-amber-400/80 font-bold" title={`Čeká na absolvování: ${activePendingXP} XP`}>
+                        (+{activePendingXP} XP čeká)
+                      </span>
+                    )}
                     <span className="text-xs text-zinc-500">XP</span>
                   </div>
                 </div>
@@ -1650,9 +1391,19 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                           {getTitle(player.totalZB).title}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <Zap size={12} className="text-amber-400" />
-                        <span className="text-sm font-black text-amber-400">{player.totalZB}</span>
+                      <div className="flex flex-col items-end justify-center min-w-[50px]">
+                        <div className="flex items-center gap-1">
+                          <Zap size={12} className="text-amber-400 flex-shrink-0" />
+                          <span className="text-sm font-black text-amber-400 leading-none">{player.totalZB}</span>
+                        </div>
+                        {player.pendingZB > 0 && (
+                          <span 
+                            className="text-[9px] font-black text-amber-400 bg-amber-950/40 border border-amber-800/30 px-1 py-0.5 rounded mt-1 leading-none shadow-sm"
+                            title={`Čeká na absolvování: ${player.pendingZB} XP`}
+                          >
+                            +{player.pendingZB} XP
+                          </span>
+                        )}
                       </div>
                     </button>
                   ))}

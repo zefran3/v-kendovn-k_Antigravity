@@ -169,6 +169,8 @@ export interface MysteryQuest {
   startedAt?: number;
   durationHours?: number;
   status?: string;
+  completedBy?: string;    // jméno hráče, který splnil quest
+  appliedBonusXP?: number; // dorovnávací bonus XP přidělený při splnění
 }
 
 export interface BattlePassMilestone {
