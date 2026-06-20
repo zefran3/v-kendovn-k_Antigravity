@@ -8,6 +8,7 @@ import {
   Clock, 
   User, 
   Settings, 
+  Edit,
   LogOut, 
   ChevronRight,
   Sparkles,
@@ -272,6 +273,27 @@ export default function App() {
   const [isDraftsExpanded, setIsDraftsExpanded] = useState(false);
   const [weather, setWeather] = useState<{ temp: number; icon: string; city: string } | null>(null);
   const [showWeatherModal, setShowWeatherModal] = useState(false);
+  const [isLandscape, setIsLandscape] = useState(false);
+  const [isHeaderExpandedLandscape, setIsHeaderExpandedLandscape] = useState(false);
+
+  const handleAvatarClickLandscape = () => {
+    const nextState = !isHeaderExpandedLandscape;
+    setIsHeaderExpandedLandscape(nextState);
+    if (nextState) {
+      setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 80);
+    }
+  };
+
+  useEffect(() => {
+    const checkLandscape = () => {
+      setIsLandscape(window.innerWidth > window.innerHeight && window.innerHeight < 768);
+    };
+    checkLandscape();
+    window.addEventListener('resize', checkLandscape);
+    return () => window.removeEventListener('resize', checkLandscape);
+  }, []);
   const [commentingOn, setCommentingOn] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [commentPhoto, setCommentPhoto] = useState<string | null>(null);
@@ -1947,12 +1969,17 @@ export default function App() {
   return (
     <div className="min-h-screen text-stone-800 font-sans selection:bg-rose-100" style={{ backgroundImage: "url('/bg.png')", backgroundSize: 'cover', backgroundPosition: 'center bottom', backgroundAttachment: 'fixed' }}>
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white border-b-2 border-stone-200 px-4 md:px-8 py-2 md:py-2.5 flex items-center justify-between overflow-hidden relative">
-        <div className="flex items-center">
+      <header className={cn(
+        "z-50 bg-white border-b-2 border-stone-200 px-4 md:px-8 transition-all duration-300 flex items-center justify-between",
+        isLandscape && !isHeaderExpandedLandscape 
+          ? "fixed top-0 right-0 bg-transparent border-b-0 shadow-none justify-end pointer-events-none py-1" 
+          : "sticky top-0 py-2 md:py-2.5 overflow-hidden relative"
+      )}>
+        <div className={cn("flex items-center", isLandscape && !isHeaderExpandedLandscape && "hidden")}>
           <img src="/logo.png" alt="Víkendovník" className="h-12 md:h-16 w-auto object-contain scale-[1.3] md:scale-[1.5] origin-left border-none outline-none" />
         </div>
 
-        {weather && (
+        {weather && !(isLandscape && !isHeaderExpandedLandscape) && (
           <button 
             onClick={() => setShowWeatherModal(true)}
             className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center gap-2 bg-stone-50 hover:bg-stone-100 transition-colors cursor-pointer px-3 py-1.5 rounded-full border border-stone-200 text-sm font-semibold text-stone-600 shadow-sm mx-auto"
@@ -1963,10 +1990,15 @@ export default function App() {
           </button>
         )}
         
-        <div className="flex items-center gap-3 ml-auto z-10">
+        <div 
+          className={cn(
+            "flex items-center gap-3 ml-auto z-10 pointer-events-auto", 
+            isLandscape && !isHeaderExpandedLandscape ? "fixed top-[52px] right-4 z-50" : "ml-0"
+          )}
+        >
           {user ? (
             <>
-              {canApproveActivities && (
+              {canApproveActivities && !(isLandscape && !isHeaderExpandedLandscape) && (
                 <button 
                   onClick={() => {
                     setView(view === "parent" ? "child" : "parent");
@@ -1986,47 +2018,67 @@ export default function App() {
                   {view === "parent" ? "Rodina" : "Administrátor"}
                 </button>
               )}
-              {leaderboard.find(l => l.authorId === user.uid)?.score ? (
-                <div 
-                  className="flex items-center gap-1.5 bg-amber-100 text-amber-600 px-3 py-1.5 rounded-full text-xs font-black shadow-sm border border-amber-200" 
-                  title="Skóre zrealizovaných nápadů"
-                >
-                  <span>🏆</span> {leaderboard.find(l => l.authorId === user.uid)?.score}
-                </div>
-              ) : null}
+
               {isDemoMode ? (
                 <div
-                  className="w-10 h-10 rounded-full border-2 border-violet-400 bg-violet-50 overflow-hidden shadow-sm flex items-center justify-center cursor-default select-none"
+                  onClick={() => {
+                    if (isLandscape) {
+                      handleAvatarClickLandscape();
+                    }
+                  }}
+                  className={cn(
+                    "w-10 h-10 rounded-full border-2 border-violet-400 bg-violet-50 overflow-hidden shadow-sm flex items-center justify-center cursor-default select-none",
+                    isLandscape && "cursor-pointer"
+                  )}
                   title="Demo Dítě"
                 >
                   <span className="text-xl leading-none">🧪</span>
                 </div>
               ) : (
-                <button
-                  onClick={() => setShowAvatarModal(true)}
-                  className="w-10 h-10 rounded-full border-2 border-rose-200 bg-white overflow-hidden shadow-sm flex items-center justify-center hover:border-rose-400 transition-all"
-                  title="Změnit avatara"
-                >
-                  {extendedUserProfiles[currentUserId]?.avatar ? (
-                    extendedUserProfiles[currentUserId].avatar.startsWith("data:") || extendedUserProfiles[currentUserId].avatar.startsWith("http") ? (
-                      <img src={extendedUserProfiles[currentUserId].avatar} alt="Avatar" className="w-full h-full object-cover" />
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => {
+                      if (isLandscape) {
+                        handleAvatarClickLandscape();
+                      } else {
+                        setShowAvatarModal(true);
+                      }
+                    }}
+                    className="w-10 h-10 rounded-full border-2 border-rose-200 bg-white overflow-hidden shadow-sm flex items-center justify-center hover:border-rose-400 transition-all cursor-pointer"
+                    title={isLandscape ? "Rozbalit/Sbalit lištu" : "Změnit avatara"}
+                  >
+                    {extendedUserProfiles[currentUserId]?.avatar ? (
+                      extendedUserProfiles[currentUserId].avatar.startsWith("data:") || extendedUserProfiles[currentUserId].avatar.startsWith("http") ? (
+                        <img src={extendedUserProfiles[currentUserId].avatar} alt="Avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-xl leading-none">{extendedUserProfiles[currentUserId].avatar}</span>
+                      )
+                    ) : user.photoURL ? (
+                        <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-xl leading-none">{extendedUserProfiles[currentUserId].avatar}</span>
-                    )
-                  ) : user.photoURL ? (
-                      <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <User size={20} className="text-stone-400" />
+                      <User size={20} className="text-stone-400" />
+                    )}
+                  </button>
+                  {isLandscape && isHeaderExpandedLandscape && (
+                    <button
+                      onClick={() => setShowAvatarModal(true)}
+                      className="p-1.5 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-500 hover:text-stone-700 transition-colors cursor-pointer"
+                      title="Změnit avatara"
+                    >
+                      <Edit size={14} />
+                    </button>
                   )}
+                </div>
+              )}
+              {!(isLandscape && !isHeaderExpandedLandscape) && (
+                <button 
+                  onClick={handleLogout}
+                  className="p-2 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  title="Odhlásit se"
+                >
+                  <LogOut size={18} />
                 </button>
               )}
-              <button 
-                onClick={handleLogout}
-                className="p-2 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                title="Odhlásit se"
-              >
-                <LogOut size={18} />
-              </button>
             </>
           ) : null}
         </div>
@@ -2142,7 +2194,16 @@ export default function App() {
           )}
         </AnimatePresence>
         
-        <aside className="flex flex-col gap-5 landscape:sticky md:sticky landscape:top-[70px] md:top-[80px] landscape:h-fit md:h-fit landscape:max-h-[calc(100vh-90px)] md:max-h-[calc(100vh-100px)] overflow-y-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden landscape:pb-4 md:pb-4 -mx-2 px-2 md:mx-0 md:px-0">
+        <aside 
+          className={cn(
+            "flex flex-col gap-5 md:sticky md:top-[80px] md:h-fit md:max-h-[calc(100vh-100px)] overflow-y-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:pb-4 -mx-2 px-2 md:mx-0 md:px-0",
+            isLandscape ? "sticky h-fit pb-4" : ""
+          )}
+          style={{ 
+            top: isLandscape ? (isHeaderExpandedLandscape ? '70px' : '10px') : undefined,
+            maxHeight: isLandscape ? (isHeaderExpandedLandscape ? 'calc(100vh - 90px)' : 'calc(100vh - 30px)') : undefined
+          }}
+        >
           {/* Welcome Section */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -2184,7 +2245,7 @@ export default function App() {
                         setExpandedInspiration(null); 
                         setShowVyskovOnly(false);
                       } 
-                      else { setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100); }
+                      else { setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }
                       setShowInspirationsView(!showInspirationsView); 
                     }}
                     className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-indigo-500 text-white font-bold text-xs w-full hover:bg-indigo-600 transition-colors shadow-sm"
@@ -2392,7 +2453,13 @@ export default function App() {
         </aside>
 
         {/* Suggestions List */}
-        <section className="flex flex-col gap-5">
+        <section 
+          className="flex flex-col gap-5"
+          style={isLandscape && !isHeaderExpandedLandscape ? {
+            marginTop: '-16px',
+            paddingTop: '5px'
+          } : undefined}
+        >
           {showInspirationsView ? (
             <div ref={inspirationsRef} className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-[24px] p-5 md:p-8 border border-indigo-100 shadow-[inset_0_4px_8px_rgba(255,255,255,0.8),inset_0_-3px_6px_rgba(0,0,0,0.02),0_6px_12px_-2px_rgba(0,0,0,0.05)] flex flex-col gap-6 min-h-[400px]">
               <div className="flex flex-wrap justify-between items-center gap-3">
@@ -2851,13 +2918,30 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="flex flex-col gap-3 sticky top-[60px] md:top-[80px] z-40 bg-white/85 backdrop-blur-xl py-4 -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl shadow-sm border-b md:border border-stone-200/50 mb-2">
-                <div className="text-[13px] uppercase tracking-widest text-stone-500 font-bold flex items-center justify-center md:justify-start gap-2 drop-shadow-sm">
-                  <span>🌟</span> Nástěnka přání a nápadů
-                </div>
+              <div 
+                className={cn(
+                  "sticky z-40 bg-white/85 backdrop-blur-xl -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl shadow-sm border-b md:border border-stone-200/50 mb-2",
+                  isLandscape 
+                    ? "py-1.5 flex flex-col gap-1.5" 
+                    : "top-[60px] md:top-[80px] py-4 flex flex-col gap-3"
+                )}
+                style={isLandscape ? {
+                  top: isHeaderExpandedLandscape ? '64px' : '5px'
+                } : undefined}
+              >
+                {!isLandscape && (
+                  <div className="text-[13px] uppercase tracking-widest text-stone-500 font-bold flex items-center justify-center md:justify-start gap-2 drop-shadow-sm">
+                    <span>🌟</span> Nástěnka přání a nápadů
+                  </div>
+                )}
                 
-                <div className="flex flex-wrap gap-2 justify-between w-full">
-                  <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+                <div className={cn("flex gap-2 w-full", isLandscape ? "items-center justify-between" : "flex-wrap justify-between")}>
+                  <div className={cn(
+                    "flex gap-2",
+                    isLandscape 
+                      ? "overflow-x-auto flex-nowrap whitespace-nowrap pb-1 scrollbar-none flex-1 max-w-[calc(100%-40px)]" 
+                      : "flex-wrap justify-center md:justify-start"
+                  )}>
                     {(isDeleteMode 
                       ? [
                           { id: "rejected", label: "Zamítnuté" },
@@ -2907,7 +2991,7 @@ export default function App() {
                           }
                         }}
                         className={cn(
-                          "px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm",
+                          "px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex-shrink-0",
                           isDeleteMode 
                             ? deleteFilterStatus === f.id
                               ? "bg-rose-500 text-white border border-rose-500 shadow-md"
