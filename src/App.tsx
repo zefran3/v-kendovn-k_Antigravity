@@ -24,6 +24,8 @@ import {
   Navigation,
   Map,
   ExternalLink,
+  Globe,
+  RefreshCw,
   Film,
   Timer,
   Baby,
@@ -354,6 +356,7 @@ export default function App() {
   const [sportsVenues, setSportsVenues] = useState<SportsVenue[]>([]);
   const [showSportsForm, setShowSportsForm] = useState(false);
   const [editingSportsVenue, setEditingSportsVenue] = useState<SportsVenue | null>(null);
+  const [deletingSportsVenue, setDeletingSportsVenue] = useState<SportsVenue | null>(null);
   const [newSportsVenue, setNewSportsVenue] = useState<Partial<SportsVenue>>({
     name: "",
     type: "posilovna",
@@ -2137,12 +2140,12 @@ export default function App() {
 
   const handleDeleteSportsVenue = async (id: string) => {
     if (!canApproveActivities) return;
-    if (!window.confirm("Opravdu chcete toto sportoviště smazat?")) return;
     
     try {
       const { deleteDoc, doc } = await import('firebase/firestore');
       await deleteDoc(doc(db, 'sports_venues', id));
       setSuccess("Sportoviště bylo smazáno.");
+      setDeletingSportsVenue(null);
     } catch (err: any) {
       console.error("Smazání sportoviště selhalo", err);
       setError(`Chyba při mazání sportoviště: ${err.message || err}`);
@@ -2831,11 +2834,42 @@ export default function App() {
                     : "shadow-sm border-b border-stone-200/50 mb-2 top-[56px] md:top-[80px] -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
                 )}
               >
-                {!isLandscape && (
-                  <div className="text-[13px] uppercase tracking-widest text-teal-600 font-bold flex items-center justify-center md:justify-start gap-2 drop-shadow-sm">
-                    <span>🏋️</span> Sportoviště ve Vyškově a okolí
+                <div className="flex items-center gap-[30px] mb-2 flex-wrap">
+                  <div className="text-[13px] uppercase tracking-widest text-teal-600 font-bold flex items-center gap-2 drop-shadow-sm">
+                    <span>🏋️</span> {!isLandscape ? "Sportoviště ve Vyškově a okolí" : "Sportoviště"}
                   </div>
-                )}
+                  {canApproveActivities && (
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => {
+                          setEditingSportsVenue(null);
+                          setNewSportsVenue({
+                            name: "",
+                            type: "posilovna",
+                            description: "",
+                            location: "",
+                            url: "",
+                            openingHours: "",
+                            price: "",
+                            phone: ""
+                          });
+                          setShowSportsForm(true);
+                        }}
+                        className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center shadow-sm hover:bg-teal-700 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                        title="Přidat sportoviště"
+                      >
+                        <Plus size={16} />
+                      </button>
+                      <button 
+                        onClick={handleSeedSportsVenues}
+                        className="w-8 h-8 rounded-full bg-white border border-stone-200 text-stone-500 flex items-center justify-center shadow-sm hover:bg-stone-50 hover:text-stone-700 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                        title="Resetovat na výchozí"
+                      >
+                        <RefreshCw size={16} />
+                      </button>
+                    </div>
+                  )}
+                </div>
                 
                 <div className={cn("flex gap-2 w-full", isLandscape ? "items-center justify-between" : "flex-wrap justify-between")}>
                   <div className={cn(
@@ -2870,37 +2904,6 @@ export default function App() {
                       );
                     })}
                   </div>
-                  
-                  {canApproveActivities && (
-                    <div className="flex gap-2 ml-auto">
-                      <button 
-                        onClick={() => {
-                          setEditingSportsVenue(null);
-                          setNewSportsVenue({
-                            name: "",
-                            type: "posilovna",
-                            description: "",
-                            location: "",
-                            url: "",
-                            openingHours: "",
-                            price: "",
-                            phone: ""
-                          });
-                          setShowSportsForm(true);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-teal-600 text-white font-bold text-xs shadow-sm hover:bg-teal-700 transition-all flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus size={13} /> Přidat
-                      </button>
-                      <button 
-                        onClick={handleSeedSportsVenues}
-                        className="px-3 py-1.5 rounded-xl bg-white border border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700 font-bold text-xs shadow-sm transition-all flex items-center gap-1 cursor-pointer"
-                        title="Inicializuje výchozí sportoviště"
-                      >
-                        🔄 Reset
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -3006,7 +3009,7 @@ export default function App() {
                             rel="noopener noreferrer"
                             className="flex-1 py-2 text-center font-bold text-xs bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-xl transition-colors border border-teal-200 flex items-center justify-center gap-1.5 cursor-pointer"
                           >
-                            <ExternalLink size={12} /> Přejít na web
+                            <Globe size={12} /> WEB
                           </a>
                         )}
                         <a
@@ -3036,7 +3039,7 @@ export default function App() {
                               <Edit size={14} />
                             </button>
                             <button
-                              onClick={() => handleDeleteSportsVenue(venue.id!)}
+                              onClick={() => setDeletingSportsVenue(venue)}
                               className="p-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-xl transition-colors cursor-pointer"
                               title="Smazat sportoviště"
                             >
@@ -4407,6 +4410,70 @@ export default function App() {
         </section>
       </motion.main>
       )}
+      </AnimatePresence>
+
+      {/* Confirm Sports Venue Delete Modal */}
+      <AnimatePresence>
+        {deletingSportsVenue && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDeletingSportsVenue(null)}
+              className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[60]"
+            />
+            <motion.div 
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[32px] p-8 z-[70] shadow-2xl max-w-md mx-auto border-t border-stone-200"
+            >
+              <div className="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mb-8" />
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-extrabold text-stone-900">Odstranit sportoviště</h3>
+                <button 
+                  type="button" 
+                  onClick={() => setDeletingSportsVenue(null)} 
+                  className="bg-stone-100 p-2 rounded-full shadow-sm text-stone-500 hover:text-stone-800 transition-colors cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-5">
+                <p className="text-sm text-stone-600 leading-relaxed">
+                  Opravdu chcete trvale smazat sportoviště <strong className="font-extrabold text-stone-800">{deletingSportsVenue.name}</strong>? Tuto akci nelze vzít zpět.
+                </p>
+
+                <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex gap-3 text-rose-800 text-xs leading-relaxed">
+                  <AlertTriangle size={18} className="text-rose-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    Tato akce trvale odstraní sportoviště z databáze otevíracích dob sportovišť ve Vyškově a okolí.
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setDeletingSportsVenue(null)}
+                    className="flex-1 py-3 font-bold text-sm bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Zrušit
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => handleDeleteSportsVenue(deletingSportsVenue.id!)}
+                    className="flex-1 py-3 font-bold text-sm bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-md transition-colors cursor-pointer"
+                  >
+                    Smazat
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
       </AnimatePresence>
 
       {/* Floating Sports Venue Form Modal */}
