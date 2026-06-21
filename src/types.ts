@@ -205,6 +205,7 @@ export interface SportsVenue {
   createdAt: number;
   lat?: number;
   lng?: number;
+  isFromWeb?: boolean;
 }
 
 
