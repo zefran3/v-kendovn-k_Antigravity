@@ -1103,6 +1103,30 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
     } catch (error: any) { res.status(500).json({ error: error.message }); }
   });
 
+  app.post("/api/inspirations/clear", async (req, res) => {
+    const { uid } = req.body;
+    if (!uid || !(await isAdmin(uid))) return res.status(403).json({ error: "Forbidden" });
+    try {
+      const db = admin.firestore();
+      const allInspirations = await db.collection('inspirations').get();
+      const batch = db.batch();
+      let count = 0;
+      allInspirations.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.status !== 'draft' && data.status !== 'proposed') {
+          batch.delete(doc.ref);
+          count++;
+        }
+      });
+      await batch.commit();
+      console.log(`[API] Vymazáno ${count} AI inspirací.`);
+      res.json({ success: true, count });
+    } catch (error: any) {
+      console.error("[API ERROR] Chyba při mazání inspirací:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/inspirations/:id/propose", async (req, res) => {
     const { uid } = req.body;
     const { id } = req.params;

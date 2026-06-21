@@ -122,6 +122,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /sports_venues/{venueId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isParent();
+    }
+
     match /quests/{questId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Bot, Shield, AlertCircle, CheckCircle, Database, Bike } from "lucide-react";
+import { X, Bot, Shield, AlertCircle, CheckCircle, Database, Bike, AlertTriangle, Trash2 } from "lucide-react";
 import { db, auth } from "../firebase";
 import { collection, query, orderBy, limit, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc } from "firebase/firestore";
 import { cn } from "../lib/utils";
-import { UserProfile, UserRole } from "../types";
+import { UserProfile, UserRole, ActivitySuggestion } from "../types";
 
 
 
@@ -40,6 +40,9 @@ interface AdminPanelProps {
   isDemoMode?: boolean;
   onToggleDemoMode?: () => void;
   onCleanupSandbox?: () => void;
+  canManageSystem?: boolean;
+  suggestions?: ActivitySuggestion[];
+  onResetApplication?: () => Promise<void>;
 }
 
 export default function AdminPanel({
@@ -56,9 +59,14 @@ export default function AdminPanel({
   currentUserRole,
   isDemoMode = false,
   onToggleDemoMode,
-  onCleanupSandbox
+  onCleanupSandbox,
+  canManageSystem = false,
+  suggestions = [],
+  onResetApplication
 }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<"logs" | "users" | "actions" | "locations">("users");
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState("");
   const [logs, setLogs] = useState<AdminLog[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [locations, setLocations] = useState<KnownLocation[]>([]);
@@ -381,6 +389,37 @@ export default function AdminPanel({
                   </button>
                 </div>
               </div>
+
+              {/* Reset Aplikace Section */}
+              {canManageSystem && (
+                <div className="bg-rose-50 p-6 rounded-2xl border border-rose-100 flex flex-col gap-3">
+                  <div className="font-bold text-rose-800 flex items-center gap-2">
+                    <AlertTriangle className="text-rose-500" size={20} /> Reset Aplikace pro nové použití
+                  </div>
+                  <p className="text-sm text-rose-600">
+                    Tato akce vymaže všechny aktivní návrhy a plánované aktivity na nástěnce (celkem <strong>{
+                      (suggestions || []).filter(s => {
+                        if (s.status === "cancelled") return false;
+                        if (s.status === "approved" && s.eventDate) {
+                          const eventDate = new Date(s.eventDate);
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          if (eventDate < today) return false;
+                        }
+                        return true;
+                      }).length
+                    }</strong>). Tato operace se <strong>netýká</strong> Historie a archivu (minulé dokončené akce a zrušené akce zůstanou zachovány).
+                  </p>
+                  <div className="flex flex-wrap gap-3 mt-2">
+                    <button 
+                      onClick={() => setIsResetConfirmOpen(true)}
+                      className="px-6 py-3 rounded-xl bg-rose-500 text-white font-bold text-sm shadow-sm hover:bg-rose-600 hover:shadow-md transition-all cursor-pointer flex items-center gap-2"
+                    >
+                      <Trash2 size={16} /> Resetovat aplikaci...
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -696,6 +735,101 @@ export default function AdminPanel({
         </div>
       </motion.div>
 
+      {/* Reset Confirmation Modal */}
+      <AnimatePresence>
+        {isResetConfirmOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setIsResetConfirmOpen(false);
+                setResetConfirmText("");
+              }}
+              className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs z-[80] transition-opacity"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-md bg-white rounded-2xl p-6 shadow-2xl z-[80] border border-stone-100 flex flex-col gap-4 text-left"
+            >
+              <div className="flex items-center gap-2 text-rose-600 font-extrabold text-lg">
+                <AlertTriangle size={24} /> Varování: Reset Aplikace
+              </div>
+              
+              <p className="text-sm text-stone-600 leading-relaxed">
+                Opravdu chcete vymazat všechny aktivní aktivity a AI tipy z aplikace a připravit ji na nové použití? 
+                Tato akce je <strong>nevratná</strong> a smaže celkem <strong>{
+                  (suggestions || []).filter(s => {
+                    if (s.status === "cancelled") return false;
+                    if (s.status === "approved" && s.eventDate) {
+                      const eventDate = new Date(s.eventDate);
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      if (eventDate < today) return false;
+                    }
+                    return true;
+                  }).length
+                }</strong> aktivních návrhů.
+              </p>
+              
+              <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-xs text-rose-700 flex flex-col gap-1">
+                <span className="font-bold">Co bude smazáno:</span>
+                <span className="pl-2">• Všechny nepřezkoumané návrhy (pending)</span>
+                <span className="pl-2">• Schválené budoucí akce (approved bez data nebo v budoucnu)</span>
+                <span className="pl-2">• Rozpracované návrhy (draft) a cyklotrasy</span>
+                <span className="pl-2">• Odmítnuté návrhy (rejected)</span>
+                <span className="pl-2">• Všechny vygenerované AI tipy (inspirace)</span>
+                <span className="font-bold mt-1">Co BUDE zachováno:</span>
+                <span className="pl-2">• Historie (schválené a dokončené akce v minulosti)</span>
+                <span className="pl-2">• Archiv zrušených akcí (cancelled)</span>
+                <span className="pl-2">• Rozpracované cyklotrasy a návrhy uživatelů (status draft/proposed)</span>
+              </div>
+
+              <div className="flex flex-col gap-2 mt-2">
+                <label className="text-xs font-bold text-stone-500 uppercase">
+                  Pro potvrzení napište slovo <span className="text-rose-600 select-all font-extrabold">RESET</span>:
+                </label>
+                <input 
+                  type="text" 
+                  value={resetConfirmText}
+                  onChange={(e) => setResetConfirmText(e.target.value)}
+                  placeholder="Napište RESET"
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-sm text-stone-700 focus:ring-2 focus:ring-rose-200 focus:outline-none font-bold text-center uppercase tracking-widest"
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end mt-2">
+                <button 
+                  onClick={() => {
+                    setIsResetConfirmOpen(false);
+                    setResetConfirmText("");
+                  }}
+                  className="px-4 py-2 border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 font-bold text-xs rounded-xl shadow-sm cursor-pointer"
+                >
+                  Storno
+                </button>
+                <button 
+                  onClick={async () => {
+                    if (resetConfirmText.trim().toUpperCase() === "RESET") {
+                      setIsResetConfirmOpen(false);
+                      setResetConfirmText("");
+                      onClose(); // Zavřít admin panel
+                      await onResetApplication?.();
+                    }
+                  }}
+                  disabled={resetConfirmText.trim().toUpperCase() !== "RESET"}
+                  className="px-4 py-2 bg-rose-600 text-white font-bold text-xs rounded-xl shadow-sm hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+                >
+                  <Trash2 size={14} /> Potvrdit reset
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
     </>
   );

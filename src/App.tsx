@@ -38,12 +38,13 @@ import {
   Shield,
   AlertTriangle,
   Bike,
-  Zap
+  Zap,
+  Phone
 } from "lucide-react";
 import AdminPanel from "./components/AdminPanel";
 import BikeRouteGenerator from "./components/BikeRouteGenerator";
 import { cn } from "./lib/utils";
-import { ActivitySuggestion, WeekendEvent, UserProfile, UserRole, UserPermissions, ActivityComment, Inspiration, CinemaListing } from "./types";
+import { ActivitySuggestion, WeekendEvent, UserProfile, UserRole, UserPermissions, ActivityComment, Inspiration, CinemaListing, SportsVenue } from "./types";
 import { calculateLeagueStats, BADGES } from "./lib/gameHubUtils";
 import GameHub from "./GameHub";
 import { format, startOfWeek, addDays, isSameDay, parseISO } from "date-fns";
@@ -348,6 +349,22 @@ export default function App() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showGameHub, setShowGameHub] = useState(false);
   const [showBikeGenerator, setShowBikeGenerator] = useState(false);
+  const [showSportsView, setShowSportsView] = useState(false);
+  const [sportsFilter, setSportsFilter] = useState<string>('all');
+  const [sportsVenues, setSportsVenues] = useState<SportsVenue[]>([]);
+  const [showSportsForm, setShowSportsForm] = useState(false);
+  const [editingSportsVenue, setEditingSportsVenue] = useState<SportsVenue | null>(null);
+  const [newSportsVenue, setNewSportsVenue] = useState<Partial<SportsVenue>>({
+    name: "",
+    type: "posilovna",
+    description: "",
+    location: "",
+    url: "",
+    openingHours: "",
+    price: "",
+    phone: ""
+  });
+
   useEffect(() => {
     const handleScroll = () => {
       setShowScrollToTop(window.scrollY > 300);
@@ -793,6 +810,7 @@ export default function App() {
         setUser(currentUser);
         // Reset navigation states to home screen on login
         setShowInspirationsView(false);
+        setShowSportsView(false);
         setShowArchive(false);
         setShowUserManagement(false);
         setShowForm(false);
@@ -873,6 +891,17 @@ export default function App() {
       setInspirations(data);
     });
 
+    const unsubscribeSportsVenues = onSnapshot(query(collection(db, 'sports_venues')), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as SportsVenue[];
+      data.sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+      setSportsVenues(data);
+    }, (err) => {
+      console.warn("Nebylo možné načíst sportoviště z Firestore: ", err);
+    });
+
     const unsubscribeLeagueConfig = onSnapshot(doc(db, 'settings', 'league_config'), (docSnap) => {
       if (docSnap.exists()) {
         setLeagueConfig(docSnap.data());
@@ -886,6 +915,7 @@ export default function App() {
       unsubscribeSuggestions();
       unsubscribeInspirations();
       unsubscribeLeagueConfig();
+      unsubscribeSportsVenues();
     };
   }, [user]);
 
@@ -1233,6 +1263,51 @@ export default function App() {
       setLoadingStep("");
     }
   };
+
+  const handleResetApplication = async () => {
+    try {
+      setLoadingStep("Resetuji aplikaci...");
+      
+      const toDelete = suggestions.filter(s => {
+        // Ponechat zrušené (archiv)
+        if (s.status === "cancelled") return false;
+        
+        // Ponechat dokončené v minulosti (historie)
+        if (s.status === "approved" && s.eventDate) {
+          const eventDate = new Date(s.eventDate);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          if (eventDate < today) return false;
+        }
+        
+        return true; // Vše ostatní (aktivní) smazat
+      });
+
+      const { deleteDoc, doc } = await import("firebase/firestore");
+      for (const s of toDelete) {
+        await deleteDoc(doc(db, "suggestions", s.id));
+      }
+
+      // Vymazat AI inspirace (AI tipy) přes API (jelikož Firestore rules zakazují přímý zápis z klienta)
+      const clearRes = await fetch("/api/inspirations/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: auth.currentUser?.uid })
+      });
+      if (!clearRes.ok) {
+        const errorText = await clearRes.text();
+        throw new Error(`Chyba při mazání AI tipů: ${errorText}`);
+      }
+
+      setSuccess(`Aplikace byla úspěšně resetována. Smazáno ${toDelete.length} aktivních aktivit a vyčištěny AI tipy.`);
+    } catch (err) {
+      console.error("Chyba při resetu aplikace:", err);
+      setError("Nepodařilo se resetovat aplikaci.");
+    } finally {
+      setLoadingStep("");
+    }
+  };
+
 
   const handleCloseForm = () => {
     setShowForm(false);
@@ -1920,6 +1995,159 @@ export default function App() {
       setError("Chyba při hromadném mazání.");
     }
   };
+  const DEFAULT_SPORTS_VENUES: Omit<SportsVenue, "createdAt">[] = [
+    {
+      name: "Aquapark Vyškov",
+      type: "bazen",
+      description: "Krytý areál s 25m bazénem, tobogány, vířivkou a saunou. Letní venkovní bazén s atrakcemi.",
+      location: "Sportovní 752/5, Vyškov",
+      url: "https://www.bazenvyskov.cz",
+      openingHours: "Krytý bazén: denně 8:00 - 20:00 (doporučujeme ověřit rozpis drah online)",
+      price: "Dospělí cca 120-150 Kč/hod, děti a senioři slevy",
+      phone: "+420 517 348 745"
+    },
+    {
+      name: "IMPAKT Fitness",
+      type: "posilovna",
+      description: "Moderní fitness centrum s kardio zónou, posilovacími stroji a zónou pro funkční trénink.",
+      location: "Sídliště Osvobození 670, Vyškov",
+      url: "https://www.impaktfitness.cz",
+      openingHours: "Po - Pá: 6:30 - 22:00, So - Ne: 8:00 - 22:00",
+      price: "Jednorázový vstup cca 150 Kč, akceptují MultiSport",
+      phone: ""
+    },
+    {
+      name: "CALLISTO Fitness",
+      type: "posilovna",
+      description: "Široké spektrum posilovacích strojů, kardio zóna, funkční místnost pro box a workout.",
+      location: "Dobrovského 427/2, Vyškov",
+      url: "https://www.callistofitness.cz",
+      openingHours: "Po - Pá: 7:00 - 21:30, So - Ne: 9:00 - 21:30",
+      price: "Jednorázový vstup cca 140 Kč, akceptují MultiSport",
+      phone: ""
+    },
+    {
+      name: "Zimní stadion Vyškov",
+      type: "zimni_stadion",
+      description: "Městská ledová plocha pro hokej a veřejné bruslení. K dispozici je půjčovna a broušení bruslí.",
+      location: "Mlýnská 743/12, Vyškov-Dědice",
+      url: "https://zsvyskov.cz",
+      openingHours: "Dle rozpisu ledu (veřejné bruslení obvykle So/Ne v určené časy, např. So 14:15-15:15)",
+      price: "Veřejné bruslení: Dospělí 100 Kč, děti do 15 let 50 Kč, rodina 250 Kč",
+      phone: "+420 724 395 733"
+    },
+    {
+      name: "Tenisový areál Mlýnská",
+      type: "tenis",
+      description: "Přetlaková tenisová hala a venkovní tenisové kurty.",
+      location: "Mlýnská 737/10, Vyškov",
+      url: "https://www.smmvyskova.cz",
+      openingHours: "Hala Po-Pá: 10:00-21:00, So-Ne-svátky: 8:00-19:00; Venkovní kurty denně 7:00-21:00",
+      price: "Dle sezóny a typu kurtu",
+      phone: "+420 724 559 153"
+    },
+    {
+      name: "Atletický stadion Vyškov",
+      type: "atletika",
+      description: "Městský stadion s atletickou dráhou (pro veřejnost jsou určené dráhy 7 a 8).",
+      location: "Mlýnská 737/10, Vyškov",
+      url: "https://www.smmvyskova.cz",
+      openingHours: "Březen-červen / Září-listopad: Po-Čt 17:00-20:00, Pá 17:00-20:00, So-Ne 9:00-20:00",
+      price: "Zdarma pro nekomerční využití veřejností",
+      phone: "+420 724 559 153"
+    }
+  ];
+
+  const handleSeedSportsVenues = async () => {
+    if (!canApproveActivities) return;
+    try {
+      const { collection, getDocs, writeBatch, doc } = await import('firebase/firestore');
+      const sportsRef = collection(db, 'sports_venues');
+      const snapshot = await getDocs(sportsRef);
+      
+      const batch = writeBatch(db);
+      snapshot.docs.forEach(docSnap => {
+        batch.delete(docSnap.ref);
+      });
+      
+      DEFAULT_SPORTS_VENUES.forEach(venue => {
+        const newDocRef = doc(sportsRef);
+        batch.set(newDocRef, {
+          ...venue,
+          createdAt: Date.now()
+        });
+      });
+      
+      await batch.commit();
+      setSuccess("Sportoviště byla úspěšně inicializována.");
+    } catch (err: any) {
+      console.error("Inicializace sportovišť selhala", err);
+      setError(`Chyba při inicializaci sportovišť: ${err.message || err}`);
+    }
+  };
+
+  const handleSaveSportsVenue = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!canApproveActivities) return;
+    if (!newSportsVenue.name || !newSportsVenue.location || !newSportsVenue.openingHours) {
+      setError("Název, Adresa a Otevírací doba jsou povinné údaje.");
+      return;
+    }
+    
+    try {
+      const { collection, addDoc, updateDoc, doc } = await import('firebase/firestore');
+      
+      const venueData = {
+        name: newSportsVenue.name,
+        type: newSportsVenue.type || "other",
+        description: newSportsVenue.description || "",
+        location: newSportsVenue.location,
+        url: newSportsVenue.url || "",
+        openingHours: newSportsVenue.openingHours,
+        price: newSportsVenue.price || "",
+        phone: newSportsVenue.phone || "",
+        createdAt: editingSportsVenue?.createdAt || Date.now()
+      };
+      
+      if (editingSportsVenue?.id) {
+        await updateDoc(doc(db, 'sports_venues', editingSportsVenue.id), venueData);
+        setSuccess("Sportoviště bylo úspěšně upraveno.");
+      } else {
+        await addDoc(collection(db, 'sports_venues'), venueData);
+        setSuccess("Sportoviště bylo úspěšně přidáno.");
+      }
+      
+      setShowSportsForm(false);
+      setEditingSportsVenue(null);
+      setNewSportsVenue({
+        name: "",
+        type: "posilovna",
+        description: "",
+        location: "",
+        url: "",
+        openingHours: "",
+        price: "",
+        phone: ""
+      });
+    } catch (err: any) {
+      console.error("Ukládání sportoviště selhalo", err);
+      setError(`Chyba při ukládání sportoviště: ${err.message || err}`);
+    }
+  };
+
+  const handleDeleteSportsVenue = async (id: string) => {
+    if (!canApproveActivities) return;
+    if (!window.confirm("Opravdu chcete toto sportoviště smazat?")) return;
+    
+    try {
+      const { deleteDoc, doc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'sports_venues', id));
+      setSuccess("Sportoviště bylo smazáno.");
+    } catch (err: any) {
+      console.error("Smazání sportoviště selhalo", err);
+      setError(`Chyba při mazání sportoviště: ${err.message || err}`);
+    }
+  };
 
   const handleConfirmCancel = async () => {
     if (!cancellingEvent || !cancelReason.trim()) return;
@@ -2015,6 +2243,7 @@ export default function App() {
                     setDeleteFilterStatus(null);
                     setBoardFilter("all");
                     setShowInspirationsView(false);
+                    setShowSportsView(false);
                     setShowArchive(false);
                     setShowUserManagement(false);
                     setShowVyskovOnly(false);
@@ -2309,29 +2538,61 @@ export default function App() {
                   </button>
                 )}
                 {canApproveActivities && (
-                  <button
-                    onClick={() => { 
-                      if (showInspirationsView) { 
-                        setExpandedInspiration(null); 
-                        setShowVyskovOnly(false);
-                      } 
-                      else { setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }
-                      setShowInspirationsView(!showInspirationsView); 
-                    }}
-                    className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-indigo-500 text-white font-bold text-xs w-full hover:bg-indigo-600 transition-colors shadow-sm"
-                  >
-                    {showInspirationsView ? (
-                      <>
-                        <span className="text-xl">🏠</span>
-                        <span>Zpět na nástěnku</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-xl">✨</span>
-                        <span>Inspirace na víkend</span>
-                      </>
-                    )}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => { 
+                        if (showInspirationsView) { 
+                          setExpandedInspiration(null); 
+                          setShowVyskovOnly(false);
+                        } 
+                        else { 
+                          setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); 
+                          setShowSportsView(false);
+                        }
+                        setShowInspirationsView(!showInspirationsView); 
+                      }}
+                      className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-indigo-500 text-white font-bold text-xs w-full hover:bg-indigo-600 transition-colors shadow-sm"
+                    >
+                      {showInspirationsView ? (
+                        <>
+                          <span className="text-xl">🏠</span>
+                          <span>Zpět na nástěnku</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-xl">✨</span>
+                          <span>Inspirace na víkend</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (showSportsView) {
+                          setShowSportsView(false);
+                        } else {
+                          setShowSportsView(true);
+                          setShowInspirationsView(false);
+                          setShowArchive(false);
+                          setShowUserManagement(false);
+                          setShowGameHub(false);
+                          setShowBikeGenerator(false);
+                        }
+                      }}
+                      className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-teal-600 text-white font-bold text-xs w-full hover:bg-teal-700 transition-colors shadow-sm"
+                    >
+                      {showSportsView ? (
+                        <>
+                          <span className="text-xl">🏠</span>
+                          <span>Zpět na nástěnku</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-xl">🏋️</span>
+                          <span>Sportoviště v okolí</span>
+                        </>
+                      )}
+                    </button>
+                  </>
                 )}
               </div>
             )}
@@ -2367,7 +2628,10 @@ export default function App() {
                           setExpandedInspiration(null); 
                           setShowVyskovOnly(false);
                         } 
-                        else { setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }
+                        else { 
+                          setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+                          setShowSportsView(false);
+                        }
                         setShowInspirationsView(!showInspirationsView); 
                       }}
                       className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-indigo-500 text-white font-bold text-xs w-full hover:bg-indigo-600 transition-colors shadow-sm"
@@ -2381,6 +2645,33 @@ export default function App() {
                         <>
                           <span className="text-xl">✨</span>
                           <span>Inspirace na víkend</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (showSportsView) {
+                          setShowSportsView(false);
+                        } else {
+                          setShowSportsView(true);
+                          setShowInspirationsView(false);
+                          setShowArchive(false);
+                          setShowUserManagement(false);
+                          setShowGameHub(false);
+                          setShowBikeGenerator(false);
+                        }
+                      }}
+                      className="flex flex-col items-center justify-center gap-1.5 p-3 text-center leading-tight rounded-xl bg-teal-600 text-white font-bold text-xs w-full hover:bg-teal-700 transition-colors shadow-sm"
+                    >
+                      {showSportsView ? (
+                        <>
+                          <span className="text-xl">🏠</span>
+                          <span>Zpět na nástěnku</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-xl">🏋️</span>
+                          <span>Sportoviště v okolí</span>
                         </>
                       )}
                     </button>
@@ -2437,6 +2728,7 @@ export default function App() {
               onGenerated={() => {
                 // Přepnout na Nástěnku, kde se zobrazí nové "pískoviště" s návrhy
                 setShowInspirationsView(false);
+                setShowSportsView(false);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
             />
@@ -2529,21 +2821,298 @@ export default function App() {
             isLandscape ? "overflow-y-auto h-screen gap-5" : "gap-5"
           )}
         >
-          {showInspirationsView ? (
-            <div ref={inspirationsRef} className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-[24px] p-5 md:p-8 border border-indigo-100 shadow-[inset_0_4px_8px_rgba(255,255,255,0.8),inset_0_-3px_6px_rgba(0,0,0,0.02),0_6px_12px_-2px_rgba(0,0,0,0.05)] flex flex-col gap-6 min-h-[400px]">
-              <div className="flex flex-wrap justify-between items-center gap-3">
-                <div className="text-lg md:text-xl uppercase tracking-widest text-indigo-500 font-extrabold flex items-center gap-2 drop-shadow-sm">
-                  <span>{showVyskovOnly ? "🏰" : "✨"}</span> {showVyskovOnly ? "Akce ve Vyškově" : "Inspirace na víkend z AI"}
-                </div>
-                {view === "parent" && (
-                  <button 
-                    onClick={handleGenerateInspirations}
-                    disabled={isGeneratingInspiration}
-                    className="px-5 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-sm shadow-sm hover:bg-indigo-600 hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {isGeneratingInspiration ? "AI hledá na internetu..." : "Vyhledat nové tipy"}
-                  </button>
+          {showSportsView ? (
+            <>
+              <div 
+                className={cn(
+                  "sticky z-40 bg-white/85 backdrop-blur-xl",
+                  isLandscape 
+                    ? "top-0 mx-0 px-2 py-1.5 flex flex-col gap-1.5 rounded-xl" 
+                    : "shadow-sm border-b border-stone-200/50 mb-2 top-[56px] md:top-[80px] -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
                 )}
+              >
+                {!isLandscape && (
+                  <div className="text-[13px] uppercase tracking-widest text-teal-600 font-bold flex items-center justify-center md:justify-start gap-2 drop-shadow-sm">
+                    <span>🏋️</span> Sportoviště ve Vyškově a okolí
+                  </div>
+                )}
+                
+                <div className={cn("flex gap-2 w-full", isLandscape ? "items-center justify-between" : "flex-wrap justify-between")}>
+                  <div className={cn(
+                    "flex gap-2",
+                    isLandscape 
+                      ? "overflow-x-auto flex-nowrap whitespace-nowrap pb-1 scrollbar-none flex-1 max-w-[calc(100%-40px)]" 
+                      : "flex-wrap justify-center md:justify-start"
+                  )}>
+                    {[
+                      { id: 'all', label: 'Všechny', emoji: '🌟' },
+                      { id: 'bazen', label: 'Bazény', emoji: '🏊' },
+                      { id: 'posilovna', label: 'Posilovny', emoji: '🏋️' },
+                      { id: 'zimni_stadion', label: 'Zimní stadiony', emoji: '⛸️' },
+                      { id: 'tenis', label: 'Tenis', emoji: '🎾' },
+                      { id: 'atletika', label: 'Atletika', emoji: '🏃' },
+                      { id: 'other', label: 'Ostatní', emoji: '⚽' }
+                    ].map(filter => {
+                      const isActive = sportsFilter === filter.id;
+                      return (
+                        <button
+                          key={filter.id}
+                          onClick={() => setSportsFilter(filter.id)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm border cursor-pointer",
+                            isActive
+                              ? "bg-teal-600 border-teal-600 text-white shadow-md border-transparent"
+                              : "bg-white border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700"
+                          )}
+                        >
+                          <span>{filter.emoji}</span> <span className="ml-1">{filter.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  {canApproveActivities && (
+                    <div className="flex gap-2 ml-auto">
+                      <button 
+                        onClick={() => {
+                          setEditingSportsVenue(null);
+                          setNewSportsVenue({
+                            name: "",
+                            type: "posilovna",
+                            description: "",
+                            location: "",
+                            url: "",
+                            openingHours: "",
+                            price: "",
+                            phone: ""
+                          });
+                          setShowSportsForm(true);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-teal-600 text-white font-bold text-xs shadow-sm hover:bg-teal-700 transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus size={13} /> Přidat
+                      </button>
+                      <button 
+                        onClick={handleSeedSportsVenues}
+                        className="px-3 py-1.5 rounded-xl bg-white border border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700 font-bold text-xs shadow-sm transition-all flex items-center gap-1 cursor-pointer"
+                        title="Inicializuje výchozí sportoviště"
+                      >
+                        🔄 Reset
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Grid of Venues */}
+              {sportsVenues.length > 0 ? (() => {
+                const filtered = sportsVenues.filter(venue => sportsFilter === 'all' || venue.type === sportsFilter);
+                if (filtered.length === 0) {
+                  return (
+                    <div className="flex-grow flex flex-col items-center justify-center text-center p-8 bg-white/50 rounded-2xl border border-teal-100/50 border-dashed">
+                      <div className="text-4xl mb-4 opacity-50">🔍</div>
+                      <p className="text-lg text-teal-800 font-semibold opacity-80 max-w-md">
+                        Žádné sportoviště neodpovídá zvolenému filtru.
+                      </p>
+                    </div>
+                  );
+                }
+
+                const getVenueTheme = (type: string) => {
+                  switch (type) {
+                    case 'bazen': return { border: 'border-blue-200', bg: 'bg-blue-50/30', badgeBg: 'bg-blue-100 text-blue-800', emoji: '🏊 Bazén' };
+                    case 'posilovna': return { border: 'border-teal-200', bg: 'bg-teal-50/30', badgeBg: 'bg-teal-100 text-teal-800', emoji: '🏋️ Posilovna' };
+                    case 'zimni_stadion': return { border: 'border-indigo-200', bg: 'bg-indigo-50/30', badgeBg: 'bg-indigo-100 text-indigo-800', emoji: '⛸️ Zimní stadion' };
+                    case 'tenis': return { border: 'border-amber-200', bg: 'bg-amber-50/30', badgeBg: 'bg-amber-100 text-amber-800', emoji: '🎾 Tenis' };
+                    case 'atletika': return { border: 'border-red-200', bg: 'bg-red-50/30', badgeBg: 'bg-red-100 text-red-800', emoji: '🏃 Atletika' };
+                    default: return { border: 'border-stone-200', bg: 'bg-stone-50/30', badgeBg: 'bg-stone-100 text-stone-800', emoji: '⚽ Sportoviště' };
+                  }
+                };
+
+                const makeVenueCard = (venue: SportsVenue) => {
+                  const theme = getVenueTheme(venue.type);
+                  return (
+                    <div 
+                      key={venue.id} 
+                      className={cn(
+                        "w-full bg-white p-6 rounded-2xl flex flex-col justify-between hover:shadow-md transition-shadow border mb-4 self-start",
+                        theme.border
+                      )}
+                    >
+                      <div>
+                        <div className="flex justify-between items-start mb-3">
+                          <span className={cn("text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wide", theme.badgeBg)}>
+                            {theme.emoji}
+                          </span>
+                        </div>
+                        <h4 className="font-extrabold text-stone-800 text-lg mb-2 leading-tight">{venue.name}</h4>
+                        {venue.description && (
+                          <p className="text-sm text-stone-600 leading-relaxed mb-4">{venue.description}</p>
+                        )}
+
+                        <div className="space-y-2 text-xs text-stone-700 border-t border-stone-100 pt-3 mb-4">
+                          <div className="flex items-start gap-2">
+                            <Clock size={14} className="text-teal-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <span className="font-bold block text-stone-500 text-[10px] uppercase tracking-wider">Otevírací doba</span>
+                              <span className="font-semibold text-stone-800 leading-relaxed whitespace-pre-line">{venue.openingHours}</span>
+                            </div>
+                          </div>
+
+                          {venue.price && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-[14px] leading-none mt-0.5 flex-shrink-0">💰</span>
+                              <div>
+                                <span className="font-bold block text-stone-500 text-[10px] uppercase tracking-wider">Vstupné / Info</span>
+                                <span className="text-stone-700 leading-relaxed">{venue.price}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-start gap-2">
+                            <MapPin size={14} className="text-teal-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <span className="font-bold block text-stone-500 text-[10px] uppercase tracking-wider">Adresa</span>
+                              <a 
+                                href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(venue.location)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-semibold text-teal-600 hover:underline"
+                              >
+                                {venue.location}
+                              </a>
+                            </div>
+                          </div>
+
+                          {venue.phone && (
+                            <div className="flex items-start gap-2">
+                              <Phone size={14} className="text-teal-600 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <span className="font-bold block text-stone-500 text-[10px] uppercase tracking-wider">Telefon</span>
+                                <a href={`tel:${venue.phone.replace(/\s+/g, '')}`} className="font-semibold text-stone-700 hover:text-teal-600 transition-colors">
+                                  {venue.phone}
+                                </a>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 border-t border-stone-100 pt-4 mt-2">
+                        {venue.url && (
+                          <a
+                            href={venue.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 py-2 text-center font-bold text-xs bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-xl transition-colors border border-teal-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <ExternalLink size={12} /> Přejít na web
+                          </a>
+                        )}
+                        <a
+                          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(venue.location)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={cn(
+                            "py-2 text-center font-bold text-xs bg-stone-50 hover:bg-stone-100 text-stone-600 rounded-xl transition-colors border border-stone-200 flex items-center justify-center gap-1.5 cursor-pointer",
+                            venue.url ? "px-4" : "flex-1"
+                          )}
+                          title="Navigovat na místo"
+                        >
+                          <Navigation size={12} /> Navigovat
+                        </a>
+
+                        {canApproveActivities && (
+                          <div className="flex gap-1.5 ml-auto">
+                            <button
+                              onClick={() => {
+                                setEditingSportsVenue(venue);
+                                setNewSportsVenue({ ...venue });
+                                setShowSportsForm(true);
+                              }}
+                              className="p-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-xl transition-colors cursor-pointer"
+                              title="Upravit sportoviště"
+                            >
+                              <Edit size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSportsVenue(venue.id!)}
+                              className="p-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-xl transition-colors cursor-pointer"
+                              title="Smazat sportoviště"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                };
+
+                return (
+                  <>
+                    {/* Desktop */}
+                    <div className="hidden md:flex gap-4 items-start pb-4">
+                      <div className="flex-1 flex flex-col min-w-0">
+                        {filtered.filter((_, i) => i % 2 === 0).map(makeVenueCard)}
+                      </div>
+                      <div className="flex-1 flex flex-col min-w-0">
+                        {filtered.filter((_, i) => i % 2 !== 0).map(makeVenueCard)}
+                      </div>
+                    </div>
+                    {/* Mobile */}
+                    <div className="md:hidden flex flex-col pb-4">
+                      {filtered.map(makeVenueCard)}
+                    </div>
+                  </>
+                );
+              })() : (
+                <div className="flex-grow flex flex-col items-center justify-center text-center p-8 bg-white/50 rounded-2xl border border-teal-100/50 border-dashed py-12">
+                  <div className="text-5xl mb-4">🏋️‍♂️</div>
+                  <p className="text-lg text-teal-800 font-semibold opacity-80 max-w-md mb-2">
+                    Zatím tu nejsou žádná sportoviště.
+                  </p>
+                  <p className="text-sm text-stone-500 max-w-sm mb-6">
+                    Data otevírací doby sportovních zařízení ve Vyškově je třeba nejprve inicializovat.
+                  </p>
+                  {canApproveActivities && (
+                    <button 
+                      onClick={handleSeedSportsVenues}
+                      className="px-6 py-3 rounded-xl bg-teal-600 text-white font-bold text-sm shadow-sm hover:bg-teal-700 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      🔄 Inicializovat výchozí sportoviště
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
+          ) : showInspirationsView ? (
+            <div ref={inspirationsRef}>
+              <div 
+                className={cn(
+                  "sticky z-40 bg-white/85 backdrop-blur-xl",
+                  isLandscape 
+                    ? "top-0 mx-0 px-2 py-1.5 flex flex-col gap-1.5 rounded-xl" 
+                    : "shadow-sm border-b border-stone-200/50 mb-2 top-[56px] md:top-[80px] -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
+                )}
+              >
+                {!isLandscape && (
+                  <div className="text-[13px] uppercase tracking-widest text-indigo-500 font-bold flex items-center justify-center md:justify-start gap-2 drop-shadow-sm">
+                    <span>{showVyskovOnly ? "🏰" : "✨"}</span> {showVyskovOnly ? "Akce ve Vyškově" : "Inspirace na víkend z AI"}
+                  </div>
+                )}
+                
+                <div className={cn("flex gap-2 w-full", isLandscape ? "items-center justify-between" : "flex-wrap justify-between")}>
+                  {view === "parent" && (
+                    <button 
+                      onClick={handleGenerateInspirations}
+                      disabled={isGeneratingInspiration}
+                      className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs shadow-sm hover:bg-indigo-600 hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ml-auto"
+                    >
+                      {isGeneratingInspiration ? "AI hledá na internetu..." : "Vyhledat nové tipy"}
+                    </button>
+                  )}
+                </div>
               </div>
               
               {inspirations.length > 0 ? (() => {
@@ -2583,7 +3152,14 @@ export default function App() {
                                genDate.getDate() === today.getDate();
                       })();
                       return (
-                    <div id={`insp-${insp.id}`} key={insp.id} className={`w-full bg-white p-6 rounded-2xl shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow self-start ${isNewToday ? 'border-2 border-emerald-300 shadow-emerald-100' : 'border border-indigo-50'}`}>
+                    <div 
+                      id={`insp-${insp.id}`} 
+                      key={insp.id} 
+                      className={cn(
+                        "w-full bg-white p-6 rounded-2xl shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow mb-4 self-start",
+                        isNewToday ? 'border-2 border-emerald-300 shadow-emerald-100' : 'border border-indigo-50'
+                      )}
+                    >
                       <div>
                         {/* Badge pro draft/proposed cyklotrasy */}
                         {(insp as any).status === 'draft' && (
@@ -2960,24 +3536,23 @@ export default function App() {
                   };
                   return (
                     <>
-                      {/* Desktop: 2 skutečně nezávislé flex sloupce.
-                          Rozbalení karty v jednom sloupci NEOVLIVNÍ sloupec vedlejší. */}
-                      <div className="hidden md:flex gap-5 items-start pb-4">
-                        <div className="flex-1 flex flex-col gap-5 min-w-0">
+                      {/* Desktop */}
+                      <div className="hidden md:flex gap-4 items-start pb-4">
+                        <div className="flex-1 flex flex-col min-w-0">
                           {filtered.filter((_, i) => i % 2 === 0).map(makeCard)}
                         </div>
-                        <div className="flex-1 flex flex-col gap-5 min-w-0">
+                        <div className="flex-1 flex flex-col min-w-0">
                           {filtered.filter((_, i) => i % 2 !== 0).map(makeCard)}
                         </div>
                       </div>
-                      {/* Mobil: jeden sloupec */}
-                      <div className="md:hidden flex flex-col gap-5 pb-4">
+                      {/* Mobile */}
+                      <div className="md:hidden flex flex-col pb-4">
                         {filtered.map(makeCard)}
                       </div>
                     </>
                   );
                 })() : (
-                <div className="flex-grow flex flex-col items-center justify-center text-center p-8 bg-white/50 rounded-2xl border border-indigo-100/50 border-dashed">
+                <div className="flex-grow flex flex-col items-center justify-center text-center p-8 bg-white/50 rounded-2xl border border-indigo-100/50 border-dashed py-12">
                   <div className="text-4xl mb-4 opacity-50">🤖</div>
                   <p className="text-lg text-indigo-800 font-semibold opacity-80 max-w-md">
                     Zatím tu nejsou žádné AI tipy. Administrátor je musí nejprve vygenerovat.
@@ -3285,7 +3860,7 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     className={cn(
-                      "break-inside-avoid inline-block w-full mb-4 bg-white rounded-[20px] p-5 border-2 transition-all shadow-[inset_0_4px_8px_rgba(255,255,255,1),inset_0_-3px_6px_rgba(0,0,0,0.03),0_12px_24px_-6px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[160px]",
+                      "w-full mb-4 bg-white rounded-[20px] p-5 border-2 transition-all shadow-[inset_0_4px_8px_rgba(255,255,255,1),inset_0_-3px_6px_rgba(0,0,0,0.03),0_12px_24px_-6px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[160px]",
                       suggestion.reconsiderationRequested ? "bg-orange-50 border-orange-400 ring-4 ring-orange-200/50 shadow-orange-100" :
                       suggestion.status === "approved" ? "bg-green-50 border-green-100" :
                       suggestion.status === "rejected" ? "bg-red-50 border-red-100" :
@@ -3802,7 +4377,7 @@ export default function App() {
 
             return (
               <>
-                {/* Desktop: 2 flex sloupce */}
+                {/* Desktop */}
                 <div className="hidden md:flex gap-4 items-start pb-4">
                   <div className="flex-1 flex flex-col min-w-0">
                     <AnimatePresence mode="popLayout">
@@ -3817,7 +4392,7 @@ export default function App() {
                     </AnimatePresence>
                   </div>
                 </div>
-                {/* Mobil */}
+                {/* Mobile */}
                 <div className="md:hidden flex flex-col pb-4">
                   <AnimatePresence mode="popLayout">
                     {filteredBoardSuggestions.map(renderBoardCard)}
@@ -3832,6 +4407,171 @@ export default function App() {
         </section>
       </motion.main>
       )}
+      </AnimatePresence>
+
+      {/* Floating Sports Venue Form Modal */}
+      <AnimatePresence>
+        {showSportsForm && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setShowSportsForm(false);
+                setEditingSportsVenue(null);
+              }}
+              className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[60]"
+            />
+            <motion.div 
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[32px] p-8 z-[70] shadow-2xl max-w-2xl mx-auto border-t border-stone-200 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mb-8" />
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-extrabold text-stone-900">
+                  {editingSportsVenue ? "Upravit sportoviště" : "Přidat sportoviště"}
+                </h3>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setShowSportsForm(false);
+                    setEditingSportsVenue(null);
+                  }} 
+                  className="bg-stone-100 p-2 rounded-full shadow-sm text-stone-500 hover:text-stone-800 transition-colors cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <form onSubmit={handleSaveSportsVenue} className="space-y-5">
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Název sportoviště *</label>
+                    <input 
+                      type="text"
+                      required
+                      value={newSportsVenue.name || ""}
+                      onChange={e => setNewSportsVenue({...newSportsVenue, name: e.target.value})}
+                      placeholder="Např. Aquapark Vyškov"
+                      className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-teal-500 outline-none transition-all text-sm"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Typ zařízení *</label>
+                      <select
+                        value={newSportsVenue.type || "other"}
+                        onChange={e => setNewSportsVenue({...newSportsVenue, type: e.target.value})}
+                        className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-teal-500 outline-none transition-all text-sm cursor-pointer"
+                      >
+                        <option value="bazen">🏊 Bazén / Koupaliště</option>
+                        <option value="posilovna">🏋️ Posilovna / Fitness</option>
+                        <option value="zimni_stadion">⛸️ Zimní stadion</option>
+                        <option value="tenis">🎾 Tenisové kurty</option>
+                        <option value="atletika">🏃 Atletika / Ovál</option>
+                        <option value="other">⚽ Ostatní sportoviště</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Telefon</label>
+                      <input 
+                        type="text"
+                        value={newSportsVenue.phone || ""}
+                        onChange={e => setNewSportsVenue({...newSportsVenue, phone: e.target.value})}
+                        placeholder="Např. +420 517 348 745"
+                        className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-teal-500 outline-none transition-all text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Krátký popis</label>
+                    <textarea 
+                      value={newSportsVenue.description || ""}
+                      onChange={e => setNewSportsVenue({...newSportsVenue, description: e.target.value})}
+                      placeholder="Popište vybavení, služby či zajímavosti..."
+                      rows={2}
+                      className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-teal-500 outline-none transition-all text-sm resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Adresa (Místo) *</label>
+                    <input 
+                      type="text"
+                      required
+                      value={newSportsVenue.location || ""}
+                      onChange={e => setNewSportsVenue({...newSportsVenue, location: e.target.value})}
+                      placeholder="Např. Sportovní 752/5, Vyškov"
+                      className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-teal-500 outline-none transition-all text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Otevírací doba *</label>
+                    <textarea 
+                      required
+                      value={newSportsVenue.openingHours || ""}
+                      onChange={e => setNewSportsVenue({...newSportsVenue, openingHours: e.target.value})}
+                      placeholder="Např. Po-Pá: 6:30-22:00&#10;So-Ne: 8:00-22:00"
+                      rows={3}
+                      className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-teal-500 outline-none transition-all text-sm resize-y"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Vstupné / Ceník info</label>
+                      <input 
+                        type="text"
+                        value={newSportsVenue.price || ""}
+                        onChange={e => setNewSportsVenue({...newSportsVenue, price: e.target.value})}
+                        placeholder="Např. Dospělí 150 Kč, MultiSport akceptována"
+                        className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-teal-500 outline-none transition-all text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block">Webová URL</label>
+                      <input 
+                        type="url"
+                        value={newSportsVenue.url || ""}
+                        onChange={e => setNewSportsVenue({...newSportsVenue, url: e.target.value})}
+                        placeholder="Např. https://www.bazenvyskov.cz"
+                        className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-teal-500 outline-none transition-all text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setShowSportsForm(false);
+                      setEditingSportsVenue(null);
+                    }}
+                    className="flex-1 py-3 font-bold text-sm bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Zrušit
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="flex-1 py-3 font-bold text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-md transition-colors cursor-pointer"
+                  >
+                    {editingSportsVenue ? "Uložit změny" : "Vytvořit sportoviště"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </>
+        )}
       </AnimatePresence>
 
       {/* Floating Form Modal */}
@@ -4797,6 +5537,9 @@ export default function App() {
               setView(next ? "child" : "parent");
             }}
             onCleanupSandbox={handleCleanupSandbox}
+            canManageSystem={canManageSystem}
+            suggestions={suggestions}
+            onResetApplication={handleResetApplication}
           />
         )}
       </AnimatePresence>

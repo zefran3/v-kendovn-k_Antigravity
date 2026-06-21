@@ -192,4 +192,18 @@ export interface BattlePassClaim {
   claimedAt: any;
 }
 
+export interface SportsVenue {
+  id?: string;
+  name: string;
+  type: string; // 'bazen' | 'posilovna' | 'zimni_stadion' | 'tenis' | 'atletika' | 'other'
+  description?: string;
+  location: string;
+  url?: string;
+  openingHours: string;
+  price?: string;
+  phone?: string;
+  createdAt: number;
+}
+
+
 
