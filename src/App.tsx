@@ -271,6 +271,7 @@ export default function App() {
   const [appealingEvent, setAppealingEvent] = useState<ActivitySuggestion | null>(null);
   const [appealReason, setAppealReason] = useState("");
   const [isDraftsExpanded, setIsDraftsExpanded] = useState(false);
+  const [showDraftsOverlay, setShowDraftsOverlay] = useState(false);
   const [weather, setWeather] = useState<{ temp: number; icon: string; city: string } | null>(null);
   const [showWeatherModal, setShowWeatherModal] = useState(false);
   const [isLandscape, setIsLandscape] = useState(false);
@@ -2128,6 +2129,25 @@ export default function App() {
         </div>
       )}
 
+      {/* Floating bike button — cyklotrasy v landscape (vždy viditelné) */}
+      {isLandscape && user && 
+       suggestions.some(s => (s as any).status === 'draft' && (s as any).authorId === user?.uid) && (
+        <div className={cn(
+          "fixed z-[60] pointer-events-auto",
+          isHeaderExpandedLandscape
+            ? "top-[52px] right-2"
+            : "top-2 right-14"
+        )}>
+          <button
+            onClick={() => setShowDraftsOverlay(true)}
+            className="w-9 h-9 rounded-full border-2 border-amber-400 bg-amber-50 shadow-lg flex items-center justify-center hover:border-amber-600 transition-all cursor-pointer"
+            title="Moje rozpracované cyklotrasy"
+          >
+            <Bike size={18} className="text-amber-600" />
+          </button>
+        </div>
+      )}
+
       <AnimatePresence mode="wait">
       {!user ? (
         <motion.main 
@@ -2505,8 +2525,8 @@ export default function App() {
         {/* Suggestions List */}
         <section 
           className={cn(
-            "flex flex-col gap-5",
-            isLandscape ? "overflow-y-auto h-screen" : ""
+            "flex flex-col",
+            isLandscape ? "overflow-y-auto h-screen gap-5" : "gap-5"
           )}
         >
           {showInspirationsView ? (
@@ -2969,10 +2989,10 @@ export default function App() {
             <>
               <div 
                 className={cn(
-                  "sticky z-40 bg-white/85 backdrop-blur-xl shadow-sm border-b border-stone-200/50 mb-2",
+                  "sticky z-40 bg-white/85 backdrop-blur-xl",
                   isLandscape 
                     ? "top-0 mx-0 px-2 py-1.5 flex flex-col gap-1.5 rounded-xl" 
-                    : "top-[56px] md:top-[80px] -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
+                    : "shadow-sm border-b border-stone-200/50 mb-2 top-[56px] md:top-[80px] -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
                 )}
               >
                 {!isLandscape && (
@@ -3072,8 +3092,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Moje rozpracované cyklotrasy (Návrhy) — dostupné jen autorovi */}
-            {suggestions.some(insp => (insp as any).status === 'draft' && (insp as any).authorId === user?.uid) && (
+            {/* Moje rozpracované cyklotrasy — v landscape zobrazeno přes overlay, jinak standardní panel */}
+            {!isLandscape && suggestions.some(insp => (insp as any).status === 'draft' && (insp as any).authorId === user?.uid) && (
               <div ref={draftsRef} className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-orange-50 overflow-hidden shadow-sm mb-10">
                 {/* Hlavička — kliknutím rozbalí/sbalí */}
                 <button
@@ -5228,6 +5248,129 @@ export default function App() {
               Zpět na Admina 🔙
             </button>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Overlay drawer — Moje cyklotrasy pro landscape */}
+      <AnimatePresence>
+        {isLandscape && showDraftsOverlay && user && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDraftsOverlay(false)}
+              className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm"
+            />
+            {/* Drawer panel */}
+            <motion.div
+              initial={{ opacity: 0, x: '100%' }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+              className="fixed right-0 top-0 h-full z-[80] bg-white shadow-2xl overflow-y-auto flex flex-col"
+              style={{ width: 'min(360px, 85vw)' }}
+            >
+              {/* Hlavička draweru */}
+              <div className="flex items-center justify-between p-4 border-b border-amber-100 sticky top-0 bg-white z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-sm">
+                    <Bike className="text-white" size={18} />
+                  </div>
+                  <div>
+                    <div className="font-bold text-stone-800 text-sm leading-tight">Moje cyklotrasy</div>
+                    <div className="text-[11px] text-amber-600 font-semibold">Viditelné jen pro tebe</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowDraftsOverlay(false)}
+                  className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-500 transition-colors cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Obsah — karty cyklotras */}
+              <div className="p-4 flex flex-col gap-4">
+                {suggestions
+                  .filter(insp => (insp as any).status === 'draft' && (insp as any).authorId === user?.uid)
+                  .map(insp => (
+                    <motion.div
+                      key={insp.id}
+                      layout
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-white border-2 border-amber-200/50 p-5 rounded-[20px] shadow-sm relative group overflow-hidden hover:shadow-xl hover:shadow-amber-500/5 transition-all duration-300"
+                    >
+                      {/* Background decoration */}
+                      <div className="absolute -top-6 -right-6 p-4 opacity-[0.04] pointer-events-none rotate-12">
+                        <Bike size={100} />
+                      </div>
+
+                      <div className="flex flex-col gap-1 mb-2 relative z-10">
+                        <h4 className="font-black text-stone-800 text-base leading-tight">{insp.title}</h4>
+                        <div className="flex gap-2">
+                          {(insp as any).routeType === 'random' ? (
+                            <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-lg font-bold border border-amber-200">🎲 Náhodný tip</span>
+                          ) : (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-bold border border-emerald-200">🎯 Trasa na míru</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <p className="text-sm text-stone-500 mb-4 line-clamp-2 italic leading-relaxed">
+                        {insp.description}
+                      </p>
+
+                      {insp.cycling_info && (
+                        <div className="grid grid-cols-3 gap-2 bg-stone-50/80 p-3 rounded-xl border border-stone-100 mb-4">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-stone-400 font-black uppercase tracking-tighter">Vzdálenost</span>
+                            <span className="text-xs font-black text-amber-600">{(insp as any).actualDistance ? `${(insp as any).actualDistance} km` : insp.cycling_info.distance}</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-stone-400 font-black uppercase tracking-tighter">Převýšení</span>
+                            <span className="text-xs font-black text-amber-600">{insp.cycling_info.elevation}</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-stone-400 font-black uppercase tracking-tighter">Obtížnost</span>
+                            <span className="text-xs font-black text-emerald-600">{insp.cycling_info.difficulty || 'Střední'}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-2 relative z-10">
+                        <button
+                          onClick={() => { handleProposeBikeRoute(insp.id); setShowDraftsOverlay(false); }}
+                          className="w-full py-3 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white rounded-xl font-bold text-xs shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Sparkles size={13} />
+                          Navrhnout jako rodinnou aktivitu
+                        </button>
+                        <div className="flex gap-2">
+                          <a
+                            href={insp.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 py-2.5 bg-white border border-stone-200 hover:border-amber-200 hover:bg-amber-50 text-stone-600 hover:text-amber-700 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-sm"
+                          >
+                            <MapPin size={13} /> Mapa
+                          </a>
+                          <button
+                            onClick={() => handleDeleteInspiration(insp.id)}
+                            className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-xl font-bold text-xs transition-all flex items-center justify-center border border-rose-100 shadow-sm cursor-pointer"
+                            title="Smazat návrh"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 
