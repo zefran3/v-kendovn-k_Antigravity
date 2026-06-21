@@ -261,6 +261,7 @@ export default function App() {
   });
   const [showArchive, setShowArchive] = useState(false);
   const [archiveTab, setArchiveTab] = useState<"completed" | "cancelled">("completed");
+  const [archiveSortBy, setArchiveSortBy] = useState<"date" | "rating">("date");
   const [boardFilter, setBoardFilter] = useState<"all" | "pending" | "approved" | "rejected" | "cancelled" | "ride" | "bike" | "trash">("all");
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const [likedSuggestions, setLikedSuggestions] = useState<string[]>(() => {
@@ -6376,7 +6377,34 @@ export default function App() {
                     exit={{ opacity: 0, height: 0 }}
                     className="flex-shrink-0 overflow-hidden"
                   >
-                    <div className="bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 mb-6 shadow-sm">
+                    <div className="flex flex-col sm:flex-row gap-3 items-center justify-between mb-6">
+                      <div className="bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm w-full sm:w-auto">
+                        <span>💡</span>
+                        <span>Známku dvakrát měř, jednou opravuj.</span>
+                      </div>
+                      
+                      <div className="flex bg-stone-200/50 p-1 rounded-xl text-xs font-bold w-full sm:w-auto select-none border border-stone-200/20">
+                        <button
+                          onClick={() => setArchiveSortBy("date")}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg transition-all cursor-pointer flex-1 sm:flex-none text-center",
+                            archiveSortBy === "date" ? "bg-white text-rose-600 shadow-xs" : "text-stone-500 hover:text-stone-700"
+                          )}
+                        >
+                          📅 Nejnovější
+                        </button>
+                        <button
+                          onClick={() => setArchiveSortBy("rating")}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg transition-all cursor-pointer flex-1 sm:flex-none text-center",
+                            archiveSortBy === "rating" ? "bg-white text-rose-600 shadow-xs" : "text-stone-500 hover:text-stone-700"
+                          )}
+                        >
+                          ⭐️ Podle známky
+                        </button>
+                      </div>
+                    </div>
+                    <div className="hidden">
                       <span>💡</span>
                       <span>Známku dvakrát měř, jednou opravuj.</span>
                     </div>
@@ -6400,11 +6428,19 @@ export default function App() {
                   })
                   .sort((a, b) => {
                     if (archiveTab === "completed") {
-                      // Nehodnocené úplně dole
-                      const gradeA = calcAvgGrade(a) || 99;
-                      const gradeB = calcAvgGrade(b) || 99;
-                      if (gradeA !== gradeB) return gradeA - gradeB;
-                      return b.createdAt - a.createdAt; 
+                      if (archiveSortBy === "rating") {
+                        const gA = calcAvgGrade(a) || 99;
+                        const gB = calcAvgGrade(b) || 99;
+                        if (gA !== gB) return gA - gB;
+                      }
+                      const timeA = a.eventDate ? (a.eventTime ? new Date(`${a.eventDate}T${a.eventTime}`).getTime() : new Date(`${a.eventDate}T00:00`).getTime()) : 0;
+                      const timeB = b.eventDate ? (b.eventTime ? new Date(`${b.eventDate}T${b.eventTime}`).getTime() : new Date(`${b.eventDate}T00:00`).getTime()) : 0;
+                      if (timeA !== timeB) return timeB - timeA;
+                      return b.createdAt - a.createdAt;
+
+
+
+
                     } else {
                       return b.createdAt - a.createdAt; // Zrušené řadíme od nejnovějších
                     }
