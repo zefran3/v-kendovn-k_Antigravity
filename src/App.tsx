@@ -22,6 +22,7 @@ import {
   Image as ImageIcon,
   MapPin,
   Navigation,
+  Search,
   Map,
   ExternalLink,
   Globe,
@@ -353,6 +354,12 @@ export default function App() {
   const [showBikeGenerator, setShowBikeGenerator] = useState(false);
   const [showSportsView, setShowSportsView] = useState(false);
   const [sportsFilter, setSportsFilter] = useState<string>('all');
+  const [sportsVyskovOnly, setSportsVyskovOnly] = useState(false);
+  const [sportsSearchQuery, setSportsSearchQuery] = useState("");
+  const [showSportsSearchSuggestions, setShowSportsSearchSuggestions] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [sportsGeoFilterActive, setSportsGeoFilterActive] = useState(false);
+  const [geoLoading, setGeoLoading] = useState(false);
   const [sportsVenues, setSportsVenues] = useState<SportsVenue[]>([]);
   const [showSportsForm, setShowSportsForm] = useState(false);
   const [editingSportsVenue, setEditingSportsVenue] = useState<SportsVenue | null>(null);
@@ -365,7 +372,9 @@ export default function App() {
     url: "",
     openingHours: "",
     price: "",
-    phone: ""
+    phone: "",
+    lat: undefined,
+    lng: undefined
   });
 
   useEffect(() => {
@@ -555,6 +564,7 @@ export default function App() {
       navigator.geolocation.getCurrentPosition(async (position) => {
         try {
           const { latitude, longitude } = position.coords;
+          setUserCoords({ lat: latitude, lng: longitude });
           const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&timezone=auto&past_days=1`);
           const weatherData = await weatherRes.json();
           
@@ -1998,46 +2008,252 @@ export default function App() {
       setError("Chyba při hromadném mazání.");
     }
   };
+
   const DEFAULT_SPORTS_VENUES: Omit<SportsVenue, "createdAt">[] = [
+    // ── Vyškov ──────────────────────────────────────────────────
     {
       name: "Aquapark Vyškov",
-      type: "bazen",
-      description: "Krytý areál s 25m bazénem, tobogány, vířivkou a saunou. Letní venkovní bazén s atrakcemi.",
+      type: "aquapark",
+      description: "Krytý areál s 25m bazénem, tobogány, vířivkou a saunou. Letní venkovní bazén s atrakcemi pro celou rodinu.",
       location: "Sportovní 752/5, Vyškov",
       url: "https://www.bazenvyskov.cz",
-      openingHours: "Krytý bazén: denně 8:00 - 20:00 (doporučujeme ověřit rozpis drah online)",
-      price: "Dospělí cca 120-150 Kč/hod, děti a senioři slevy",
-      phone: "+420 517 348 745"
+      openingHours: "Krytý bazén: denně 8:00–20:00 (doporučujeme ověřit rozpis drah online)",
+      price: "Dospělí cca 120–150 Kč/hod, děti a senioři se slevou",
+      phone: "+420 517 348 745",
+      lat: 49.2742,
+      lng: 17.0021
     },
     {
       name: "IMPAKT Fitness",
       type: "posilovna",
-      description: "Moderní fitness centrum s kardio zónou, posilovacími stroji a zónou pro funkční trénink.",
-      location: "Sídliště Osvobození 670, Vyškov",
+      description: "Moderní fitness centrum s kardio zónou, posilovacími stroji a zónou pro funkční trénink. Nabízí také skupinové lekce.",
+      location: "Sídliště Osvobození 670, Vyškov-Dědice",
       url: "https://www.impaktfitness.cz",
-      openingHours: "Po - Pá: 6:30 - 22:00, So - Ne: 8:00 - 22:00",
+      openingHours: "Po–Pá: 6:30–22:00, So–Ne: 8:00–22:00",
       price: "Jednorázový vstup cca 150 Kč, akceptují MultiSport",
-      phone: ""
+      phone: "",
+      lat: 49.2882,
+      lng: 16.9961
     },
     {
       name: "CALLISTO Fitness",
       type: "posilovna",
-      description: "Široké spektrum posilovacích strojů, kardio zóna, funkční místnost pro box a workout.",
-      location: "Dobrovského 427/2, Vyškov",
+      description: "Prostorné fitness centrum s kardio zónou, posilovacími stroji a funkční zónou pro box a workout. Tréninky boxu pro začátečníky i pokročilé.",
+      location: "Dobrovského 427/2, Vyškov-Město",
       url: "https://www.callistofitness.cz",
-      openingHours: "Po - Pá: 7:00 - 21:30, So - Ne: 9:00 - 21:30",
+      openingHours: "Po–Pá: 7:00–21:30, So–Ne: 9:00–21:30",
       price: "Jednorázový vstup cca 140 Kč, akceptují MultiSport",
-      phone: ""
+      phone: "",
+      lat: 49.2751,
+      lng: 16.9972
     },
+    {
+      name: "Fitness Club Gottvald",
+      type: "posilovna",
+      description: "Osobní a profesionální tréninky, tvorba cvičebních plánů na míru, výživové poradenství a diagnostika tělesného složení (InBody). Akceptuje MultiSport.",
+      location: "Nádražní 5/5, Vyškov-Město",
+      url: "",
+      openingHours: "Dle rezervace (osobní tréninky), ověřit telefonicky",
+      price: "Vstup akceptuje MultiSport, osobní tréninky dle dohody",
+      phone: "",
+      lat: 49.2721,
+      lng: 17.0012
+    },
+    {
+      name: "Primetime Gym",
+      type: "posilovna",
+      description: "Soukromé fitness centrum s nepřetržitým provozem 24/7. Vstup přes mobilní aplikaci, bez nutnosti obsluhy. Klidné prostředí bez front.",
+      location: "Kostelní 3, Vyškov",
+      url: "https://www.primetimegym.cz",
+      openingHours: "Nonstop 24/7 (vstup přes aplikaci)",
+      price: "Měsíční předplatné / jednorázový vstup dle ceníku na webu",
+      phone: "",
+      lat: 49.2762,
+      lng: 16.9965
+    },
+    {
+      name: "Relaxační studio HAVAJ",
+      type: "posilovna",
+      description: "Posilovna se stroji a spinningem doplněná o relaxační a masérské služby – thajské masáže, whirlpool, a další wellness procedury. Ideální pro relaxaci po tréninku.",
+      location: "kpt. Otakara Jaroše 235/11, Vyškov-Křečkovice",
+      url: "",
+      openingHours: "Ověřit telefonicky nebo na sociálních sítích",
+      price: "Dle ceníku (posilovna + wellness)",
+      phone: "",
+      lat: 49.2831,
+      lng: 17.0142
+    },
+    {
+      name: "JaNa Fitness Rada",
+      type: "posilovna",
+      description: "Menší fitness studio s osobním přístupem, tréninkovými plány na míru a podporou při hubnutí. Vhodné pro začátečníky i pokročilé.",
+      location: "Víta Nejedlého 443/21, Vyškov-Dědice",
+      url: "",
+      openingHours: "Dle rezervace, ověřit telefonicky",
+      price: "Dle dohody",
+      phone: "",
+      lat: 49.2891,
+      lng: 17.0011
+    },
+    {
+      name: "fit+ Vyškov",
+      type: "posilovna",
+      description: "Samoobslužné fitness studio s provozem 24/7. Přístup přes kartu nebo aplikaci kdykoli dle vlastního rozvrhu.",
+      location: "Jana Šoupala 2, Vyškov",
+      url: "https://www.fitplus-club.cz",
+      openingHours: "Nonstop 24/7",
+      price: "Měsíční členství, ověřit aktuální cenu na webu",
+      phone: "",
+      lat: 49.2758,
+      lng: 16.9995
+    },
+    {
+      name: "Sportlab Vyškov",
+      type: "posilovna",
+      description: "Sportovní diagnostické a zátěžové centrum zaměřené na analýzu dat a rozvoj sportovního výkonu. Zátěžové testy, analýza pohybu, personalizované tréninkové plány.",
+      location: "Mlýnská 784/12, Vyškov",
+      url: "https://www.sportlabvyskov.cz",
+      openingHours: "Dle rezervace",
+      price: "Dle ceníku diagnostiky a tréninků",
+      phone: "",
+      lat: 49.2798,
+      lng: 17.0028
+    },
+
+    // ── Posilovny – Brno ────────────────────────────────────────
+    {
+      name: "BIG ONE FITNESS – Mendlák",
+      type: "posilovna",
+      description: "Velké moderní fitness centrum poblíž Mendlova náměstí s rozsáhlou kardio zónou, posilovnou, skupinovými lekcemi, saunou a wellness. Jedna z nejznámějších sítí v Brně.",
+      location: "Václavská 6, Brno-střed",
+      url: "https://www.big1fitness.cz",
+      openingHours: "Po–Pá: 6:00–21:30, So: 8:00–20:00, Ne/svátky: 9:00–21:00",
+      price: "Jednorázový vstup dle ceníku, akceptuje MultiSport a ActivePass",
+      phone: "+420 543 254 616",
+      lat: 49.1912,
+      lng: 16.5968
+    },
+    {
+      name: "BIG ONE FITNESS Club – centrum",
+      type: "posilovna",
+      description: "Druhá pobočka sítě Big One v centru Brna u Benešovy ulice. Moderní vybavení, kardio zóna, skupinové lekce a wellness zázemí.",
+      location: "Benešova 14, Brno-střed",
+      url: "https://www.big1fitness.cz",
+      openingHours: "Po–Pá: 6:30–21:30, So–Ne/svátky: 9:00–21:00",
+      price: "Jednorázový vstup dle ceníku, akceptuje MultiSport a ActivePass",
+      phone: "+420 542 211 903",
+      lat: 49.1945,
+      lng: 16.6151
+    },
+    {
+      name: "City Gym Brno",
+      type: "posilovna",
+      description: "Největší posilovna přímo v centru Brna (cca 700 m²) s oddelenou zónou pro ženy, rozsáhlým výběrem volných vah a strojů a dlouhou otevírací dobou.",
+      location: "Běhounská 22/24, Brno-střed",
+      url: "https://www.citygym.cz",
+      openingHours: "Po–Pá: 6:00–23:00, So–Ne: 8:00–22:00 (ověřit aktuálně)",
+      price: "Jednorázový vstup cca 150 Kč, akceptuje MultiSport",
+      phone: "+420 603 993 197",
+      lat: 49.1972,
+      lng: 16.6092
+    },
+    {
+      name: "NRG Fitness (Energy Fitness Club)",
+      type: "posilovna",
+      description: "Moderní a prostorné fitness centrum ve Štýřicích (Spielberk Office Centre) s důrazem na čistotu a kvalitní vybavení. Sálové lekce v ceně, sauna.",
+      location: "Holandská 878/2, Brno-Štýřice",
+      url: "https://www.nrgfitness.cz",
+      openingHours: "Po–Pá: 6:00–22:00, So–Ne: 8:00–21:00 (ověřit aktuálně)",
+      price: "Jednorázový vstup cca 180 Kč, akceptuje MultiSport",
+      phone: "+420 601 101 194",
+      lat: 49.1812,
+      lng: 16.6045
+    },
+    {
+      name: "GymNation Brno",
+      type: "posilovna",
+      description: "Moderní fitness centrum v OC Kaštanova s designovým prostředím, kvalitními stroji (Precor, Panatta) a komunitním přístupem. Skupinové lekce a osobní trenéři.",
+      location: "Kaštanova 579/76, Brno-Brněnské Ivanovice",
+      url: "https://www.gymnation.cz",
+      openingHours: "Po–Pá: 6:00–22:00, So–Ne: 8:00–21:00 (ověřit aktuálně)",
+      price: "Jednorázový vstup dle ceníku, akceptuje MultiSport",
+      phone: "+420 601 546 321",
+      lat: 49.1652,
+      lng: 16.6321
+    },
+    {
+      name: "AZ Fitness Brno",
+      type: "posilovna",
+      description: "Komplexní fitness centrum v ikonické budově AZ Tower ve Štýřicích. Posilovna, funkční trénink, skupinové lekce, sauna a parní lázeň.",
+      location: "Pražákova 1008/69, Brno-Štýřice (AZ Tower)",
+      url: "https://www.azfitnessbrno.cz",
+      openingHours: "Po–Pá: 6:30–22:00, So–Ne: 8:00–21:00",
+      price: "Jednorázový vstup dle ceníku, akceptuje MultiSport a ActivePass",
+      phone: "+420 511 189 700",
+      lat: 49.1678,
+      lng: 16.6021
+    },
+    {
+      name: "NewPark Gym Brno",
+      type: "posilovna",
+      description: "Oblíbená posilovna ve Štýřicích vybavená kvalitními stroji Hammer Strength. Zaměřena na silový trénink s důrazem na volné váhy a funkční cvičení.",
+      location: "Heršpická 6, Brno-Štýřice",
+      url: "https://www.newpark.cz",
+      openingHours: "Po–Pá: 6:00–22:00, So–Ne: 8:00–21:00 (ověřit aktuálně)",
+      price: "Jednorázový vstup cca 150 Kč, akceptuje MultiSport",
+      phone: "+420 607 025 595",
+      lat: 49.1765,
+      lng: 16.6002
+    },
+    {
+      name: "InCore Fitness Brno",
+      type: "posilovna",
+      description: "Prostorné a dobře vybavené fitness centrum v Židenicích. Moderní stroje, volné váhy, kardio zóna a příjemná atmosféra.",
+      location: "Rokytova 4259/1, Brno-Židenice",
+      url: "https://www.incorefitness.cz",
+      openingHours: "Po–Pá: 6:00–22:00, So–Ne: 8:00–21:00 (ověřit aktuálně)",
+      price: "Jednorázový vstup dle ceníku, akceptuje MultiSport",
+      phone: "+420 776 462 663",
+      lat: 49.2078,
+      lng: 16.6382
+    },
+    {
+      name: "Czech Virus Gym Brno",
+      type: "posilovna",
+      description: "Populární fitness centrum v Bystrci s dobrou atmosférou a kvalitním vybavením. Vhodné pro silový trénink i kondici.",
+      location: "Jakuba Obrovského 1389/1b, Brno-Bystrc",
+      url: "",
+      openingHours: "Po-Pá 6:00-22:00, So-Ne 8:00-20:00",
+      price: "Akceptuje MultiSport, dle ceníku",
+      phone: "",
+      lat: 49.2282,
+      lng: 16.5165
+    },
+    {
+      name: "Fitness Kameňák",
+      type: "posilovna",
+      description: "Samoobslužná posilovna s provozem 24/7 v Novém Lískovci. Přístup přes kartu nebo aplikaci, moderní vybavení, bez nutnosti obsluhy.",
+      location: "Kamenný vrch, Brno",
+      url: "https://www.fitnesskamenak.cz",
+      openingHours: "Nonstop 24/7",
+      price: "Měsíční členství dle ceníku na webu",
+      phone: "",
+      lat: 49.1762,
+      lng: 16.5681
+    },
+
+    // ── Ostatní Vyškov ──────────────────────────────────────────
     {
       name: "Zimní stadion Vyškov",
       type: "zimni_stadion",
       description: "Městská ledová plocha pro hokej a veřejné bruslení. K dispozici je půjčovna a broušení bruslí.",
       location: "Mlýnská 743/12, Vyškov-Dědice",
       url: "https://zsvyskov.cz",
-      openingHours: "Dle rozpisu ledu (veřejné bruslení obvykle So/Ne v určené časy, např. So 14:15-15:15)",
+      openingHours: "Dle rozpisu ledu (veřejné bruslení obvykle So/Ne v určené časy, např. So 14:15–15:15)",
       price: "Veřejné bruslení: Dospělí 100 Kč, děti do 15 let 50 Kč, rodina 250 Kč",
-      phone: "+420 724 395 733"
+      phone: "+420 724 395 733",
+      lat: 49.2801,
+      lng: 17.0031
     },
     {
       name: "Tenisový areál Mlýnská",
@@ -2045,9 +2261,11 @@ export default function App() {
       description: "Přetlaková tenisová hala a venkovní tenisové kurty.",
       location: "Mlýnská 737/10, Vyškov",
       url: "https://www.smmvyskova.cz",
-      openingHours: "Hala Po-Pá: 10:00-21:00, So-Ne-svátky: 8:00-19:00; Venkovní kurty denně 7:00-21:00",
-      price: "Dle sezóny a typu kurtu",
-      phone: "+420 724 559 153"
+      openingHours: "Hala Po–Pá: 10:00–21:00, So–Ne–svátky: 8:00–19:00; Venkovní kurty denně 7:00–21:00",
+      price: "Dle sezóny and typu kurtu",
+      phone: "+420 724 559 153",
+      lat: 49.2792,
+      lng: 17.0025
     },
     {
       name: "Atletický stadion Vyškov",
@@ -2055,9 +2273,453 @@ export default function App() {
       description: "Městský stadion s atletickou dráhou (pro veřejnost jsou určené dráhy 7 a 8).",
       location: "Mlýnská 737/10, Vyškov",
       url: "https://www.smmvyskova.cz",
-      openingHours: "Březen-červen / Září-listopad: Po-Čt 17:00-20:00, Pá 17:00-20:00, So-Ne 9:00-20:00",
+      openingHours: "Březen–červen / Září–listopad: Po–Čt 17:00–20:00, Pá 17:00–20:00, So–Ne 9:00–20:00",
       price: "Zdarma pro nekomerční využití veřejností",
-      phone: "+420 724 559 153"
+      phone: "+420 724 559 153",
+      lat: 49.2795,
+      lng: 17.0023
+    },
+
+    // ── Aquaparky – Jižní Morava ────────────────────────────────
+    {
+      name: "Aquapark Kohoutovice (STAREZ)",
+      type: "aquapark",
+      description: "Velký krytý aquapark v Brně s tobogány, divokou řekou, relaxační zónou, saunami a bazénem pro plavce i neplavce.",
+      location: "Libušina třída 50, Brno-Kohoutovice",
+      url: "https://www.starez-sport.cz/aquapark-kohoutovice",
+      openingHours: "Po–Pá: 10:00–21:00, So–Ne: 9:00–21:00 (ověřit dle sezóny)",
+      price: "Dospělí cca 250–350 Kč/2 hod, dítě cca 180–250 Kč, rodinné vstupné dostupné",
+      phone: "+420 549 124 260",
+      lat: 49.1915,
+      lng: 16.5415
+    },
+    {
+      name: "Termální aquapark Aqualand Moravia – Pasohlávky",
+      type: "aquapark",
+      description: "Největší termální aquapark na Moravě u Novomlýnských nádrží. Termální bazény, tobogány, vlny, venkovní i krytá část, dětský svět a relaxační zóna.",
+      location: "Mušovská 415, Pasohlávky",
+      url: "https://www.aqualand-moravia.cz",
+      openingHours: "Denně 10:00–21:00 (dle sezóny, doporučujeme ověřit)",
+      price: "Dospělí od 450 Kč/3 hod, dítě od 300 Kč, celodenní vstupné dostupné",
+      phone: "+420 519 510 700",
+      lat: 48.8921,
+      lng: 16.5682
+    },
+    {
+      name: "Aquapark Znojmo",
+      type: "aquapark",
+      description: "Moderní krytý aquapark ve Znojmě s tobogány, vířivkou, divokou řekou, saunovým světem a odpočinkovou zónou.",
+      location: "Dvořákova 1, Znojmo",
+      url: "https://www.aquaparkznojmo.cz",
+      openingHours: "Po–Pá: 10:00–21:00, So–Ne: 9:00–21:00",
+      price: "Dospělí cca 200–280 Kč/2 hod, dítě se slevou",
+      phone: "+420 515 232 455",
+      lat: 48.8572,
+      lng: 16.0521
+    },
+    {
+      name: "Aquapark Hodonín",
+      type: "aquapark",
+      description: "Krytý aquapark s tobogány, vířivkami, dětským brouzdalištěm a saunovým světem. V létě venkovní bazény.",
+      location: "Brandlova 3297/2, Hodonín",
+      url: "https://www.aquapark-hodonin.cz",
+      openingHours: "Po–Pá: 10:00–21:00, So–Ne: 9:00–21:00",
+      price: "Dospělí cca 200 Kč/2 hod, dítě cca 140 Kč",
+      phone: "+420 518 321 840",
+      lat: 48.8561,
+      lng: 17.1182
+    },
+
+    // ── Biotopy – Jižní Morava ──────────────────────────────────
+    {
+      name: "Přírodní biotop Mikulov",
+      type: "biotop",
+      description: "Přírodní koupaliště bez chemie u Mikulova. Čistá voda filtrovaná vodními rostlinami, krásné prostředí Palávské krajiny, oblíbené pro rodiny s dětmi.",
+      location: "Mikulov (Dívčí hrad), Mikulov",
+      url: "https://www.mikulov.cz",
+      openingHours: "Letní sezóna: denně 9:00–20:00 (dle počasí)",
+      price: "Vstupné dle sezóny",
+      phone: "",
+      lat: 48.8042,
+      lng: 16.6341
+    },
+    {
+      name: "Biotop Brno-jih (Komárov)",
+      type: "biotop",
+      description: "Přírodní koupaliště s biologickým čištěním vody bez chemie v Brně-Horních Heršpicích. Plavecká i neplavecká část, brouzdaliště, zázemí pro rodiny. Akceptuje MultiSport.",
+      location: "K Lávce 578/15, Brno-Horní Heršpice",
+      url: "https://www.biotopbrno.cz",
+      openingHours: "Letní sezóna (červen–srpen): denně 10:00–20:00",
+      price: "Dospělí 230 Kč, děti 6–15 let 120 Kč, do 5 let zdarma",
+      phone: "+420 778 726 953",
+      lat: 49.1671,
+      lng: 16.6212
+    },
+    {
+      name: "Přírodní koupaliště Biotop Rajhrad",
+      type: "biotop",
+      description: "Velké přírodní koupaliště – biotop na jižním okraji Brna. Přírodní filtrace, travnatý areál, tobogán, dětské brouzdaliště a občerstvení.",
+      location: "Nová 1, Rajhrad",
+      url: "https://www.biotoprajhrad.cz",
+      openingHours: "Letní sezóna (cca červen–srpen): Po–Pá 10:00–19:00, So–Ne 9:00–20:00",
+      price: "Dospělí cca 100–130 Kč, dítě cca 60–90 Kč",
+      phone: "+420 547 231 540",
+      lat: 49.0912,
+      lng: 16.6023
+    },
+    {
+      name: "Biotop Kovalovice",
+      type: "biotop",
+      description: "Jeden z prvních veřejných koupacích biotopů v České republice poblíž Brna. Přírodní čištění vody bez chemie, příjemné prostředí a klidná atmosféra.",
+      location: "Kovalovice 10, Kovalovice",
+      url: "",
+      openingHours: "Červen: Po–Pá 14:00–20:00, So–Ne 12:00–20:00; Čvc–Srp: denně 10:00–20:00",
+      price: "Dospělí 80 Kč, děti/studenti/senioři 60 Kč, do 3 let zdarma",
+      phone: "",
+      lat: 49.2031,
+      lng: 16.8322
+    },
+    {
+      name: "Biotop Říčany u Brna",
+      type: "biotop",
+      description: "Volně přístupné přírodní koupaliště v obci Říčany u Brna. Klidné prostředí pro koupání bez chemikálií, vstup zcela zdarma.",
+      location: "U Koupaliště 586, Říčany",
+      url: "",
+      openingHours: "Volně přístupné nonstop (letní sezóna)",
+      price: "Vstup zdarma",
+      phone: "",
+      lat: 49.2132,
+      lng: 16.3921
+    },
+    {
+      name: "Zámecký biotop Oslavany",
+      type: "biotop",
+      description: "Unikátní přírodní koupaliště zasazené do zámeckého parku v Oslavanech. Malebná atmosféra, biočistá voda, v pátek večerní koupání při svíčkách.",
+      location: "Zámecká ulice, Oslavany",
+      url: "",
+      openingHours: "Út–Ne: 10:00–20:00 (Po sanitární den)",
+      price: "Dospělí 80 Kč, děti/studenti/senioři 60 Kč",
+      phone: "",
+      lat: 49.1245,
+      lng: 16.3312
+    },
+    {
+      name: "Biotop Bantice",
+      type: "biotop",
+      description: "Přírodní koupací biotop ve vinařské obci Bantice na Znojemsku. Čistá voda bez chemie, klidné jihomoravské prostředí, vhodné pro celou rodinu.",
+      location: "Bantice 104, Bantice",
+      url: "",
+      openingHours: "Červen–Srpen: Po–Ne 12:00–20:00",
+      price: "Dospělí 60 Kč, děti od 3 let 40 Kč, do 3 let zdarma",
+      phone: "",
+      lat: 48.8352,
+      lng: 16.1721
+    },
+    {
+      name: "Biotop Bohuslavice u Kyjova",
+      type: "biotop",
+      description: "Oblíbený biotop s vodní plochou, unikátní lagunou ve tvaru potoka a dětským brouzdalištěm. Areál v zeleni se stolním tenisem a kuželkami.",
+      location: "Bohuslavice, Bohuslavice",
+      url: "",
+      openingHours: "Červen: Po–Pá 13:00–20:00, So–Ne 10:00–20:00; Čvc-Srp: 10:00-20:00",
+      price: "Dospělí 50 Kč, děti 6–15 let 25 Kč, do 6 let zdarma",
+      phone: "",
+      lat: 49.0431,
+      lng: 17.1262
+    },
+    {
+      name: "Přírodní biotop Dolní Věstonice",
+      type: "biotop",
+      description: "Idylické přírodní koupaliště v obci Dolní Věstonice u Novomlýnských nádrží. Čistá voda, krásné vinařské okolí, klidné prostředí.",
+      location: "Dolní Věstonice 196, Dolní Věstonice",
+      url: "",
+      openingHours: "Letní sezóna: denně 9:00–19:00 (dle počasí)",
+      price: "Vstup cca 60–80 Kč/dospělý, děti se slevou",
+      phone: "",
+      lat: 48.8872,
+      lng: 16.6381
+    },
+
+    // ── Koupaliště – Jižní Morava ───────────────────────────────
+    {
+      name: "Koupaliště Pohořelice",
+      type: "koupaliste",
+      description: "Venkovní koupaliště u rybníka v Pohořelicích s tobogánem, dětskými bazénky, plážovým volejbalem a restaurací. Oblíbený výletní cíl pro celou rodinu.",
+      location: "Vídeňská 44, Pohořelice",
+      url: "https://www.pohorelice.cz/koupaliste",
+      openingHours: "Letní sezóna (cca červen–srpen): denně 9:00–19:00 (dle počasí)",
+      price: "Dospělí cca 100 Kč, dítě cca 60 Kč",
+      phone: "+420 519 424 111",
+      lat: 48.9831,
+      lng: 16.5292
+    },
+    {
+      name: "Koupaliště Brno – Riviéra",
+      type: "koupaliste",
+      description: "Největší venkovní koupaliště v Brně na řece Svratce. Bazény, divoká réka, skluzavky, plážový volejbal a velká travnatá plocha.",
+      location: "Bauerova 528/5, Brno-Pisárky",
+      url: "https://www.starez-sport.cz/koupaliste-riviera",
+      openingHours: "Letní sezóna: denně 9:00–20:00",
+      price: "Dospělí cca 120 Kč, dítě cca 80 Kč",
+      phone: "+420 543 235 626",
+      lat: 49.1878,
+      lng: 16.5821
+    },
+    {
+      name: "Přehrada Brno – Podkomorské lesy",
+      type: "koupaliste",
+      description: "Volné koupání u Brněnské přehrady na plážích Podkomorské lesy. Přirozená vodní plocha s lesoparkem, restauracemi a možností půjčení lodí.",
+      location: "Přístaviště, Brno-Bystrc",
+      url: "https://www.brnenskanahrada.cz",
+      openingHours: "Koupání volně přístupné (letní sezóna)",
+      price: "Volný vstup",
+      phone: "",
+      lat: 49.2312,
+      lng: 16.5052
+    },
+    {
+      name: "Koupaliště Novomlýnské nádrže – Mušov",
+      type: "koupaliste",
+      description: "Pláž u dolní Novomlýnské nádrže (Mušovské jezero). Oblíbené místo pro koupání, windsurfing a kitesurfing s restaurací a loděnicí.",
+      location: "Mušov, Pasohlávky",
+      url: "https://www.novomlynske-nadrze.cz",
+      openingHours: "Volně přístupné (letní sezóna)",
+      price: "Vstup zdarma",
+      phone: "",
+      lat: 48.8942,
+      lng: 16.6092
+    },
+    {
+      name: "Koupaliště Veselí nad Moravou",
+      type: "koupaliste",
+      description: "Letní koupaliště u řeky Moravy s dětskými bazénky, tobogánem a travnatou plochou vhodnou pro celé rodiny.",
+      location: "Sportovní, Veselí nad Moravou",
+      url: "",
+      openingHours: "Letní sezóna: denně 9:00–19:00",
+      price: "Dospělí cca 80 Kč, dítě cca 50 Kč",
+      phone: "",
+      lat: 48.9515,
+      lng: 17.3781
+    },
+    {
+      name: "Koupaliště Lednice",
+      type: "koupaliste",
+      description: "Venkovní koupaliště v obci Lednice v srdci Lednicko-valtického areálu. Ideální kombinace koupání a prohlídky UNESCO zámku a parku.",
+      location: "Rybniční 680, Lednice",
+      url: "",
+      openingHours: "Letní sezóna: denně 9:00–19:00",
+      price: "Vstup cca 80–100 Kč",
+      phone: "",
+      lat: 48.8012,
+      lng: 16.8041
+    },
+    {
+      name: "Koupaliště Brno – Dobrák (Královo Pole)",
+      type: "koupaliste",
+      description: "Tradiční koupaliště v Brně-Králově Poli s modernizovaným zázemím a plaveckými bazény. Vhodné pro celou rodinu, přijímá kartu MultiSport.",
+      location: "Dobrovského 29, Brno-Královo Pole",
+      url: "https://www.koupalistebrno.cz",
+      openingHours: "Letní sezóna: denně 9:00–20:00 (dle počasí)",
+      price: "Dospělí 160 Kč, děti/studenti/senioři 130 Kč, do 3 let zdarma",
+      phone: "",
+      lat: 49.2185,
+      lng: 16.5982
+    },
+    {
+      name: "Koupaliště Brno – Kraví hora",
+      type: "koupaliste",
+      description: "Oblíbené brněnské koupaliště s 50m nerezovým bazénem, dětským bazénem s atrakcemi a výhledem na Špilberk. Venkovní aquapark s tobogány.",
+      location: "Kraví hora 1, Brno-Veveří",
+      url: "https://www.starez-sport.cz/koupaliste-kravi-hora",
+      openingHours: "Letní sezóna (cca červen–srpen): 10:00–20:00, zavřeno za deště",
+      price: "Dospělí cca 120 Kč, dítě cca 80 Kč",
+      phone: "+420 549 124 260",
+      lat: 49.2023,
+      lng: 16.5821
+    },
+    {
+      name: "Koupaliště Brno – Juliánov",
+      type: "koupaliste",
+      description: "Menší přívětivé koupaliště v Brně-Židenicích s bezchlórovou vodou. Nižší hloubka bazénů, ideální pro rodiny s menšími dětmi.",
+      location: "Juliánovské náměstí, Brno-Židenice",
+      url: "",
+      openingHours: "Letní sezóna: denně 9:00–19:00 (dle počasí)",
+      price: "Dospělí 110 Kč, snížené 90 Kč, do 3 let zdarma",
+      phone: "",
+      lat: 49.1915,
+      lng: 16.6452
+    },
+    {
+      name: "Koupaliště Slavkov u Brna",
+      type: "koupaliste",
+      description: "Prostorné venkovní koupaliště s velkým plaveckým bazénem, dětskými bazénky a zázemím pro sport. Vhodné pro celou rodinu.",
+      location: "Kaunicova 212, Slavkov u Brna",
+      url: "https://www.koupaliste-slavkov.cz",
+      openingHours: "Letní sezóna: denně 9:00–19:00",
+      price: "Dospělí 150 Kč, mládež/senioři 90 Kč, do 3 let zdarma",
+      phone: "",
+      lat: 49.1551,
+      lng: 16.8772
+    },
+    {
+      name: "Koupaliště Žabčice (Beach Resort)",
+      type: "koupaliste",
+      description: "Moderní areál s bazénem, tobogánem, masážními tryskami a vodní lezeckou stěnou. Jeden z nejlépe vybavených areálů v okolí Brna.",
+      location: "Zemědělská 544, Žabčice",
+      url: "https://www.koupakzabcice.cz",
+      openingHours: "Letní sezóna: denně 9:00–20:00",
+      price: "Dospělí 200 Kč, děti 3–15 let/senioři 140 Kč, do 3 let zdarma",
+      phone: "",
+      lat: 49.0142,
+      lng: 16.6075
+    },
+    {
+      name: "Koupaliště Tišnov",
+      type: "koupaliste",
+      description: "Koupaliště s 50m bazénem, brouzdalištěm s atrakcemi a zázemím pro sport – plážový volejbal, stolní tenis. Oblíbené poblíž Brna.",
+      location: "U Střelnice 366, Tišnov",
+      url: "https://www.tisnov.cz",
+      openingHours: "Letní sezóna: denně 9:00–19:00",
+      price: "Základní vstupné 90 Kč, snížené 40 Kč",
+      phone: "",
+      lat: 49.3491,
+      lng: 16.4252
+    },
+    {
+      name: "Aquapark / Koupaliště Kuřim",
+      type: "koupaliste",
+      description: "Moderní venkovní koupaliště a krytý aquapark v Kuřimi. Tobogán, relaxační zóny, snadná dostupnost autem i vlakem z Brna.",
+      location: "Sportovní 1082/1, Kuřim",
+      url: "https://www.wellnesskurim.cz",
+      openingHours: "Letní sezóna: denně 9:00–20:00",
+      price: "Dospělí cca 120 Kč, děti se slevou",
+      phone: "",
+      lat: 49.2992,
+      lng: 16.5251
+    },
+    {
+      name: "Přírodní koupaliště U Libuše (Luleč)",
+      type: "koupaliste",
+      description: "Jedinečné přírodní koupaliště ve starém zatopeném lomu u Lulče nedaleko Vyškova. Hloubka až 14 metrů, skokanské můstky, hřiště. Oblíbené u potápěčů i rodin.",
+      location: "Luleč, Luleč",
+      url: "",
+      openingHours: "Letní sezóna: denně 9:00–19:00 (dle počasí)",
+      price: "Vstupné dle aktuálního ceníku obce Luleč",
+      phone: "",
+      lat: 49.2552,
+      lng: 16.9241
+    },
+    {
+      name: "Letní koupaliště Hodonín",
+      type: "koupaliste",
+      description: "Velké venkovní koupaliště v Hodoníně se dvěma bazény, tobogánem, dětským brouzdalištěm a travnatou plochou.",
+      location: "Brandlova 3297/2, Hodonín",
+      url: "https://www.aquapark-hodonin.cz",
+      openingHours: "Letní sezóna (červen–srpen): denně 9:00–19:00",
+      price: "Dospělí cca 100 Kč, dítě cca 70 Kč",
+      phone: "+420 518 321 840",
+      lat: 48.8505,
+      lng: 17.1195
+    },
+
+    // ── Olomoucký kraj ──────────────────────────────────────────
+    {
+      name: "Aquapark Olomouc",
+      type: "aquapark",
+      description: "Moderní aquapark s krytou i venkovní částí, tobogány, proudovým kanálem, wellness a saunovým světem.",
+      location: "Kafkova 525/4, Olomouc",
+      url: "https://www.aquapark-olomouc.cz",
+      openingHours: "Denně 9:00–21:00",
+      price: "Dospělí od 220 Kč/2 hod, děti a rodiny se slevou",
+      phone: "+420 588 517 770",
+      lat: 49.5754,
+      lng: 17.2341
+    },
+    {
+      name: "Plavecký stadion Olomouc",
+      type: "aquapark",
+      description: "Plavecký areál s 50m vnitřním bazénem, tobogánem, vířivkou a letním venkovním bazénem s travnatými plochami.",
+      location: "Legionářská 11, Olomouc",
+      url: "https://www.olterm.cz",
+      openingHours: "Po–Pá: 6:00–21:00, So–Ne: 8:00–20:00",
+      price: "Dospělí cca 110 Kč/hod, výhodné rodinné vstupné",
+      phone: "+420 585 427 181",
+      lat: 49.5982,
+      lng: 17.2481
+    },
+    {
+      name: "Přírodní biotop Laškov",
+      type: "biotop",
+      description: "Přírodní koupaliště v Laškově s čistou vodou filtrovanou biologicky bez chemie. Zázemí pro rodiny a dětské hřiště.",
+      location: "Laškov 46, Laškov",
+      url: "",
+      openingHours: "Letní sezóna: denně 10:00–19:00 (dle počasí)",
+      price: "Základní vstupné cca 50 Kč, děti 30 Kč",
+      phone: "",
+      lat: 49.5942,
+      lng: 17.0321
+    },
+    {
+      name: "Městské koupaliště Litovel",
+      type: "koupaliste",
+      description: "Klidné městské koupaliště v Litovli s plaveckým bazénem, dětským brouzdalištěm, skluzavkami a volejbalovým hřištěm.",
+      location: "Sportovní 1076, Litovel",
+      url: "https://www.tslitovel.cz",
+      openingHours: "Letní sezóna: denně 9:00–19:00",
+      price: "Dospělí 80 Kč, děti a studenti 40 Kč",
+      phone: "+420 585 342 221",
+      lat: 49.7022,
+      lng: 17.0691
+    },
+
+    // ── Zlínský kraj ──────────────────────────────────────────
+    {
+      name: "Koupaliště Zelené Zlín",
+      type: "koupaliste",
+      description: "Moderní venkovní koupaliště ve Zlíně se skluzavkami, divokou řekou, dětským bazénem a travnatou pláží.",
+      location: "bří Jaroňků 4079, Zlín",
+      url: "https://www.steza.cz/koupaliste-zelene",
+      openingHours: "Letní sezóna: denně 9:00–19:00 (v červenci do 20:00)",
+      price: "Dospělí 130 Kč, děti a senioři 90 Kč, rodinné balíčky",
+      phone: "+420 577 243 008",
+      lat: 49.2311,
+      lng: 17.6852
+    },
+    {
+      name: "Přírodní biotop Modrá",
+      type: "biotop",
+      description: "Ekologické koupaliště s přírodním čištěním vody v sousedství Archeoskanzenu Modrá. Krásné prostředí s molem a dětskou zónou.",
+      location: "Modrá 139, Modrá",
+      url: "https://www.obec-modra.cz",
+      openingHours: "Letní sezóna: denně 10:00–20:00",
+      price: "Dospělí 90 Kč, děti do 15 let 50 Kč",
+      phone: "",
+      lat: 49.1025,
+      lng: 17.4081
+    },
+    {
+      name: "Aquapark Uherské Hradiště",
+      type: "aquapark",
+      description: "Špičkově vybavený aquapark s celoroční vnitřní zónou (tobogány X-Tube, divoká řeka, wellness) a velkým letním koupalištěm.",
+      location: "Stonky 860, Uherské Hradiště",
+      url: "https://www.aquapark-uh.cz",
+      openingHours: "Po–Pá: 8:00–21:30, So–Ne: 9:00–21:30",
+      price: "Zóna 1 (vnitřní) dospělí od 170 Kč/hod, letní venkovní celodenní cca 150 Kč",
+      phone: "+420 572 522 711",
+      lat: 49.0645,
+      lng: 17.4682
+    },
+    {
+      name: "Výletiště a biotop Honětice",
+      type: "biotop",
+      description: "Unikátní koupací biotop vybudovaný z bývalého zemědělského dvora. Stylové prostředí, čistá přírodní filtrace, ubytování a klid.",
+      location: "Honětice 14, Honětice",
+      url: "https://www.honetice.cz",
+      openingHours: "Letní sezóna: denně 9:00–19:00",
+      price: "Dospělí cca 80 Kč, děti cca 50 Kč",
+      phone: "+420 739 030 923",
+      lat: 49.2272,
+      lng: 17.2281
     }
   ];
 
@@ -2089,6 +2751,52 @@ export default function App() {
     }
   };
 
+  const getSportsVenueDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Poloměr Země v km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c; // Vzdálenost v km
+  };
+
+  const handleToggleGeoFilter = () => {
+    if (sportsGeoFilterActive) {
+      setSportsGeoFilterActive(false);
+      return;
+    }
+    
+    if (userCoords) {
+      setSportsGeoFilterActive(true);
+      return;
+    }
+    
+    if ('geolocation' in navigator) {
+      setGeoLoading(true);
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserCoords({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+          setSportsGeoFilterActive(true);
+          setGeoLoading(false);
+        },
+        (error) => {
+          console.error("Chyba geolokace", error);
+          setError("Nepodařilo se zjistit polohu vašeho zařízení.");
+          setGeoLoading(false);
+        },
+        { timeout: 5000 }
+      );
+    } else {
+      setError("Geolokace není vaším prohlížečem podporována.");
+    }
+  };
+
   const handleSaveSportsVenue = async (e: FormEvent) => {
     e.preventDefault();
     if (!canApproveActivities) return;
@@ -2100,6 +2808,25 @@ export default function App() {
     try {
       const { collection, addDoc, updateDoc, doc } = await import('firebase/firestore');
       
+      let lat: number | undefined = undefined;
+      let lng: number | undefined = undefined;
+      
+      try {
+        const geoUrl = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(newSportsVenue.location || "")}`;
+        const geoRes = await fetch(geoUrl, {
+          headers: {
+            "Accept-Language": "cs"
+          }
+        });
+        const geoData = await geoRes.json();
+        if (geoData && geoData.length > 0) {
+          lat = parseFloat(geoData[0].lat);
+          lng = parseFloat(geoData[0].lon);
+        }
+      } catch (geoErr) {
+        console.error("Automatické geokódování adresy selhalo", geoErr);
+      }
+
       const venueData = {
         name: newSportsVenue.name,
         type: newSportsVenue.type || "other",
@@ -2109,7 +2836,9 @@ export default function App() {
         openingHours: newSportsVenue.openingHours,
         price: newSportsVenue.price || "",
         phone: newSportsVenue.phone || "",
-        createdAt: editingSportsVenue?.createdAt || Date.now()
+        createdAt: editingSportsVenue?.createdAt || Date.now(),
+        lat: lat !== undefined ? lat : (newSportsVenue.lat ?? null as any),
+        lng: lng !== undefined ? lng : (newSportsVenue.lng ?? null as any)
       };
       
       if (editingSportsVenue?.id) {
@@ -2870,6 +3599,110 @@ export default function App() {
                     </div>
                   )}
                 </div>
+
+                {/* Panel pro vyhledávání a přepínač Vyškov */}
+                <div className="flex flex-col sm:flex-row gap-2.5 w-full mb-1">
+                  {/* Vyhledávací pole s našeptávačem */}
+                  <div className="relative flex-grow">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={sportsSearchQuery}
+                        onChange={e => {
+                          setSportsSearchQuery(e.target.value);
+                          setShowSportsSearchSuggestions(true);
+                        }}
+                        onFocus={() => setShowSportsSearchSuggestions(true)}
+                        onBlur={() => {
+                          setTimeout(() => setShowSportsSearchSuggestions(false), 200);
+                        }}
+                        placeholder="Vyhledat sportoviště..."
+                        className="w-full pl-9 pr-8 py-2 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:border-teal-500 outline-none transition-all"
+                      />
+                      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                      {sportsSearchQuery && (
+                        <button
+                          onClick={() => {
+                            setSportsSearchQuery("");
+                            setShowSportsSearchSuggestions(false);
+                          }}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Našeptávač (Dropdown) */}
+                    {showSportsSearchSuggestions && sportsSearchQuery.trim().length > 0 && (
+                      <div className="absolute left-0 right-0 mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto py-1">
+                        {(() => {
+                          const suggestions = sportsVenues
+                            .filter(v => {
+                              const q = sportsSearchQuery.toLowerCase().trim();
+                              return v.name.toLowerCase().includes(q) || (v.location || "").toLowerCase().includes(q);
+                            })
+                            .slice(0, 5);
+                          
+                          if (suggestions.length === 0) {
+                            return (
+                              <div className="px-4 py-2 text-xs text-stone-400 text-center">
+                                Žádné shody
+                              </div>
+                            );
+                          }
+                          
+                          return suggestions.map(venue => (
+                            <button
+                              key={venue.id}
+                              onClick={() => {
+                                setSportsSearchQuery(venue.name);
+                                setShowSportsSearchSuggestions(false);
+                              }}
+                              className="w-full text-left px-4 py-2 hover:bg-stone-50 text-xs font-semibold text-stone-700 transition-colors flex items-center justify-between border-b border-stone-50 last:border-b-0 cursor-pointer"
+                            >
+                              <span>{venue.name}</span>
+                              <span className="text-[10px] text-stone-400 font-normal truncate max-w-[150px] ml-2">{venue.location}</span>
+                            </button>
+                          ));
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Přepínač Pouze Vyškov */}
+                  <button
+                    onClick={() => setSportsVyskovOnly(!sportsVyskovOnly)}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border flex items-center justify-center gap-1.5 cursor-pointer h-[38px] sm:h-auto",
+                      sportsVyskovOnly
+                        ? "bg-teal-600 border-teal-600 text-white shadow-md border-transparent"
+                        : "bg-white border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700"
+                    )}
+                  >
+                    <MapPin size={14} className={sportsVyskovOnly ? "text-white" : "text-teal-600"} />
+                    <span>Pouze Vyškov</span>
+                  </button>
+
+                  {/* Přepínač V okolí 10 km */}
+                  <button
+                    onClick={handleToggleGeoFilter}
+                    disabled={geoLoading}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border flex items-center justify-center gap-1.5 cursor-pointer h-[38px] sm:h-auto disabled:opacity-50",
+                      sportsGeoFilterActive
+                        ? "bg-emerald-600 border-emerald-600 text-white shadow-md border-transparent"
+                        : "bg-white border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700"
+                    )}
+                  >
+                    {geoLoading ? (
+                      <span className="w-3.5 h-3.5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                      <Navigation size={14} className={sportsGeoFilterActive ? "text-white" : "text-emerald-600"} />
+                    )}
+                    <span>V okolí 10 km</span>
+                  </button>
+                </div>
                 
                 <div className={cn("flex gap-2 w-full", isLandscape ? "items-center justify-between" : "flex-wrap justify-between")}>
                   <div className={cn(
@@ -2880,7 +3713,9 @@ export default function App() {
                   )}>
                     {[
                       { id: 'all', label: 'Všechny', emoji: '🌟' },
-                      { id: 'bazen', label: 'Bazény', emoji: '🏊' },
+                      { id: 'aquapark', label: 'Aquaparky', emoji: '🌊' },
+                      { id: 'biotop', label: 'Biotopy', emoji: '🌿' },
+                      { id: 'koupaliste', label: 'Koupaliště', emoji: '🏖️' },
                       { id: 'posilovna', label: 'Posilovny', emoji: '🏋️' },
                       { id: 'zimni_stadion', label: 'Zimní stadiony', emoji: '⛸️' },
                       { id: 'tenis', label: 'Tenis', emoji: '🎾' },
@@ -2909,7 +3744,55 @@ export default function App() {
 
               {/* Grid of Venues */}
               {sportsVenues.length > 0 ? (() => {
-                const filtered = sportsVenues.filter(venue => sportsFilter === 'all' || venue.type === sportsFilter);
+                const filtered = sportsVenues
+                  .map(venue => {
+                    let relevance = 0;
+                    const query = sportsSearchQuery.toLowerCase().trim();
+                    if (query) {
+                      const name = (venue.name || "").toLowerCase();
+                      const loc = (venue.location || "").toLowerCase();
+                      const desc = (venue.description || "").toLowerCase();
+                      
+                      if (name === query) relevance += 200;
+                      else if (name.startsWith(query)) relevance += 150;
+                      else if (name.includes(query)) relevance += 100;
+                      
+                      if (loc.startsWith(query)) relevance += 80;
+                      else if (loc.includes(query)) relevance += 50;
+                      
+                      if (desc.includes(query)) relevance += 20;
+                    } else {
+                      relevance = 1;
+                    }
+                    
+                    let distance: number | undefined = undefined;
+                    if (userCoords && venue.lat !== undefined && venue.lng !== undefined) {
+                      distance = getSportsVenueDistance(userCoords.lat, userCoords.lng, venue.lat, venue.lng);
+                    }
+                    
+                    return { venue, relevance, distance };
+                  })
+                  .filter(({ venue, relevance, distance }) => {
+                    const matchesType = sportsFilter === 'all' || 
+                                        (sportsFilter === 'aquapark' && (venue.type === 'aquapark' || venue.type === 'bazen')) ||
+                                        venue.type === sportsFilter;
+                    
+                    const matchesVyskov = !sportsVyskovOnly || venue.location.toLowerCase().includes('vyškov');
+                    const matchesSearch = !sportsSearchQuery.trim() || relevance > 0;
+                    const matchesGeo = !sportsGeoFilterActive || (distance !== undefined && distance <= 10);
+                    
+                    return matchesType && matchesVyskov && matchesSearch && matchesGeo;
+                  })
+                  .sort((a, b) => {
+                    if (sportsGeoFilterActive && !sportsSearchQuery.trim() && a.distance !== undefined && b.distance !== undefined) {
+                      return a.distance - b.distance;
+                    }
+                    return b.relevance - a.relevance;
+                  })
+                  .map(({ venue, distance }) => ({
+                    ...venue,
+                    distance
+                  }));
                 if (filtered.length === 0) {
                   return (
                     <div className="flex-grow flex flex-col items-center justify-center text-center p-8 bg-white/50 rounded-2xl border border-teal-100/50 border-dashed">
@@ -2923,6 +3806,9 @@ export default function App() {
 
                 const getVenueTheme = (type: string) => {
                   switch (type) {
+                    case 'aquapark': return { border: 'border-cyan-200', bg: 'bg-cyan-50/30', badgeBg: 'bg-cyan-100 text-cyan-800', emoji: '🌊 Aquapark' };
+                    case 'biotop': return { border: 'border-emerald-200', bg: 'bg-emerald-50/30', badgeBg: 'bg-emerald-100 text-emerald-800', emoji: '🌿 Biotop' };
+                    case 'koupaliste': return { border: 'border-sky-200', bg: 'bg-sky-50/30', badgeBg: 'bg-sky-100 text-sky-800', emoji: '🏖️ Koupaliště' };
                     case 'bazen': return { border: 'border-blue-200', bg: 'bg-blue-50/30', badgeBg: 'bg-blue-100 text-blue-800', emoji: '🏊 Bazén' };
                     case 'posilovna': return { border: 'border-teal-200', bg: 'bg-teal-50/30', badgeBg: 'bg-teal-100 text-teal-800', emoji: '🏋️ Posilovna' };
                     case 'zimni_stadion': return { border: 'border-indigo-200', bg: 'bg-indigo-50/30', badgeBg: 'bg-indigo-100 text-indigo-800', emoji: '⛸️ Zimní stadion' };
@@ -2943,10 +3829,17 @@ export default function App() {
                       )}
                     >
                       <div>
-                        <div className="flex justify-between items-start mb-3">
+                        <div className="flex justify-between items-center mb-3">
                           <span className={cn("text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wide", theme.badgeBg)}>
                             {theme.emoji}
                           </span>
+                          {(venue as any).distance !== undefined && (
+                            <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2.5 py-1 rounded-full flex items-center gap-1">
+                              📍 cca {((venue as any).distance < 1) 
+                                ? `${Math.round((venue as any).distance * 1000)} m` 
+                                : `${(venue as any).distance.toFixed(1).replace('.', ',')} km`}
+                            </span>
+                          )}
                         </div>
                         <h4 className="font-extrabold text-stone-800 text-lg mb-2 leading-tight">{venue.name}</h4>
                         {venue.description && (
@@ -4536,7 +5429,9 @@ export default function App() {
                         onChange={e => setNewSportsVenue({...newSportsVenue, type: e.target.value})}
                         className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-teal-500 outline-none transition-all text-sm cursor-pointer"
                       >
-                        <option value="bazen">🏊 Bazén / Koupaliště</option>
+                        <option value="aquapark">🌊 Aquapark</option>
+                        <option value="biotop">🌿 Přírodní biotop</option>
+                        <option value="koupaliste">🏖️ Koupaliště</option>
                         <option value="posilovna">🏋️ Posilovna / Fitness</option>
                         <option value="zimni_stadion">⛸️ Zimní stadion</option>
                         <option value="tenis">🎾 Tenisové kurty</option>

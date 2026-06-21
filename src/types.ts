@@ -203,6 +203,8 @@ export interface SportsVenue {
   price?: string;
   phone?: string;
   createdAt: number;
+  lat?: number;
+  lng?: number;
 }
 
 
