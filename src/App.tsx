@@ -2070,7 +2070,7 @@ export default function App() {
                       <User size={20} className="text-stone-400" />
                     )}
                   </button>
-                  {!(isLandscape && !isHeaderExpandedLandscape) && (
+                  {isLandscape && isHeaderExpandedLandscape && (
                     <button
                       onClick={() => setShowAvatarModal(true)}
                       className="p-1.5 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-500 hover:text-stone-700 transition-colors cursor-pointer"
