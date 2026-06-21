@@ -699,10 +699,11 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
           const childName = getDynamicName(rawName, userProfiles);
           if (childName !== name) return;
 
-          // Kontrola stavu a eventDate (pouze schválené a budoucí/dnešní)
+          // Kontrola stavu a eventDate (pouze schválené a budoucí)
           if (s.status === 'approved' && s.eventDate) {
-            const eventDateObj = new Date(s.eventDate);
-            if (eventDateObj >= today) {
+            const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
+            const now = new Date();
+            if (!isNaN(eventStart.getTime()) && eventStart > now) {
               // Kontrola časového období (sprint / liga)
               const createdTime = s.createdAt 
                 ? (typeof s.createdAt === 'number' ? s.createdAt : ((s.createdAt as any).toMillis ? (s.createdAt as any).toMillis() : new Date(s.createdAt as any).getTime()))
@@ -1259,8 +1260,9 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                           return s.type !== "ride" && sName === activePlayer && s.status !== "cancelled";
                         })
                         .map(s => {
-                          const today = new Date(); today.setHours(0,0,0,0);
-                          const realized = s.status === "approved" && s.eventDate && new Date(s.eventDate) < today;
+                           const now = new Date();
+                           const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
+                           const realized = s.status === "approved" && s.eventDate && !isNaN(eventStart.getTime()) && eventStart <= now;
                           const hasDetails = s.location && s.url;
                           let zb = ZB_RULES.BASIC;
                           if (realized) zb += ZB_RULES.REALIZED;

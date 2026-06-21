@@ -89,6 +89,7 @@ export const calculateLeagueStats = (
   const maraton: Record<string, UserStats> = {};
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const now = new Date();
 
   const activeNames = new Set<string>();
   Object.values(userProfiles).forEach(profile => {
@@ -135,7 +136,9 @@ export const calculateLeagueStats = (
         maraton[name].totalIdeas += 1;
         maraton[name].totalZB += ZB_RULES.BASIC;
 
-        if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
+        const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
+        const isRealized = !isNaN(eventStart.getTime()) && eventStart <= now;
+        if (s.status === "approved" && s.eventDate && isRealized) {
           maraton[name].realized += 1;
           maraton[name].totalZB += ZB_RULES.REALIZED;
 
@@ -168,7 +171,9 @@ export const calculateLeagueStats = (
         sprint[name].totalIdeas += 1;
         sprint[name].totalZB += ZB_RULES.BASIC;
 
-        if (s.status === "approved" && s.eventDate && new Date(s.eventDate) < today) {
+        const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
+        const isRealized = !isNaN(eventStart.getTime()) && eventStart <= now;
+        if (s.status === "approved" && s.eventDate && isRealized) {
           sprint[name].realized += 1;
           sprint[name].totalZB += ZB_RULES.REALIZED;
 

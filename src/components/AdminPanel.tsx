@@ -401,10 +401,8 @@ export default function AdminPanel({
                       (suggestions || []).filter(s => {
                         if (s.status === "cancelled") return false;
                         if (s.status === "approved" && s.eventDate) {
-                          const eventDate = new Date(s.eventDate);
-                          const today = new Date();
-                          today.setHours(0, 0, 0, 0);
-                          if (eventDate < today) return false;
+                          const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
+                          if (!isNaN(eventStart.getTime()) && eventStart <= new Date()) return false;
                         }
                         return true;
                       }).length
@@ -765,10 +763,8 @@ export default function AdminPanel({
                   (suggestions || []).filter(s => {
                     if (s.status === "cancelled") return false;
                     if (s.status === "approved" && s.eventDate) {
-                      const eventDate = new Date(s.eventDate);
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      if (eventDate < today) return false;
+                      const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
+                      if (!isNaN(eventStart.getTime()) && eventStart <= new Date()) return false;
                     }
                     return true;
                   }).length

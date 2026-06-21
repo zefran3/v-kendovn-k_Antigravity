@@ -669,7 +669,8 @@ export default function App() {
     suggestions.forEach(s => {
       if (s.status === 'approved' && s.eventDate && s.type !== 'ride') {
         const eventDateObj = new Date(s.eventDate);
-        if (eventDateObj < today) {
+        const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
+        if (!isNaN(eventStart.getTime()) && eventStart <= new Date()) {
           const rawName = s.childName || "Neznámý";
           const childNameKey = getDynamicNameForChild(rawName);
           if (scores[childNameKey]) {
@@ -1292,7 +1293,8 @@ export default function App() {
           const eventDate = new Date(s.eventDate);
           const today = new Date();
           today.setHours(0, 0, 0, 0);
-          if (eventDate < today) return false;
+          const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
+          if (!isNaN(eventStart.getTime()) && eventStart <= new Date()) return false;
         }
         
         return true; // Vše ostatní (aktivní) smazat
@@ -5076,7 +5078,8 @@ export default function App() {
                       const eventDate = new Date(suggestion.eventDate);
                       const today = new Date();
                       today.setHours(0, 0, 0, 0);
-                      if (eventDate < today) {
+                      const eventStart = suggestion.eventTime ? new Date(`${suggestion.eventDate}T${suggestion.eventTime}`) : new Date(`${suggestion.eventDate}T00:00`);
+                      if (!isNaN(eventStart.getTime()) && eventStart <= new Date()) {
                         return false;
                       }
                     }
@@ -6389,7 +6392,8 @@ export default function App() {
                     if (archiveTab === "completed") {
                       if (s.status !== "approved") return false;
                       if (!s.eventDate) return false;
-                      return new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0));
+                      const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
+                      return !isNaN(eventStart.getTime()) && eventStart <= new Date();
                     } else {
                       return s.status === "cancelled";
                     }
