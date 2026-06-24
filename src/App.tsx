@@ -1298,13 +1298,18 @@ export default function App() {
           if (!isNaN(eventStart.getTime()) && eventStart <= new Date()) return false;
         }
         
-        return true; // Vše ostatní (aktivní) smazat
+        return true; // Vše ostatní (aktivní aktivity a návrhy cyklotras/drafty) smazat
       });
 
-      const { deleteDoc, doc } = await import("firebase/firestore");
+      const { deleteDoc, doc, updateDoc, serverTimestamp } = await import("firebase/firestore");
       for (const s of toDelete) {
         await deleteDoc(doc(db, "suggestions", s.id));
       }
+
+      // Vynulovat tabulku Souhrn aktivit (leaderboard/historie XP) nastavením nového počátku ligy
+      await updateDoc(doc(db, "settings", "league_config"), {
+        leagueStartDate: serverTimestamp()
+      });
 
       // Vymazat AI inspirace (AI tipy) přes API (jelikož Firestore rules zakazují přímý zápis z klienta)
       const clearRes = await fetch("/api/inspirations/clear", {
@@ -1317,7 +1322,7 @@ export default function App() {
         throw new Error(`Chyba při mazání AI tipů: ${errorText}`);
       }
 
-      setSuccess(`Aplikace byla úspěšně resetována. Smazáno ${toDelete.length} aktivních aktivit a vyčištěny AI tipy.`);
+      setSuccess(`Aplikace byla úspěšně resetována. Smazáno ${toDelete.length} aktivních aktivit/návrhů, vynulován Souhrn aktivit a vyčištěny AI tipy.`);
     } catch (err) {
       console.error("Chyba při resetu aplikace:", err);
       setError("Nepodařilo se resetovat aplikaci.");
