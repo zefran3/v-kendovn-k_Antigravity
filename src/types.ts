@@ -206,6 +206,7 @@ export interface SportsVenue {
   lat?: number;
   lng?: number;
   isFromWeb?: boolean;
+  isCustom?: boolean;
 }
 
 

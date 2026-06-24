@@ -357,6 +357,7 @@ export default function App() {
   const [sportsFilter, setSportsFilter] = useState<string>('all');
   const [sportsVyskovOnly, setSportsVyskovOnly] = useState(false);
   const [sportsSearchQuery, setSportsSearchQuery] = useState("");
+  const [isSportsSearchExpanded, setIsSportsSearchExpanded] = useState(false);
   const [showSportsSearchSuggestions, setShowSportsSearchSuggestions] = useState(false);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [sportsGeoFilterActive, setSportsGeoFilterActive] = useState(false);
@@ -2959,22 +2960,26 @@ export default function App() {
       
       const batch = writeBatch(db);
       snapshot.docs.forEach(docSnap => {
-        batch.delete(docSnap.ref);
+        const data = docSnap.data();
+        if (!data.isCustom) {
+          batch.delete(docSnap.ref);
+        }
       });
       
       DEFAULT_SPORTS_VENUES.forEach(venue => {
         const newDocRef = doc(sportsRef);
         batch.set(newDocRef, {
           ...venue,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          isCustom: false
         });
       });
       
       await batch.commit();
-      setSuccess("Sportoviště byla úspěšně inicializována.");
+      setSuccess("Sportoviště byla úspěšně aktualizována z databáze.");
     } catch (err: any) {
-      console.error("Inicializace sportovišť selhala", err);
-      setError(`Chyba při inicializaci sportovišť: ${err.message || err}`);
+      console.error("Aktualizace sportovišť selhala", err);
+      setError(`Chyba při aktualizaci sportovišť: ${err.message || err}`);
     }
   };
 
@@ -3202,7 +3207,8 @@ export default function App() {
         phone: newSportsVenue.phone || "",
         createdAt: editingSportsVenue?.createdAt || Date.now(),
         lat: lat !== undefined ? lat : (newSportsVenue.lat ?? null as any),
-        lng: lng !== undefined ? lng : (newSportsVenue.lng ?? null as any)
+        lng: lng !== undefined ? lng : (newSportsVenue.lng ?? null as any),
+        isCustom: editingSportsVenue ? (editingSportsVenue.isCustom || false) : true
       };
       
       if (editingSportsVenue?.id) {
@@ -3965,109 +3971,244 @@ export default function App() {
                 </div>
 
                 {/* Panel pro vyhledávání a přepínač Vyškov */}
-                <div className="flex flex-col sm:flex-row gap-2.5 w-full mb-1">
-                  {/* Vyhledávací pole s našeptávačem */}
-                  <div className="relative flex-grow">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={sportsSearchQuery}
-                        onChange={e => {
-                          setSportsSearchQuery(e.target.value);
-                          setShowSportsSearchSuggestions(true);
-                        }}
-                        onFocus={() => setShowSportsSearchSuggestions(true)}
-                        onBlur={() => {
-                          setTimeout(() => setShowSportsSearchSuggestions(false), 200);
-                        }}
-                        placeholder="Vyhledat sportoviště..."
-                        className="w-full pl-9 pr-8 py-2 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:border-teal-500 outline-none transition-all"
-                      />
-                      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-                      {sportsSearchQuery && (
-                        <button
-                          onClick={() => {
-                            setSportsSearchQuery("");
-                            setShowSportsSearchSuggestions(false);
+                {isLandscape ? (
+                  <div className="flex flex-col sm:flex-row gap-2.5 w-full mb-1">
+                    {/* Vyhledávací pole s našeptávačem */}
+                    <div className="relative flex-grow">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={sportsSearchQuery}
+                          onChange={e => {
+                            setSportsSearchQuery(e.target.value);
+                            setShowSportsSearchSuggestions(true);
                           }}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
-                        >
-                          <X size={14} />
-                        </button>
+                          onFocus={() => setShowSportsSearchSuggestions(true)}
+                          onBlur={() => {
+                            setTimeout(() => setShowSportsSearchSuggestions(false), 200);
+                          }}
+                          placeholder="Vyhledat sportoviště..."
+                          className="w-full pl-9 pr-8 py-2 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:border-teal-500 outline-none transition-all"
+                        />
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                        {sportsSearchQuery && (
+                          <button
+                            onClick={() => {
+                              setSportsSearchQuery("");
+                              setShowSportsSearchSuggestions(false);
+                            }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Našeptávač (Dropdown) */}
+                      {showSportsSearchSuggestions && sportsSearchQuery.trim().length > 0 && (
+                        <div className="absolute left-0 right-0 mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto py-1">
+                          {(() => {
+                            const allVenues = [...sportsVenues, ...externalVenues];
+                            const suggestions = allVenues
+                              .filter(v => {
+                                const q = sportsSearchQuery.toLowerCase().trim();
+                                return v.name.toLowerCase().includes(q) || (v.location || "").toLowerCase().includes(q);
+                              })
+                              .slice(0, 5);
+                            
+                            if (suggestions.length === 0) {
+                              return (
+                                <div className="px-4 py-2 text-xs text-stone-400 text-center">
+                                  Žádné shody
+                                </div>
+                              );
+                            }
+                            
+                            return suggestions.map(venue => (
+                              <button
+                                key={venue.id}
+                                onClick={() => {
+                                  setSportsSearchQuery(venue.name);
+                                  setShowSportsSearchSuggestions(false);
+                                }}
+                                className="w-full text-left px-4 py-2 hover:bg-stone-50 text-xs font-semibold text-stone-700 transition-colors flex items-center justify-between border-b border-stone-50 last:border-b-0 cursor-pointer"
+                              >
+                                <span>{venue.name}</span>
+                                <span className="text-[10px] text-stone-400 font-normal truncate max-w-[150px] ml-2">{venue.location}</span>
+                              </button>
+                            ));
+                          })()}
+                        </div>
                       )}
                     </div>
-                    
-                    {/* Našeptávač (Dropdown) */}
-                    {showSportsSearchSuggestions && sportsSearchQuery.trim().length > 0 && (
-                      <div className="absolute left-0 right-0 mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto py-1">
-                        {(() => {
-                          const allVenues = [...sportsVenues, ...externalVenues];
-                          const suggestions = allVenues
-                            .filter(v => {
-                              const q = sportsSearchQuery.toLowerCase().trim();
-                              return v.name.toLowerCase().includes(q) || (v.location || "").toLowerCase().includes(q);
-                            })
-                            .slice(0, 5);
-                          
-                          if (suggestions.length === 0) {
-                            return (
-                              <div className="px-4 py-2 text-xs text-stone-400 text-center">
-                                Žádné shody
-                              </div>
-                            );
-                          }
-                          
-                          return suggestions.map(venue => (
+
+                    {/* Přepínač Pouze Vyškov */}
+                    <button
+                      onClick={() => setSportsVyskovOnly(!sportsVyskovOnly)}
+                      className={cn(
+                        "px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border flex items-center justify-center gap-1.5 cursor-pointer h-[38px] sm:h-auto",
+                        sportsVyskovOnly
+                          ? "bg-teal-600 border-teal-600 text-white shadow-md border-transparent"
+                          : "bg-white border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700"
+                      )}
+                    >
+                      <MapPin size={14} className={sportsVyskovOnly ? "text-white" : "text-teal-600"} />
+                      <span>Pouze Vyškov</span>
+                    </button>
+
+                    {/* Přepínač V okolí 10 km */}
+                    <button
+                      onClick={handleToggleGeoFilter}
+                      disabled={geoLoading}
+                      className={cn(
+                        "px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border flex items-center justify-center gap-1.5 cursor-pointer h-[38px] sm:h-auto disabled:opacity-50",
+                        sportsGeoFilterActive
+                          ? "bg-emerald-600 border-emerald-600 text-white shadow-md border-transparent"
+                          : "bg-white border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700"
+                      )}
+                    >
+                      {geoLoading ? (
+                        <span className="w-3.5 h-3.5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin"></span>
+                      ) : (
+                        <Navigation size={14} className={sportsGeoFilterActive ? "text-white" : "text-emerald-600"} />
+                      )}
+                      <span>V okolí 10 km</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-row items-center gap-2 w-full mb-1 h-9 overflow-hidden">
+                    {/* Vyhledávací pole s lupy/zpět a animací šířky */}
+                    <div className={cn(
+                      "relative transition-all duration-300 ease-in-out h-full flex items-center",
+                      isSportsSearchExpanded ? "w-full" : "w-9"
+                    )}>
+                      {!isSportsSearchExpanded ? (
+                        <button
+                          onClick={() => setIsSportsSearchExpanded(true)}
+                          className="w-9 h-9 rounded-xl bg-white border border-stone-200 text-stone-500 flex items-center justify-center shadow-sm cursor-pointer hover:bg-stone-50 hover:text-stone-700 transition-all hover:scale-105 active:scale-95 flex-shrink-0"
+                          title="Hledat"
+                        >
+                          <Search size={15} />
+                        </button>
+                      ) : (
+                        <div className="relative w-full h-full flex items-center">
+                          <input
+                            type="text"
+                            value={sportsSearchQuery}
+                            onChange={e => {
+                              setSportsSearchQuery(e.target.value);
+                              setShowSportsSearchSuggestions(true);
+                            }}
+                            onFocus={() => setShowSportsSearchSuggestions(true)}
+                            onBlur={() => {
+                              setTimeout(() => setShowSportsSearchSuggestions(false), 200);
+                            }}
+                            placeholder="Vyhledat sportoviště..."
+                            className="w-full h-full pl-9 pr-8 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:border-teal-500 outline-none transition-all"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => {
+                              setIsSportsSearchExpanded(false);
+                              setSportsSearchQuery("");
+                              setShowSportsSearchSuggestions(false);
+                            }}
+                            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-700 cursor-pointer"
+                          >
+                            <ArrowLeft size={16} />
+                          </button>
+                          {sportsSearchQuery && (
                             <button
-                              key={venue.id}
                               onClick={() => {
-                                setSportsSearchQuery(venue.name);
+                                setSportsSearchQuery("");
                                 setShowSportsSearchSuggestions(false);
                               }}
-                              className="w-full text-left px-4 py-2 hover:bg-stone-50 text-xs font-semibold text-stone-700 transition-colors flex items-center justify-between border-b border-stone-50 last:border-b-0 cursor-pointer"
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
                             >
-                              <span>{venue.name}</span>
-                              <span className="text-[10px] text-stone-400 font-normal truncate max-w-[150px] ml-2">{venue.location}</span>
+                              <X size={14} />
                             </button>
-                          ));
-                        })()}
-                      </div>
-                    )}
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Našeptávač pro portrait */}
+                      {showSportsSearchSuggestions && sportsSearchQuery.trim().length > 0 && isSportsSearchExpanded && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto py-1">
+                          {(() => {
+                            const allVenues = [...sportsVenues, ...externalVenues];
+                            const suggestions = allVenues
+                              .filter(v => {
+                                const q = sportsSearchQuery.toLowerCase().trim();
+                                return v.name.toLowerCase().includes(q) || (v.location || "").toLowerCase().includes(q);
+                              })
+                              .slice(0, 5);
+                            
+                            if (suggestions.length === 0) {
+                              return (
+                                <div className="px-4 py-2 text-xs text-stone-400 text-center">
+                                  Žádné shody
+                                </div>
+                              );
+                            }
+                            
+                            return suggestions.map(venue => (
+                              <button
+                                key={venue.id}
+                                onClick={() => {
+                                  setSportsSearchQuery(venue.name);
+                                  setShowSportsSearchSuggestions(false);
+                                }}
+                                className="w-full text-left px-4 py-2 hover:bg-stone-50 text-xs font-semibold text-stone-700 transition-colors flex items-center justify-between border-b border-stone-50 last:border-b-0 cursor-pointer"
+                              >
+                                <span>{venue.name}</span>
+                                <span className="text-[10px] text-stone-400 font-normal truncate max-w-[150px] ml-2">{venue.location}</span>
+                              </button>
+                            ));
+                          })()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tlačítka filtrů na výšku */}
+                    <div className={cn(
+                      "flex flex-row gap-2 transition-all duration-300 ease-in-out h-full items-center",
+                      isSportsSearchExpanded ? "w-0 opacity-0 pointer-events-none overflow-hidden" : "flex-grow opacity-100"
+                    )}>
+                      {/* Přepínač Pouze Vyškov */}
+                      <button
+                        onClick={() => setSportsVyskovOnly(!sportsVyskovOnly)}
+                        className={cn(
+                          "px-2 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border flex items-center justify-center gap-1 cursor-pointer h-full flex-1 min-w-0 truncate",
+                          sportsVyskovOnly
+                            ? "bg-teal-600 border-teal-600 text-white shadow-md border-transparent"
+                            : "bg-white border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700"
+                        )}
+                      >
+                        <MapPin size={13} className={sportsVyskovOnly ? "text-white" : "text-teal-600"} />
+                        <span className="truncate">Pouze Vyškov</span>
+                      </button>
+
+                      {/* Přepínač V okolí 10 km */}
+                      <button
+                        onClick={handleToggleGeoFilter}
+                        disabled={geoLoading}
+                        className={cn(
+                          "px-2 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border flex items-center justify-center gap-1 cursor-pointer h-full flex-1 disabled:opacity-50 min-w-0 truncate",
+                          sportsGeoFilterActive
+                            ? "bg-emerald-600 border-emerald-600 text-white shadow-md border-transparent"
+                            : "bg-white border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700"
+                        )}
+                      >
+                        {geoLoading ? (
+                          <span className="w-3 h-3 border-2 border-stone-400 border-t-transparent rounded-full animate-spin"></span>
+                        ) : (
+                          <Navigation size={13} className={sportsGeoFilterActive ? "text-white" : "text-emerald-600"} />
+                        )}
+                        <span className="truncate">V okolí 10 km</span>
+                      </button>
+                    </div>
                   </div>
-
-                  {/* Přepínač Pouze Vyškov */}
-                  <button
-                    onClick={() => setSportsVyskovOnly(!sportsVyskovOnly)}
-                    className={cn(
-                      "px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border flex items-center justify-center gap-1.5 cursor-pointer h-[38px] sm:h-auto",
-                      sportsVyskovOnly
-                        ? "bg-teal-600 border-teal-600 text-white shadow-md border-transparent"
-                        : "bg-white border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700"
-                    )}
-                  >
-                    <MapPin size={14} className={sportsVyskovOnly ? "text-white" : "text-teal-600"} />
-                    <span>Pouze Vyškov</span>
-                  </button>
-
-                  {/* Přepínač V okolí 10 km */}
-                  <button
-                    onClick={handleToggleGeoFilter}
-                    disabled={geoLoading}
-                    className={cn(
-                      "px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border flex items-center justify-center gap-1.5 cursor-pointer h-[38px] sm:h-auto disabled:opacity-50",
-                      sportsGeoFilterActive
-                        ? "bg-emerald-600 border-emerald-600 text-white shadow-md border-transparent"
-                        : "bg-white border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-700"
-                    )}
-                  >
-                    {geoLoading ? (
-                      <span className="w-3.5 h-3.5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin"></span>
-                    ) : (
-                      <Navigation size={14} className={sportsGeoFilterActive ? "text-white" : "text-emerald-600"} />
-                    )}
-                    <span>V okolí 10 km</span>
-                  </button>
-                </div>
+                )}
                 
                 <div className={cn("flex gap-2 w-full", isLandscape ? "items-center justify-between" : "flex-wrap justify-between")}>
                   <div className={cn(
