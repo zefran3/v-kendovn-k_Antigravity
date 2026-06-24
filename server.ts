@@ -13,7 +13,6 @@ import { scrapeJizniMorava } from "./src/services/scrapers/jizniMorava";
 import { generateBikeRoute, BikeRouteDifficulty } from "./src/lib/bikeRoutes";
 
 dotenv.config();
-console.log('[API DEBUG] Prvních 10 znaků Gemini klíče:', process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 10) : 'CHYBÍ KLÍČ!');
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,

@@ -3,8 +3,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 
-console.log('[API DEBUG] Prvních 10 znaků Gemini klíče:', process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 10) : 'CHYBÍ KLÍČ!');
-
 async function test() {
     if (!process.env.GEMINI_API_KEY) return;
     try {
