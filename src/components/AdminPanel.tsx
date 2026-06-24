@@ -775,13 +775,14 @@ export default function AdminPanel({
                 <span className="font-bold">Co bude smazáno:</span>
                 <span className="pl-2">• Všechny nepřezkoumané návrhy (pending)</span>
                 <span className="pl-2">• Schválené budoucí akce (approved bez data nebo v budoucnu)</span>
-                <span className="pl-2">• Rozpracované návrhy (draft) a cyklotrasy</span>
+                <span className="pl-2">• Rozpracované návrhy (draft) a navržené cyklotrasy (proposed)</span>
                 <span className="pl-2">• Odmítnuté návrhy (rejected)</span>
                 <span className="pl-2">• Všechny vygenerované AI tipy (inspirace)</span>
                 <span className="font-bold mt-1">Co BUDE zachováno:</span>
                 <span className="pl-2">• Historie (schválené a dokončené akce v minulosti)</span>
                 <span className="pl-2">• Archiv zrušených akcí (cancelled)</span>
-                <span className="pl-2">• Rozpracované cyklotrasy a návrhy uživatelů (status draft/proposed)</span>
+                <span className="pl-2">• Sportoviště (výchozí i ručně přidaná)</span>
+                <span className="pl-2">• Uživatelské profily, role a nastavení aplikace</span>
               </div>
 
               <div className="flex flex-col gap-2 mt-2">

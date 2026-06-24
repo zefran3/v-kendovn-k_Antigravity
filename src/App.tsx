@@ -636,6 +636,12 @@ export default function App() {
     }
   }, []);
 
+  const startTimestamp = useMemo(() => {
+    return leagueConfig?.leagueStartDate
+      ? (leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : new Date(leagueConfig.leagueStartDate).getTime())
+      : null;
+  }, [leagueConfig]);
+
   const leaderboard = useMemo(() => {
     const scores: Record<string, { childName: string; score: number; avatar: string; xp: number; authorId: string; role: string }> = {};
     const today = new Date();
@@ -669,6 +675,25 @@ export default function App() {
     });
 
     suggestions.forEach(s => {
+      // Pouze aktivity vytvořené po začátku aktuální ligy
+      if (startTimestamp) {
+        let createdTime = 0;
+        if (s.createdAt) {
+          if (typeof s.createdAt === 'number') {
+            createdTime = s.createdAt;
+          } else if ((s.createdAt as any).toMillis) {
+            createdTime = (s.createdAt as any).toMillis();
+          } else {
+            createdTime = new Date(s.createdAt).getTime();
+          }
+        } else if (s.eventDate) {
+          createdTime = new Date(s.eventDate).getTime();
+        } else {
+          createdTime = Date.now();
+        }
+        if (createdTime < startTimestamp) return;
+      }
+
       if (s.status === 'approved' && s.eventDate && s.type !== 'ride') {
         const eventDateObj = new Date(s.eventDate);
         const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
@@ -683,7 +708,7 @@ export default function App() {
     });
 
     return Object.values(scores).sort((a, b) => b.score - a.score);
-  }, [suggestions, extendedUserProfiles, userProfiles, isDemoMode, leagueConfig]);
+  }, [suggestions, extendedUserProfiles, userProfiles, isDemoMode, leagueConfig, startTimestamp]);
 
   useEffect(() => {
     localStorage.setItem('likedSuggestions', JSON.stringify(likedSuggestions));
@@ -6995,42 +7020,70 @@ export default function App() {
               </div>
 
               <div className="overflow-y-auto pr-1 flex flex-col gap-3">
-                {suggestions
-                  .filter(s => s.status === 'approved' && s.type !== 'ride' && (getDynamicNameForChild(s.childName || "Neznámý") === selectedLeaderboardUser) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0)))
-                  .sort((a, b) => new Date(b.eventDate!).getTime() - new Date(a.eventDate!).getTime())
-                  .map(s => (
-                    <button 
-                      key={s.id} 
-                      onClick={() => {
-                        setSelectedLeaderboardUser(null);
-                        setArchiveTab("completed");
-                        setShowArchive(true);
-                        setTimeout(() => {
-                          const el = document.getElementById(`archive-${s.id}`);
-                          if (el) {
-                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            el.classList.add('ring-4', 'ring-rose-300', 'scale-[1.02]');
-                            setTimeout(() => {
-                              el.classList.remove('ring-4', 'ring-rose-300', 'scale-[1.02]');
-                            }, 1500);
-                          }
-                        }, 400);
-                      }}
-                      className="bg-white hover:bg-rose-50 border border-stone-200 p-3 rounded-xl flex flex-col text-left transition-all cursor-pointer w-full shadow-sm hover:shadow hover:-translate-y-0.5 active:scale-[0.98]"
-                    >
-                      <div className="font-bold text-stone-700 text-sm mb-1 flex justify-between w-full">
-                        <span>{s.title}</span>
-                        <span className="text-stone-300 text-xs mt-0.5">🔗 Otevřít</span>
-                      </div>
-                      <div className="text-xs text-stone-500 font-medium flex items-center gap-1">
-                        <span>🗓️</span> {new Date(s.eventDate!).toLocaleDateString('cs-CZ')}
-                      </div>
-                    </button>
-                ))}
-                
-                {suggestions.filter(s => s.status === 'approved' && s.type !== 'ride' && (getDynamicNameForChild(s.childName || "Neznámý") === selectedLeaderboardUser) && s.eventDate && new Date(s.eventDate) < new Date(new Date().setHours(0,0,0,0))).length === 0 && (
-                  <div className="text-center p-5 text-stone-400 text-sm italic">Žádné realizované výlety nenalezeny.</div>
-                )}
+                {(() => {
+                  const filtered = suggestions.filter(s => {
+                    if (s.status !== 'approved' || s.type === 'ride' || (getDynamicNameForChild(s.childName || "Neznámý") !== selectedLeaderboardUser) || !s.eventDate) return false;
+                    const eventStart = s.eventTime ? new Date(`${s.eventDate}T${s.eventTime}`) : new Date(`${s.eventDate}T00:00`);
+                    if (isNaN(eventStart.getTime()) || eventStart > new Date()) return false;
+                    
+                    if (startTimestamp) {
+                      let createdTime = 0;
+                      if (s.createdAt) {
+                        if (typeof s.createdAt === 'number') {
+                          createdTime = s.createdAt;
+                        } else if ((s.createdAt as any).toMillis) {
+                          createdTime = (s.createdAt as any).toMillis();
+                        } else {
+                          createdTime = new Date(s.createdAt).getTime();
+                        }
+                      } else if (s.eventDate) {
+                        createdTime = new Date(s.eventDate).getTime();
+                      } else {
+                        createdTime = Date.now();
+                      }
+                      if (createdTime < startTimestamp) return false;
+                    }
+                    return true;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="text-center p-5 text-stone-400 text-sm italic">Žádné realizované výlety nenalezeny.</div>
+                    );
+                  }
+
+                  return filtered
+                    .sort((a, b) => new Date(b.eventDate!).getTime() - new Date(a.eventDate!).getTime())
+                    .map(s => (
+                      <button 
+                        key={s.id} 
+                        onClick={() => {
+                          setSelectedLeaderboardUser(null);
+                          setArchiveTab("completed");
+                          setShowArchive(true);
+                          setTimeout(() => {
+                            const el = document.getElementById(`archive-${s.id}`);
+                            if (el) {
+                              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              el.classList.add('ring-4', 'ring-rose-300', 'scale-[1.02]');
+                              setTimeout(() => {
+                                el.classList.remove('ring-4', 'ring-rose-300', 'scale-[1.02]');
+                              }, 1500);
+                            }
+                          }, 400);
+                        }}
+                        className="bg-white hover:bg-rose-50 border border-stone-200 p-3 rounded-xl flex flex-col text-left transition-all cursor-pointer w-full shadow-sm hover:shadow hover:-translate-y-0.5 active:scale-[0.98]"
+                      >
+                        <div className="font-bold text-stone-700 text-sm mb-1 flex justify-between w-full">
+                          <span>{s.title}</span>
+                          <span className="text-stone-300 text-xs mt-0.5">🔗 Otevřít</span>
+                        </div>
+                        <div className="text-xs text-stone-500 font-medium flex items-center gap-1">
+                          <span>🗓️</span> {new Date(s.eventDate!).toLocaleDateString('cs-CZ')}
+                        </div>
+                      </button>
+                    ));
+                })()}
               </div>
             </motion.div>
           </>
