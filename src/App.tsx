@@ -247,6 +247,15 @@ export default function App() {
     return filteredMembers;
   }, [extendedUserProfiles, isDemoMode]);
 
+  const getRoleForFamilyName = (name: string): string => {
+    if (name === 'Táta') return 'parent';
+    const foundProfile = (Object.values(extendedUserProfiles) as any[]).find((p: any) => {
+      const alias = p.adminAlias || p.displayName || p.email?.split('@')[0] || '';
+      return alias.toLowerCase() === name.toLowerCase() || (alias.toLowerCase() === 'zefran3' && name === 'Táta');
+    });
+    return foundProfile?.role || 'viewer';
+  };
+
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<"parent" | "child">("child");
@@ -4957,7 +4966,10 @@ export default function App() {
                                   location: insp.location || "",
                                   url: insp.url || "",
                                   childName: getLoggedInFamilyName(),
-                                  cinemaListings: insp.cinema_listings || []
+                                  cinemaListings: (insp.cinema_listings || []).map((l: any) => ({
+                                    ...l,
+                                    date: insp.date || ""
+                                  }))
                                 }));
                                 setFormType("activity");
                                 setShowForm(true);
@@ -6120,7 +6132,15 @@ export default function App() {
                         <button
                           key={name}
                           type="button"
-                          onClick={() => setNewSuggestion({...newSuggestion, childName: name})}
+                          onClick={() => {
+                            const isChild = getRoleForFamilyName(name) === 'child';
+                            setNewSuggestion(prev => ({
+                              ...prev,
+                              childName: name,
+                              claimedDetails: isChild ? prev.claimedDetails : false,
+                              claimedFree: isChild ? prev.claimedFree : false
+                            }));
+                          }}
                           className={cn(
                             "px-4 py-2 rounded-full border-2 font-bold transition-all text-sm",
                             newSuggestion.childName === name ? "bg-rose-500 border-rose-500 text-white" : "bg-white border-stone-200 text-stone-500 hover:border-rose-300"
@@ -6155,11 +6175,18 @@ export default function App() {
                               if (filmIdx === "" || !newSuggestion.cinemaListings[Number(filmIdx)]) return;
                               const listing = newSuggestion.cinemaListings[Number(filmIdx)];
                               const timeObj = listing.times?.[Number(timeIdx)];
+                              
+                              const rawTime = timeObj?.time || listing.time || listing.showtimes || "";
+                              const timeMatch = rawTime.match(/(\d{2}:\d{2})/);
+                              const parsedTime = timeMatch ? timeMatch[1] : "";
+                              
                               setNewSuggestion(prev => ({
                                 ...prev,
                                 title: `Kino: ${listing.film || listing.film_title}`,
-                                description: `Návrh na představení v čase ${timeObj?.time || listing.time || listing.showtimes}.`,
-                                url: timeObj?.url || listing.url || prev.url
+                                description: `Návrh na představení v čase ${rawTime}.`,
+                                url: timeObj?.url || listing.url || prev.url,
+                                eventDate: listing.date || prev.eventDate || "",
+                                eventTime: parsedTime || prev.eventTime || ""
                               }));
                             }}
                           >
@@ -6202,62 +6229,75 @@ export default function App() {
                         />
                       </div>
 
-                      <div className="space-y-3 pt-1">
-                        <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">XP Bonusy k nárokování</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setNewSuggestion(prev => ({ ...prev, claimedDetails: !prev.claimedDetails }))}
-                            className={cn(
-                              "flex flex-col gap-1.5 p-4 rounded-xl border text-left transition-all cursor-pointer w-full select-none",
-                              newSuggestion.claimedDetails 
-                                ? "bg-cyan-500/15 border-cyan-500 text-cyan-800" 
-                                : "bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100/50"
-                            )}
-                          >
-                            <div className="text-xs font-bold">Mám k tomu i detaily</div>
-                            <div className={cn(
-                              "text-[10px] mt-0.5 leading-normal font-medium",
-                              newSuggestion.claimedDetails ? "text-cyan-600" : "text-stone-400"
-                            )}>+5 XP pokud dodáš odkaz, časový plán a logistiku</div>
-                          </button>
+                      {getRoleForFamilyName(newSuggestion.childName || "") === 'child' ? (
+                        <div className="space-y-3 pt-1">
+                          <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">XP Bonusy k nárokování</label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setNewSuggestion(prev => ({ ...prev, claimedDetails: !prev.claimedDetails }))}
+                              className={cn(
+                                "flex flex-col gap-1.5 p-4 rounded-xl border text-left transition-all cursor-pointer w-full select-none",
+                                newSuggestion.claimedDetails 
+                                  ? "bg-cyan-500/15 border-cyan-500 text-cyan-800" 
+                                  : "bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100/50"
+                              )}
+                            >
+                              <div className="text-xs font-bold">Mám k tomu i detaily</div>
+                              <div className={cn(
+                                "text-[10px] mt-0.5 leading-normal font-medium",
+                                newSuggestion.claimedDetails ? "text-cyan-600" : "text-stone-400"
+                              )}>+5 XP pokud dodáš odkaz, časový plán a logistiku</div>
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => setNewSuggestion(prev => ({ ...prev, claimedFree: !prev.claimedFree }))}
-                            className={cn(
-                              "flex flex-col gap-1.5 p-4 rounded-xl border text-left transition-all cursor-pointer w-full select-none",
-                              newSuggestion.claimedFree 
-                                ? "bg-amber-500/15 border-amber-500 text-amber-800" 
-                                : "bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100/50"
-                            )}
-                          >
-                            <div className="text-xs font-bold">Akce je zdarma / se slevou</div>
-                            <div className={cn(
-                              "text-[10px] mt-0.5 leading-normal font-medium",
-                              newSuggestion.claimedFree ? "text-amber-600" : "text-stone-400"
-                            )}>+10 XP za super rozpočet</div>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewSuggestion(prev => ({ ...prev, claimedFree: !prev.claimedFree }))}
+                              className={cn(
+                                "flex flex-col gap-1.5 p-4 rounded-xl border text-left transition-all cursor-pointer w-full select-none",
+                                newSuggestion.claimedFree 
+                                  ? "bg-amber-500/15 border-amber-500 text-amber-800" 
+                                  : "bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100/50"
+                              )}
+                            >
+                              <div className="text-xs font-bold">Akce je zdarma / se slevou</div>
+                              <div className={cn(
+                                "text-[10px] mt-0.5 leading-normal font-medium",
+                                newSuggestion.claimedFree ? "text-amber-600" : "text-stone-400"
+                              )}>+10 XP za super rozpočet</div>
+                            </button>
+                          </div>
+
+                          {newSuggestion.claimedDetails && (
+                            <motion.div 
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="space-y-2 pt-1"
+                            >
+                              <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">Odkaz na stránky (URL)</label>
+                              <input 
+                                type="url"
+                                value={newSuggestion.url || ""}
+                                onChange={e => setNewSuggestion({...newSuggestion, url: e.target.value})}
+                                placeholder="Sem zadej odkaz na stránky akce..."
+                                className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-cyan-400 outline-none transition-all text-sm"
+                              />
+                            </motion.div>
+                          )}
                         </div>
-
-                        {newSuggestion.claimedDetails && (
-                          <motion.div 
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="space-y-2 pt-1"
-                          >
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">Odkaz na stránky (URL)</label>
-                            <input 
-                              type="url"
-                              value={newSuggestion.url || ""}
-                              onChange={e => setNewSuggestion({...newSuggestion, url: e.target.value})}
-                              placeholder="Sem zadej odkaz na stránky akce..."
-                              className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-cyan-400 outline-none transition-all text-sm"
-                            />
-                          </motion.div>
-                        )}
-                      </div>
+                      ) : (
+                        <div className="space-y-2 pt-1">
+                          <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">Odkaz na stránky (URL)</label>
+                          <input 
+                            type="url"
+                            value={newSuggestion.url || ""}
+                            onChange={e => setNewSuggestion({...newSuggestion, url: e.target.value})}
+                            placeholder="Sem zadej odkaz na stránky akce..."
+                            className="w-full p-3 rounded-xl bg-stone-50 border border-stone-200 focus:border-rose-500 outline-none transition-all text-sm"
+                          />
+                        </div>
+                      )}
                       <div>
                         <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 block flex items-center gap-1">
                           <MapPin size={12} /> Kde se to koná?
