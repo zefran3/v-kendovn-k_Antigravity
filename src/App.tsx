@@ -5930,7 +5930,7 @@ export default function App() {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[32px] p-8 z-[70] shadow-2xl max-w-2xl mx-auto border-t border-stone-200 max-h-[90vh] overflow-y-auto"
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[32px] p-8 z-[70] shadow-2xl max-w-2xl mx-auto border-t border-stone-200 max-h-[90vh] overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
               <div className="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mb-8" />
               <div className="flex justify-between items-center mb-6">
@@ -7392,7 +7392,7 @@ export default function App() {
               style={{ width: 'min(360px, 85vw)' }}
             >
               {/* Hlavička draweru */}
-              <div className="flex items-center justify-between p-4 border-b border-amber-100 sticky top-0 bg-white z-10">
+              <div className="flex items-center justify-between p-4 border-b border-amber-100 sticky top-0 bg-white z-30">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-sm">
                     <Bike className="text-white" size={18} />

@@ -607,9 +607,9 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
    a) Pro akce se scraped URL (source_url, url z dat) → VŽDY použij tuto URL přímo.
    b) Pro obecně známá místa (ZOO, jeskyně, hrady, aquaparky, muzea, galerie) → VŽDY
       zkus uvést jejich oficiální web ze svých znalostí. Příklady:
-      - ZOO Lešná Zlín → https://www.zoozlin.eu
-      - Punkevní jeskyně / Macocha → https://www.caves.cz
-      - Aquapark Vyškov → https://www.aquaparkvyskov.cz
+       - ZOO Lešná Zlín → https://www.zoozlin.eu
+       - Punkevní jeskyně / Macocha → https://punkevni.caves.cz
+       - Aquapark Vyškov → https://www.aquaparkvyskov.cz
       - Letecké muzeum Vyškov → http://www.lhs-vyskov.cz
       - Hrad Veveří → https://www.hradveveri.cz (nebo podobná logická URL)
       Pokud si oficiálním webem nejsi absolutně jistý → nech url: "" (NIKDY
@@ -740,6 +740,8 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
       'https://www.jizni-morava.cz',
       'https://www.mksvyskov.cz',
       'https://mksvyskov.cz',
+      'https://www.caves.cz',
+      'https://caves.cz',
     ];
 
     // Shromáždění všech reálných URL adres ze scraperů pro ochranu před halucinacemi

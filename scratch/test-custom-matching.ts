@@ -47,6 +47,12 @@ async function run() {
       location: "Vyškov, Kotelna",
       url: "",
       is_vyskov: false
+    },
+    {
+      title: "Výlet: Punkevní jeskyně a plavba lodí",
+      location: "Vavřinec",
+      url: "https://www.caves.cz",
+      is_vyskov: false
     }
   ];
 
@@ -56,6 +62,8 @@ async function run() {
     'https://www.jizni-morava.cz',
     'https://www.mksvyskov.cz',
     'https://mksvyskov.cz',
+    'https://www.caves.cz',
+    'https://caves.cz',
   ];
 
   const processed = testSuggestions.map((s: any) => {
@@ -85,10 +93,16 @@ async function run() {
   console.log(JSON.stringify(processed, null, 2));
 
   // Assertions
-  const matched = processed[0];
-  if (matched.location === "Brněnská 12, Vyškov" &&
-      matched.url === "https://www.kotelna.cz" &&
-      matched.is_vyskov === true) {
+  const matched1 = processed[0];
+  const matched2 = processed[1];
+  const success1 = matched1.location === "Brněnská 12, Vyškov" &&
+                   matched1.url === "https://www.kotelna.cz" &&
+                   matched1.is_vyskov === true;
+  const success2 = matched2.location === "Punkevní jeskyně, Vavřinec 117, Blansko" &&
+                   matched2.url === "https://punkevni.caves.cz/" &&
+                   matched2.is_vyskov === false;
+
+  if (success1 && success2) {
     console.log("✅ SUCCESS: Custom location matching works perfectly!");
   } else {
     console.error("❌ FAILURE: Custom location matching values are incorrect!");
