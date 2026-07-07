@@ -1,26 +1,38 @@
-import admin from "firebase-admin";
-import fs from "fs";
-import path from "path";
+import fetch from "node-fetch";
 
-const serviceAccountPath = path.join(process.cwd(), 'vikendovnik-firebase-adminsdk-fbsvc-62ecb71cd3.json');
-const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
-
-if (admin.apps.length === 0) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
+async function checkCoords(lat: number, lon: number, label: string) {
+  const query = `
+    [out:json][timeout:5];
+    node(around:500, ${lat}, ${lon});
+    out center;
+  `;
+  try {
+    const res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Vikendovnik-Checking"
+      },
+      body: "data=" + encodeURIComponent(query)
+    });
+    if (!res.ok) {
+      console.log(`Failed to query ${label}`);
+      return;
+    }
+    const data: any = await res.json();
+    console.log(`\n=== Features around ${label} (${lat}, ${lon}) ===`);
+    const elements = data.elements || [];
+    for (const el of elements.slice(0, 10)) {
+      console.log(`- ${el.tags?.name || "Unnamed"} (${el.tags?.place || el.tags?.highway || el.tags?.tourism || el.tags?.historic || "other"})`);
+    }
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 async function run() {
-  const db = admin.firestore();
-  console.log("Fetching known_locations containing 'jeskyne' or 'punkevni' or 'macocha'...");
-  const snapshot = await db.collection('known_locations').get();
-  snapshot.forEach(doc => {
-    const data = doc.data();
-    console.log(`ID: ${doc.id}`);
-    console.log(JSON.stringify(data, null, 2));
-    console.log("------------------------");
-  });
+  await checkCoords(49.3005, 17.0271, "Drnovice (in DB)");
+  await checkCoords(49.3088, 17.0163, "Chocholík (in DB)");
 }
 
-run().catch(console.error).finally(() => process.exit(0));
+run();
