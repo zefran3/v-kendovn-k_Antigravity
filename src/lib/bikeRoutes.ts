@@ -20,7 +20,7 @@ const DIFFICULTY_MAP: Record<BikeRouteDifficulty, { orsProfile: string; label: s
   hard:   { orsProfile: "cycling-mountain", label: "Těžká (Sportovní)" },
 };
 
-// OSRM – vzdálenost a čas jízdy (nejbližší aproximace Mapy.cz)
+// OSRM – vzdálenost a čas jízdy
 async function verifyRouteWithOSRM(coords: number[][]): Promise<{ distanceKm: number; durationText: string } | null> {
   const coordsStr = coords.map(c => `${c[0]},${c[1]}`).join(";");
   const url = `https://router.project-osrm.org/route/v1/bike/${coordsStr}?overview=false&alternatives=false&steps=false`;
@@ -71,27 +71,125 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * c;
 }
 
+function getBearing(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const lat1Rad = lat1 * Math.PI / 180;
+  const lat2Rad = lat2 * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2Rad);
+  const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+            Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+  let brng = Math.atan2(y, x) * 180 / Math.PI;
+  return (brng + 360) % 360;
+}
+
+interface WaypointItem {
+  name: string;
+  lat: number;
+  lon: number;
+  distanceKm: number;
+  bearing: number;
+  description: string;
+}
+
+// Komplexní databáze reálných bodů v okolí Vyškova (62 položek)
+const WAYPOINTS_DB: WaypointItem[] = [
+  { name: "Podivice", lat: 49.3789, lon: 17.0286, distanceKm: 10.9, bearing: 15, description: "lesní obec hluboko v Drahanské vrchovině" },
+  { name: "Radslavice", lat: 49.3242, lon: 17.0090, distanceKm: 4.7, bearing: 18, description: "obec pod Zelenou horou" },
+  { name: "Zelená Hora", lat: 49.3278, lon: 17.0242, distanceKm: 5.5, bearing: 28, description: "obec na kopci s dalekým výhledem" },
+  { name: "Pustiměř", lat: 49.3182, lon: 17.0463, distanceKm: 5.6, bearing: 48, description: "obec s rotundou sv. Pantaleona" },
+  { name: "Drnovice", lat: 49.3005, lon: 17.0271, distanceKm: 3.3, bearing: 57, description: "obec s leteckým muzeem a zámkem" },
+  { name: "Topolany", lat: 49.2885, lon: 17.0315, distanceKm: 3.1, bearing: 82, description: "obec na řece Hané" },
+  { name: "Křižanovice u Vyškova", lat: 49.2652, lon: 17.0441, distanceKm: 4.5, bearing: 118, description: "obec na úpatí Litenčické pahorkatiny" },
+  { name: "Kozlany", lat: 49.1915, lon: 17.0422, distanceKm: 11.0, bearing: 160, description: "obec s vodní nádrží Kozlany" },
+  { name: "Bohdalice", lat: 49.1996, lon: 17.0317, distanceKm: 9.9, bearing: 162, description: "obec se zámkem a parkem" },
+  { name: "Kučerov", lat: 49.2062, lon: 17.0035, distanceKm: 8.8, bearing: 173, description: "obec s lidovým domem a muzeem" },
+  { name: "Bučovice", lat: 49.1485, lon: 17.0022, distanceKm: 15.1, bearing: 176, description: "město s unikátním renesančním zámkem" },
+  { name: "Lysovice", lat: 49.2152, lon: 16.9942, distanceKm: 7.7, bearing: 177, description: "památková zóna s doškovými domy" },
+  { name: "Hlubočany", lat: 49.2215, lon: 16.9790, distanceKm: 7.0, bearing: 186, description: "obec v údolí Hlubočanského potoka" },
+  { name: "Letonice", lat: 49.1678, lon: 16.9610, distanceKm: 13.1, bearing: 189, description: "obec s barokním kostelem sv. Mikuláše" },
+  { name: "Dražovice", lat: 49.1865, lon: 16.9535, distanceKm: 11.2, bearing: 193, description: "obec s kaplí sv. Václava" },
+  { name: "Rostěnice", lat: 49.2482, lon: 16.9749, distanceKm: 4.2, bearing: 194, description: "obec s dochovanou lidovou architekturou" },
+  { name: "Slavkov u Brna", lat: 49.1542, lon: 16.8767, distanceKm: 16.6, bearing: 209, description: "barokní zámek Slavkov, bojiště bitvy u Austerlitz" },
+  { name: "Komořany", lat: 49.2198, lon: 16.9183, distanceKm: 8.8, bearing: 216, description: "obec na úpatí kopečků" },
+  { name: "Rousínov", lat: 49.2045, lon: 16.8778, distanceKm: 12.0, bearing: 222, description: "město známé výrobou nábytku" },
+  { name: "Tučapy", lat: 49.2415, lon: 16.9038, distanceKm: 7.8, bearing: 232, description: "obec s kaplí sv. Floriána" },
+  { name: "Habrovany", lat: 49.2310, lon: 16.8790, distanceKm: 10.0, bearing: 233, description: "obec se zámkem a zámeckým parkem" },
+  { name: "Nemojany", lat: 49.2520, lon: 16.9189, distanceKm: 6.2, bearing: 235, description: "obec s Nemojanským mlýnem a rybníkem" },
+  { name: "Luleč", lat: 49.2558, lon: 16.9238, distanceKm: 5.7, bearing: 236, description: "obec s přírodním koupalištěm U Libuše a kostelem sv. Martina" },
+  { name: "Viničné Šumice", lat: 49.2178, lon: 16.8190, distanceKm: 14.4, bearing: 239, description: "vinařská obec pod kopci" },
+  { name: "Kovalovice", lat: 49.2268, lon: 16.8295, distanceKm: 13.2, bearing: 241, description: "obec u Kovalovického biotopu" },
+  { name: "Olšany", lat: 49.2472, lon: 16.8576, distanceKm: 10.4, bearing: 247, description: "obec blízko Farmy Bolka Polívky a lesů" },
+  { name: "Račice", lat: 49.2765, lon: 16.8875, distanceKm: 7.4, bearing: 263, description: "obec pod zámkem Račice" },
+  { name: "Pístovice", lat: 49.2760, lon: 16.8660, distanceKm: 9.0, bearing: 264, description: "rekreační obec u rybníka" },
+  { name: "Bukovinka", lat: 49.2882, lon: 16.8165, distanceKm: 12.5, bearing: 272, description: "lesní obec v Drahanské vrchovině" },
+  { name: "Křtiny", lat: 49.2965, lon: 16.7432, distanceKm: 17.9, bearing: 274, description: "poutní obec s barokním chrámem" },
+  { name: "Ježkovice", lat: 49.3045, lon: 16.8833, distanceKm: 8.0, bearing: 286, description: "obec blízko Pístovického rybníka" },
+  { name: "Ruprechtov", lat: 49.3175, lon: 16.8488, distanceKm: 10.8, bearing: 290, description: "obec s větrným mlýnem a rybníkem" },
+  { name: "Jedovnice", lat: 49.3425, lon: 16.7602, distanceKm: 17.8, bearing: 291, description: "turistické centrum u rybníka Olšovec v Moravském krasu" },
+  { name: "Krásensko", lat: 49.3495, lon: 16.8542, distanceKm: 12.2, bearing: 307, description: "obec na náhorní plošině Drahanské vrchoviny" },
+  { name: "Lhota", lat: 49.3023, lon: 16.9602, distanceKm: 2.9, bearing: 314, description: "obec u lesů Vojenského újezdu" },
+  { name: "Rychtářov", lat: 49.3242, lon: 16.9288, distanceKm: 6.2, bearing: 315, description: "vstupní brána do Vojenského újezdu Březina" },
+  { name: "Studnice", lat: 49.3768, lon: 16.8805, distanceKm: 12.9, bearing: 323, description: "nejvýše položená obec Vyškovska" },
+  { name: "Dědice", lat: 49.2985, lon: 16.9745, distanceKm: 1.9, bearing: 326, description: "předměstí Vyškova s kostelem" },
+  { name: "Hamiltony", lat: 49.3059, lon: 16.9698, distanceKm: 2.8, bearing: 330, description: "klidná část Vyškova u lesa" },
+  { name: "Opatovice", lat: 49.3235, lon: 16.9698, distanceKm: 4.6, bearing: 342, description: "obec u Opatovické přehrady" },
+  // Turistické cíle a zajímavosti
+  { name: "Rozhledna Chocholík", lat: 49.3088, lon: 17.0163, distanceKm: 3.2, bearing: 41, description: "vyhledávaná ocelová rozhledna na kopci Chocholík" },
+  { name: "Pístovický rybník", lat: 49.2760, lon: 16.8660, distanceKm: 9.0, bearing: 264, description: "oblíbené rekreační místo s koupáním a občerstvením" },
+  { name: "Ruprechtovský rybník", lat: 49.3170, lon: 16.8485, distanceKm: 10.8, bearing: 290, description: "rybník vhodný k odpočinku u obce Ruprechtov" },
+  { name: "Větrný mlýn Ruprechtov", lat: 49.3175, lon: 16.8488, distanceKm: 10.8, bearing: 290, description: "unikátní větrný mlýn s Halladayovou turbínou" },
+  { name: "Zřícenina hradu Melice", lat: 49.3242, lon: 16.9658, distanceKm: 4.7, bearing: 337, description: "zřícenina biskupského hradu v lesích u Rychtářova" },
+  { name: "Opatovická přehrada", lat: 49.3235, lon: 16.9698, distanceKm: 4.6, bearing: 342, description: "vodní nádrž na pitnou vodu obklopená lesy" },
+  { name: "Farma Bolka Polívky", lat: 49.2472, lon: 16.8576, distanceKm: 10.4, bearing: 247, description: "známá rekreační farma s restaurací a chovem koní" },
+  { name: "Koupaliště U Libuše", lat: 49.2558, lon: 16.9238, distanceKm: 5.7, bearing: 236, description: "přírodní zatopený lom v Lulči s čistou vodou" },
+  { name: "Letecké muzeum Vyškov", lat: 49.2708, lon: 16.9858, distanceKm: 1.5, bearing: 190, description: "expozice vojenské i civilní letecké techniky" },
+  { name: "Zámek Račice", lat: 49.2765, lon: 16.8875, distanceKm: 7.4, bearing: 263, description: "renesanční zámek na kopci v obci Račice" },
+  { name: "Zámek Bučovice", lat: 49.1485, lon: 17.0022, distanceKm: 15.1, bearing: 176, description: "unikátní renesanční zámek s arkádovým nádvořím" },
+  { name: "Zámek Slavkov", lat: 49.1542, lon: 16.8767, distanceKm: 16.6, bearing: 209, description: "barokní zámek spojený s bitvou u Slavkova (Austerlitz)" },
+  { name: "Biotop Kovalovice", lat: 49.2268, lon: 16.8295, distanceKm: 13.2, bearing: 241, description: "přírodní koupaliště s čistou biologicky čištěnou vodou" },
+  { name: "Rybník Olšovec", lat: 49.3425, lon: 16.7602, distanceKm: 17.8, bearing: 291, description: "velký rekreační rybník v Jedovnicích" },
+  { name: "Jeskyně Výpustek", lat: 49.2905, lon: 16.7235, distanceKm: 19.3, bearing: 278, description: "zpřístupněná jeskyně s bohatou vojenskou historií" },
+  { name: "Arboretum Křtiny", lat: 49.3175, lon: 16.7455, distanceKm: 17.9, bearing: 281, description: "rozsáhlá sbírka dřevin a rašeliniště u Křtin" },
+  { name: "Rakovecké údolí", lat: 49.3005, lon: 16.8480, distanceKm: 10.4, bearing: 280, description: "nádherné zalesněné údolí oblíbené cyklisty" },
+  { name: "Údolí Malé Hané", lat: 49.3150, lon: 16.9388, distanceKm: 4.9, bearing: 314, description: "malebné lesní údolí podél toku Malé Hané" },
+  { name: "Kačenec Luleč", lat: 49.2505, lon: 16.9205, distanceKm: 6.2, bearing: 232, description: "přírodní jezírko a klidné okolí" },
+  { name: "Singletrail Jedovnice", lat: 49.3448, lon: 16.7582, distanceKm: 17.9, bearing: 291, description: "jednosměrné terénní stezky pro horská kola v lesích" }
+];
+
+function getCandidateWaypoints(distanceKm: number): WaypointItem[] {
+  // Vypočítáme cílový poloměr na základě geometrie okruhu (R ≈ D / 9.5)
+  const rAvg = distanceKm / 9.5;
+  const minR = Math.max(1.0, rAvg - 2.0);
+  const maxR = rAvg + 2.0;
+
+  const filtered = WAYPOINTS_DB.filter(
+    wp => wp.distanceKm >= minR && wp.distanceKm <= maxR
+  );
+
+  // Ochrana proti stereotypu: náhodně promíchat a poslat AI pouze podmnožinu 11 bodů
+  const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, 11);
+}
+
 async function snapMultipleWaypoints(waypoints: any[]): Promise<any[] | null> {
   const aroundStatements = waypoints.map(wp => `
     // Turistické a historické body
-    node["tourism"~"viewpoint|museum|attraction|information|picnic_site|theme_park"](around:1200, ${wp.lat}, ${wp.lon});
-    way["tourism"~"viewpoint|museum|attraction|information|picnic_site|theme_park"](around:1200, ${wp.lat}, ${wp.lon});
-    node["historic"~"castle|ruins|monument|memorial|archaeological_site"](around:1200, ${wp.lat}, ${wp.lon});
-    way["historic"~"castle|ruins|monument|memorial|archaeological_site"](around:1200, ${wp.lat}, ${wp.lon});
+    node["tourism"~"viewpoint|museum|attraction|information|picnic_site|theme_park"](around:400, ${wp.lat}, ${wp.lon});
+    way["tourism"~"viewpoint|museum|attraction|information|picnic_site|theme_park"](around:400, ${wp.lat}, ${wp.lon});
+    node["historic"~"castle|ruins|monument|memorial|archaeological_site"](around:400, ${wp.lat}, ${wp.lon});
+    way["historic"~"castle|ruins|monument|memorial|archaeological_site"](around:400, ${wp.lat}, ${wp.lon});
 
     // Přírodní body a občerstvení
-    node["natural"~"peak|spring|cave_entrance"](around:1200, ${wp.lat}, ${wp.lon});
-    node["amenity"~"restaurant|pub|cafe"](around:1200, ${wp.lat}, ${wp.lon});
+    node["natural"~"peak|spring|cave_entrance"](around:400, ${wp.lat}, ${wp.lon});
+    node["amenity"~"restaurant|pub|cafe"](around:400, ${wp.lat}, ${wp.lon});
 
     // Obce
-    node["place"~"village|suburb|town"](around:1200, ${wp.lat}, ${wp.lon});
+    node["place"~"village|suburb|town"](around:400, ${wp.lat}, ${wp.lon});
 
     // Cesty (jako záloha)
-    way["highway"~"cycleway|path|track|residential|tertiary|secondary"](around:1200, ${wp.lat}, ${wp.lon});
+    way["highway"~"cycleway|path|track|residential|tertiary|secondary"](around:400, ${wp.lat}, ${wp.lon});
   `).join("\n");
 
-  // FIX 2: Overpass timeout snížen na 8s; AbortController má 12s buffer
-  // (dříve: timeout:10 + AbortController 6s → klient přerušoval před Overpassem)
   const query = `
     [out:json][timeout:8];
     (
@@ -102,7 +200,7 @@ async function snapMultipleWaypoints(waypoints: any[]): Promise<any[] | null> {
 
   for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000); // FIX 2: bylo 6000
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     try {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -131,6 +229,7 @@ async function snapMultipleWaypoints(waypoints: any[]): Promise<any[] | null> {
 }
 
 
+
 export async function generateBikeRoute({
   location: userLocation,
   userId,
@@ -149,11 +248,11 @@ export async function generateBikeRoute({
   // PŘESNÉ DOMÁCÍ SOUŘADNICE (Vyškov)
   const HOME_COORDS = [16.9890503, 49.2844189]; // [lon, lat]
   
-  let finalDistance = distance;
+  let finalDistance = Math.min(80, distance);
   let finalDifficulty = difficulty;
 
   if (isRandom) {
-    finalDistance = Math.floor(Math.random() * (60 - 15 + 1)) + 15;
+    finalDistance = Math.floor(Math.random() * (75 - 15 + 1)) + 15;
     const diffs: BikeRouteDifficulty[] = ["easy", "medium", "hard"];
     finalDifficulty = diffs[Math.floor(Math.random() * diffs.length)];
     emit?.(`🎲 Generuji náhodnou trasu: ${finalDistance} km...`);
@@ -163,8 +262,6 @@ export async function generateBikeRoute({
   const diffHint  = DIFFICULTY_PROMPT_HINT[finalDifficulty];
 
   // Dynamický počet průjezdních bodů podle délky trasy.
-  // Kotvy: ≤15 km = min 4, 51–80 km = min 8 (zadání uživatele).
-  // Střední vzdálenosti lineárně interpolovány.
   const waypointCount: { min: number; max: number } =
     finalDistance <= 15 ? { min: 4, max: 5  } :
     finalDistance <= 30 ? { min: 5, max: 6  } :
@@ -176,40 +273,43 @@ export async function generateBikeRoute({
   emit?.("AI navrhuje trasu a průjezdní body...");
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-  // FIX 6: Poloměr kružnice vypočítáme server-side – AI nemůže dělat matematiku spolehlivě.
-  // Geometrická logika: okruh N bodů na kružnici poloměru r má délku ≈ 2π·r,
-  // průměrné waypointCount.max bodů → r ≈ distance / (2 · sin(π/N) · N) ≈ distance / 6.3
-  const radiusKm = Math.round((finalDistance / 6.3) * 10) / 10;
+  // Získat náhodný podvýběr cílů z DB
+  const candidates = getCandidateWaypoints(finalDistance);
+  const candidatesStr = JSON.stringify(candidates.map(c => ({
+    name: c.name,
+    distanceKm: c.distanceKm,
+    bearing: c.bearing,
+    description: c.description
+  })), null, 2);
 
-  // FIX 4: Upřesněný prompt – AI musí volit souřadnice středů obcí, ne krajiny
   const systemPrompt = `Jsi expert na cyklistiku na jižní Moravě a plánovač tras.
-Uživatel požaduje cyklotrasu o délce ${finalDistance} km a obtížnosti ${diffLabel}. Tvá úloha je vygenerovat průjezdní body (waypoints) tak, aby po jejich spojení do okruhu (start -> body -> cíl) trasa měřila přibližně tuto vzdálenost.
+Uživatel požaduje cyklotrasu o délce ${finalDistance} km a obtížnosti ${diffLabel}. Tvá úloha je vybrat průjezdní body (waypoints) tak, aby po jejich spojení do okruhu (start -> body -> cíl) trasa měřila přibližně tuto vzdálenost.
 
-Pravidla pro výpočet:
-- Start a cíl je na souřadnicích 49.2844N, 16.989E (Vyškov). Průjezdní body musí být vzdáleny od této polohy přibližně ${radiusKm} km vzdušnou čarou (ne méně než ${Math.max(1, radiusKm - 2)} km, ne více než ${radiusKm + 3} km).
-- Vygeneruj přesně ${waypointCount.min} až ${waypointCount.max} bodů tak, aby tvořily logický okruh (postupně ve směru hodinových ručiček nebo i proti). Trasu můžeš plánovat kterýmkoliv směrem. Delší trasa = více bodů rovnoměrně po celém obvodu.
-- ZAKÁZÁNO: Body nesmí ležet těsně vedle sebe! Musí být rovnoměrně rozprostřeny po trase.
-- ZAKÁZÁNO: Vyhni se dálnici D1. Nikdy negeneruj body, které leží přímo na dálničním tělese, v dálničních křižovatkách nebo na dálničních sjezdech.
-- ZAKÁZÁNO: Negeneruj body uvnitř uzavřených pěších zón, placených areálů nebo v Zoo Vyškov!
-- POVINNÉ: Každý bod MUSÍ být umístěn na souřadnice STŘEDU konkrétní obce nebo reálné turistické atrakce. NIKDY neumísťuj body do otevřené krajiny, polí nebo lesů bez sídla. Příklady správných bodů v okolí Vyškova: střed obce Drnovice (49.300, 17.027), střed obce Ivanovice na Hané (49.305, 17.097), střed obce Bučovice (49.148, 17.002), střed obce Křižanovice (49.265, 17.044), střed obce Pustiměř (49.318, 17.046), střed obce Olšany u Prostějova (49.389, 17.062). Takto konkrétně vol i ostatní body.
-- Start ani cíl do výstupu nepiš, vrať POUZE průjezdní body v poli "waypoints".
+Pravidla pro výběr:
+- Start a cíl je na souřadnicích 49.2844N, 16.989E (Vyškov).
+- Vyber z níže uvedeného seznamu kandidátů přesně ${waypointCount.min} až ${waypointCount.max} bodů, které tvoří logický okruh.
+- ZAKÁZÁNO: Vybírat body, které nejsou v seznamu kandidátů! Musíš vybrat výhradně ze seznamu.
+- ZAKÁZÁNO: Body nesmí ležet těsně vedle sebe! Vyber je tak, aby byly rovnoměrně rozprostřeny po trase.
+- POVINNÉ: Seřaď vybrané body v poli "waypoints" podle úhlu 'bearing' vzestupně (např. 15 -> 48 -> 176 -> 236 -> 326) tak, aby po sobě jdoucí body tvořily plynulý okruh po směru hodinových ručiček a trasa se nekřížila.
+- Odhad délky: Součet vzdušných vzdáleností z Vyškova do prvního bodu, mezi body a z posledního bodu zpět do Vyškova by měl odpovídat přibližně 70-80 % požadované délky (tj. cca ${Math.round(finalDistance * 0.75)} km vzdušnou čarou), protože reálná trasa po silnicích je cca o 30-40 % delší.
+
+Seznam dostupných kandidátů:
+${candidatesStr}
 
 VÝSTUP MUSÍ BÝT JSON OBJEKT:
 {
   "title": "Stručný název (max 5 slov)",
   "description": "Motivační popis trasy (2-3 věty). ${diffHint}",
   "waypoints": [
-    {"lon": 16.123, "lat": 49.123, "name": "Název místa 1"}
+    {"name": "Název vybraného místa 1"}
   ]
 }
 
 DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
 
-  // FIX 9: Fallback model pro případ selhání primárního (kvóta, timeout, neplatný model).
-  // Bez fallbacku by jakákoliv chyba Gemini shodila celé generování.
   let bikeData: any;
-  const PRIMARY_MODEL   = "gemini-3.1-flash-lite";
-  const FALLBACK_MODEL  = "gemini-3.1-flash-lite-preview";
+  const PRIMARY_MODEL   = "gemini-3.5-flash";
+  const FALLBACK_MODEL  = "gemini-2.5-flash";
 
   const parseGeminiResponse = (text: string) => {
     const cleaned = text.replace(/```json|```/g, "").trim();
@@ -235,21 +335,34 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
       if (!bikeData?.waypoints?.length) throw new Error("Prázdné waypoints od fallback modelu");
       console.log(`[BIKE GENERATOR] Fallback ${FALLBACK_MODEL} vrátil ${bikeData.waypoints.length} bodů.`);
     } catch (fallbackErr: any) {
-      throw new Error(`Generování tras selhal o na oběma modelech. Primární: ${primaryErr.message}. Fallback: ${fallbackErr.message}`);
+      throw new Error(`Generování tras selhalo na obou modelech. Primární: ${primaryErr.message}. Fallback: ${fallbackErr.message}`);
     }
   }
 
-  // HYBRIDNÍ MODEL: Přitažení bodů z Gemini k realitě přes Overpass (hromadně)
+  // HYBRIDNÍ MODEL: Mapování a přitažení reálných bodů
   const geminiWaypoints = bikeData.waypoints || [];
   emit?.("Hledám reálná místa na trase...");
-  const elements = await snapMultipleWaypoints(geminiWaypoints);
-  const snappedWaypoints: any[] = [];
 
-  // FIX 1: Sledujeme použitá OSM ID, aby dva různé waypoints neskončily na stejném místě.
-  // Klíč: "${type}/${id}" – unikátní pro každý OSM element.
+  // Rezoluce bodů z naší přesné databáze podle názvu
+  const resolvedWaypoints: any[] = geminiWaypoints.map((wp: any) => {
+    const dbMatch = WAYPOINTS_DB.find(w => w.name.toLowerCase() === wp.name.toLowerCase());
+    if (dbMatch) {
+      return {
+        name: dbMatch.name,
+        lat: dbMatch.lat,
+        lon: dbMatch.lon
+      };
+    }
+    // Pokud nenašel v DB (nemělo by se stát), přeskočíme
+    console.warn(`[BIKE GENERATOR] Waypoint "${wp.name}" nenalezen v DB.`);
+    return null;
+  }).filter(Boolean);
+
+  const elements = await snapMultipleWaypoints(resolvedWaypoints);
+  const snappedWaypoints: any[] = [];
   const usedElementIds = new Set<string>();
 
-  for (const wp of geminiWaypoints) {
+  for (const wp of resolvedWaypoints) {
     let candidate = wp;
     if (elements && elements.length > 0) {
       const catA: any[] = []; // památky, turistické body, gastro, přírodní cíle
@@ -262,9 +375,8 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
         if (eLat === undefined || eLon === undefined) continue;
 
         const dist = getDistance(wp.lat, wp.lon, eLat, eLon);
-        if (dist > 1200) continue;
+        if (dist > 400) continue; // Úzký okruh pro snapping
 
-        // FIX 1: Přeskočit elementy již použité jiným waypointem
         const elemKey = `${elem.type}/${elem.id}`;
         if (usedElementIds.has(elemKey)) continue;
 
@@ -304,11 +416,8 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
 
       if (best) {
         const elem = best.elem;
-        // FIX 1: Zaregistrovat použité OSM ID
         usedElementIds.add(best.key);
 
-        // Název: z Kategorie A a B vezmeme reálný název z OSM,
-        // z Kategorie C (cesty) ponecháme původní název z Gemini, aby to nebylo obecné "Zajímavé místo"
         let name = wp.name;
         if (selectedCat === "A" || selectedCat === "B") {
           name = elem.tags?.name || elem.tags?.tourism || elem.tags?.historic || wp.name;
@@ -316,11 +425,10 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
         console.log(`[BIKE GENERATOR] Snap WP "${wp.name}" → "${name}" (kat. ${selectedCat}, ${Math.round(best.dist)}m)`);
         candidate = { ...wp, lat: best.lat, lon: best.lon, name };
       } else {
-        console.log(`[BIKE GENERATOR] Snap WP "${wp.name}" → žádný kandidát, fallback na AI souřadnice`);
+        console.log(`[BIKE GENERATOR] Snap WP "${wp.name}" → žádný kandidát, fallback na DB souřadnice`);
       }
     }
 
-    // Pokud už pole snappedWaypoints něco obsahuje, porovnej lat a lon posledního bodu s kandidátem
     if (snappedWaypoints.length > 0) {
       const last = snappedWaypoints[snappedWaypoints.length - 1];
       if (last.lat === candidate.lat && last.lon === candidate.lon) {
@@ -332,7 +440,14 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
     snappedWaypoints.push(candidate);
   }
 
-  // Příprava souřadnic pro ORS: Start -> Snapped Waypoints -> Cíl
+  // Zamezení křížení: seřadit body podle úhlu bearing od Vyškova
+  snappedWaypoints.sort((a, b) => {
+    const bearingA = getBearing(HOME_COORDS[1], HOME_COORDS[0], a.lat, a.lon);
+    const bearingB = getBearing(HOME_COORDS[1], HOME_COORDS[0], b.lat, b.lon);
+    return bearingA - bearingB;
+  });
+
+  // Příprava souřadnic pro OSRM/ORS: Start -> Snapped Waypoints -> Cíl
   const coords = [HOME_COORDS, ...snappedWaypoints.map((p: any) => [p.lon, p.lat]), HOME_COORDS];
 
   emit?.("Ověřuji trasu a výšku...");
@@ -392,30 +507,50 @@ DŮLEŽITÉ: Vrať POUZE validní JSON bez markdownu.`;
   if (osrmResult.status === "fulfilled" && osrmResult.value) {
     actualDistanceNum = osrmResult.value.distanceKm;
     distanceText = `${actualDistanceNum} km`;
-    durationText = osrmResult.value.durationText;
-    console.log(`[BIKE GENERATOR] OSRM vzdálenost: ${distanceText}, čas: ${durationText}`);
+    
+    // Výpočet realistického času cyklisty (rychlost podle obtížnosti)
+    const speedMap: Record<BikeRouteDifficulty, number> = { easy: 14, medium: 17, hard: 20 };
+    const speed = speedMap[finalDifficulty] || 17;
+    const totalHours = actualDistanceNum / speed;
+    const hrs = Math.floor(totalHours);
+    const mins = Math.round((totalHours - hrs) * 60);
+    durationText = hrs > 0 ? `${hrs}:${mins.toString().padStart(2, "0")} h` : `${mins} min`;
+    console.log(`[BIKE GENERATOR] OSRM vzdálenost: ${distanceText}, vypočtený čas cyklisty: ${durationText}`);
   }
 
-  // ORS – pouze převýšení
+  // ORS – převýšení s detekcí spiků a realistickým fallback odhadem
+  let orsSummary: any = null;
   if (orsResult.status === "fulfilled" && orsResult.value) {
-    const orsSummary = orsResult.value;
-    // Sanity check: max 40 m/km průměrného stoupání (Tour de France horská etapa).
-    // Cokoli více = datový spike v ORS SRTM modelu → ignorujeme.
-    const maxReasonableAscent = actualDistanceNum * 40;
-    if (orsSummary.ascent && orsSummary.ascent <= maxReasonableAscent) {
-      elevationText = `${Math.round(orsSummary.ascent)} m`;
-    } else if (orsSummary.ascent) {
+    orsSummary = orsResult.value;
+  }
+
+  const maxReasonableAscent = actualDistanceNum * 22; // max 22m/km stoupání v okolí Vyškova
+  if (orsSummary && orsSummary.ascent && orsSummary.ascent <= maxReasonableAscent) {
+    elevationText = `${Math.round(orsSummary.ascent)} m`;
+  } else {
+    // Fallback odhad výšky na základě délky a obtížnosti
+    const multiplier = finalDifficulty === "easy" ? 6 : finalDifficulty === "medium" ? 11 : 16;
+    const estimatedAscent = Math.round(actualDistanceNum * multiplier);
+    elevationText = `${estimatedAscent} m (odhad)`;
+    if (orsSummary && orsSummary.ascent) {
       console.warn(`[BIKE GENERATOR] ORS prevyseni ${Math.round(orsSummary.ascent)}m odmítnuto (max ${Math.round(maxReasonableAscent)}m pro ${actualDistanceNum}km trasu) – SRTM spike.`);
     }
-    // Fallback vzdálenosti, pokud OSRM selhal
-    if (!actualDistanceNum && orsSummary.distance) {
-      actualDistanceNum = Math.round(orsSummary.distance / 100) / 10;
-      distanceText = `${actualDistanceNum} km (odhad)`;
-    }
-    console.log(`[BIKE GENERATOR] ORS převýšení: ${elevationText || "odmítnuto (spike)"}`);
-  } else {
-    const reason = orsResult.status === "rejected" ? orsResult.reason?.message : "null response";
-    console.warn(`[BIKE GENERATOR] ORS nedostupné: ${reason}`);
+    console.log(`[BIKE GENERATOR] Použit odhad stoupání: ${elevationText}`);
+  }
+
+  // Fallback vzdálenosti, pokud OSRM selhal
+  if (!actualDistanceNum && orsSummary && orsSummary.distance) {
+    actualDistanceNum = Math.round(orsSummary.distance / 100) / 10;
+    distanceText = `${actualDistanceNum} km (odhad)`;
+    
+    const speedMap: Record<BikeRouteDifficulty, number> = { easy: 14, medium: 17, hard: 20 };
+    const speed = speedMap[finalDifficulty] || 17;
+    const totalHours = actualDistanceNum / speed;
+    const hrs = Math.floor(totalHours);
+    const mins = Math.round((totalHours - hrs) * 60);
+    durationText = hrs > 0 ? `${hrs}:${mins.toString().padStart(2, "0")} h` : `${mins} min`;
+  } else if (!actualDistanceNum) {
+    console.warn(`[BIKE GENERATOR] ORS a OSRM nedostupné.`);
   }
 
   // Sestavení Mapy.cz URL (použijeme snappedWaypoints pro reálné cíle)
