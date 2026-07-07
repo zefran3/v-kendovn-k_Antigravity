@@ -269,7 +269,7 @@ const ActiveQuestBanner: React.FC<ActiveQuestBannerProps> = ({
 };
 
 export default function GameHub({ suggestions, userProfiles, currentUserName, currentUserId, view, onClose, getAvatarForChild }: GameHubProps) {
-  const [leaderboardMode, setLeaderboardMode] = useState<"sprint" | "liga">("sprint");
+  const [leaderboardMode, setLeaderboardMode] = useState<"sprint" | "liga" | "previous">("sprint");
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [showRewards, setShowRewards] = useState(false);
   const [wishlists, setWishlists] = useState<WishlistItem[]>([]);
@@ -278,7 +278,9 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const [showWishForm, setShowWishForm] = useState(false);
   const [wishName, setWishName] = useState("");
   const [wishUrl, setWishUrl] = useState("");
+  const [wishPrice, setWishPrice] = useState("");
   const [wishError, setWishError] = useState<string | null>(null);
+  const [showWishLimitModal, setShowWishLimitModal] = useState<{ open: boolean; entered: number; limit: number } | null>(null);
   const [approvingWish, setApprovingWish] = useState<WishlistItem | null>(null);
   const [approveZB, setApproveZB] = useState("500");
   const [approveKč, setApproveKč] = useState("2500");
@@ -420,12 +422,18 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     resume:  { icon: '▶️', title: 'Obnovit Ligu?',       desc: 'Liga bude obnovena. Start Sprintu i Maratonu se posune o dobu, po kterou byla Liga pozastavena.',                                                                   btnLabel: 'Obnovit Ligu',     danger: false },
     start:   { icon: '🚀', title: 'Spustit novou Ligu?', desc: 'Nastaví nový start Maratonu i Sprintu na dnešní datum.',                                                                                                              btnLabel: 'Spustit Ligu',    danger: false },
     reset_sprint:  { icon: '🏁', title: 'Resetovat Sprint?',    desc: 'Aktuální Sprint bude ukončen a začne nový 60denní cyklus. Děti začínají Battle Pass od nuly. Maratonské body zůstávají nedotčené.',         btnLabel: 'Resetovat Sprint', danger: true  },
-    reset_league:  { icon: '⚠️', title: 'Resetovat celou Ligu?', desc: 'VAROVÁNÍ: Vymaže veškeré body – Sprintové i Maratonské. Všechno začíná od nuly. Tuto akci nelze vrátit!', btnLabel: 'Resetovat vše',   danger: true  },
+    reset_league:  { icon: '⚠️', title: 'Resetovat celou Ligu?', desc: 'VAROVÁNÍ: Vymaže veškeré body – Sprintové i Maratonské. Aktuální stav bodů se načte a uloží do historie. Všechno začíná od nuly. Tuto akci nelze vrátit!', btnLabel: 'Resetovat vše',   danger: true  },
   };
   const [spravConfirm, setSpravConfirm] = useState<{ open: boolean; type: SpravConfirmType | null }>({ open: false, type: null });
 
   const openSpravConfirm = (type: SpravConfirmType) => setSpravConfirm({ open: true, type });
   const closeSpravConfirm = () => setSpravConfirm({ open: false, type: null });
+
+  useEffect(() => {
+    if (leaderboardMode === 'previous' && currentUserRole !== 'admin') {
+      setLeaderboardMode('sprint');
+    }
+  }, [leaderboardMode, currentUserRole]);
 
   useEffect(() => {
     const unsubW = onSnapshot(
@@ -507,8 +515,20 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   };
 
   const handleAddWish = async () => {
-    if (!wishName.trim() || !wishUrl.trim()) return;
+    if (!wishName.trim() || !wishPrice.trim()) return;
     setWishError(null);
+
+    const enteredPrice = parseFloat(wishPrice) || 0;
+    if (enteredPrice <= 0) {
+      setWishError("⚠️ Zadej prosím platnou cenu přání v Kč.");
+      return;
+    }
+
+    if (enteredPrice > currentUserRemainingLimit) {
+      setShowWishLimitModal({ open: true, entered: enteredPrice, limit: currentUserRemainingLimit });
+      return;
+    }
+
     const cleanName = wishName.trim().toLowerCase();
     const forbiddenWords = ["penize", "peníze", "hotovost", "cash", "na ruku"];
     const isCashAmount = /^\d+\s*(kč|czk|kc)?$/i.test(cleanName);
@@ -523,11 +543,16 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       authorId: currentUserId,
       name: wishName.trim(),
       url: wishUrl.trim(),
-      targetZB: 0,
+      valueKč: enteredPrice,
+      targetZB: Math.round(enteredPrice / ratio),
       status: 'pending',
       createdAt: serverTimestamp()
     });
-    setWishName(""); setWishUrl(""); setShowWishForm(false); setWishError(null);
+    setWishName("");
+    setWishUrl("");
+    setWishPrice("");
+    setShowWishForm(false);
+    setWishError(null);
   };
 
   const handleApproveWish = async () => {
@@ -656,6 +681,20 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     return calculateLeagueStats(suggestions, quests, userProfiles, leagueConfig);
   }, [suggestions, quests, userProfiles, leagueConfig]);
 
+  const startTimestamp = useMemo(() => {
+    return leagueConfig?.leagueStartDate
+      ? (leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : new Date(leagueConfig.leagueStartDate).getTime())
+      : 0;
+  }, [leagueConfig]);
+
+  const currentSprintStartDate = useMemo(() => {
+    if (!startTimestamp) return 0;
+    const daysElapsed = (Date.now() - startTimestamp) / (1000 * 60 * 60 * 24);
+    const sprintLengthDays = 60;
+    const completedSprints = Math.floor(daysElapsed / sprintLengthDays);
+    return startTimestamp + (completedSprints * sprintLengthDays * 24 * 60 * 60 * 1000);
+  }, [startTimestamp]);
+
   const playerNameToIdMap = useMemo(() => {
     const mapping: Record<string, string> = {};
     Object.entries(userProfiles || {}).forEach(([uid, p]) => {
@@ -672,20 +711,30 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
   // ─── Žebříček (Vyloučení rodiče/admina podle rolí) ───────────────
   const leaderboardData = useMemo(() => {
+    if (leaderboardMode === 'previous') {
+      if (!leagueConfig?.previousState?.users) return [];
+      return leagueConfig.previousState.users.map((u: any) => ({
+        name: u.name,
+        totalIdeas: u.totalIdeas || 0,
+        realized: u.realized || 0,
+        freeActivities: 0,
+        withDetails: 0,
+        totalZB: u.maratonZB,
+        sprintZB: u.sprintZB,
+        maratonZB: u.maratonZB,
+        pendingZB: 0,
+        avatar: getAvatarForChild(u.name)
+      })).sort((a: any, b: any) => {
+        if (b.totalZB !== a.totalZB) {
+          return b.totalZB - a.totalZB;
+        }
+        return a.name.localeCompare(b.name, 'cs');
+      });
+    }
+
     const statsSource = leaderboardMode === 'sprint' ? playerStats.sprint : playerStats.maraton;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
-    // Calculate current sprint and league boundaries
-    let currentSprintStartDate = 0;
-    let startTimestamp = 0;
-    if (leagueConfig?.leagueStartDate) {
-      startTimestamp = leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : new Date(leagueConfig.leagueStartDate).getTime();
-      const daysElapsed = (Date.now() - startTimestamp) / (1000 * 60 * 60 * 24);
-      const sprintLengthDays = 60;
-      const completedSprints = Math.floor(daysElapsed / sprintLengthDays);
-      currentSprintStartDate = startTimestamp + (completedSprints * sprintLengthDays * 24 * 60 * 60 * 1000);
-    }
 
     return (Object.entries(statsSource) as [string, UserStats][])
       .map(([name, stats]) => {
@@ -737,8 +786,46 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
         const role = userProfiles[uid]?.role || 'viewer';
         return role === 'child';
       })
-      .sort((a, b) => b.totalZB - a.totalZB);
-  }, [playerStats, leaderboardMode, getAvatarForChild, playerNameToIdMap, userProfiles, suggestions, leagueConfig]);
+      .sort((a, b) => {
+        if (b.totalZB !== a.totalZB) {
+          return b.totalZB - a.totalZB;
+        }
+        return a.name.localeCompare(b.name, 'cs');
+      });
+  }, [playerStats, leaderboardMode, getAvatarForChild, playerNameToIdMap, userProfiles, suggestions, leagueConfig, startTimestamp, currentSprintStartDate]);
+
+  const playerRanks = useMemo(() => {
+    const ranks: Record<string, string> = {};
+    const activePlayers = leaderboardData.filter(p => p.totalZB > 0);
+    
+    let i = 0;
+    while (i < activePlayers.length) {
+      const currentScore = activePlayers[i].totalZB;
+      let j = i;
+      while (j < activePlayers.length && activePlayers[j].totalZB === currentScore) {
+        j++;
+      }
+      
+      const count = j - i;
+      const startRank = i + 1;
+      const endRank = j;
+      
+      let rankText = "";
+      if (count === 1) {
+        rankText = startRank === 1 ? "👑" : `${startRank}.`;
+      } else {
+        rankText = `${startRank}.-${endRank}.`;
+      }
+      
+      for (let k = i; k < j; k++) {
+        ranks[activePlayers[k].name] = rankText;
+      }
+      
+      i = j;
+    }
+    
+    return ranks;
+  }, [leaderboardData]);
 
   const kidsCount = useMemo(() => {
     return Math.max(1, leaderboardData.length);
@@ -766,15 +853,12 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
   // Sprint odměny výpočty
   const currentSprintId = useMemo(() => {
-    const startTimestamp = leagueConfig?.leagueStartDate
-      ? (leagueConfig.leagueStartDate.toMillis ? leagueConfig.leagueStartDate.toMillis() : new Date(leagueConfig.leagueStartDate).getTime())
-      : null;
     if (!startTimestamp) return "sprint_0";
     const daysElapsed = (Date.now() - startTimestamp) / (1000 * 60 * 60 * 24);
     const sprintLengthDays = 60;
     const completedSprints = Math.floor(daysElapsed / sprintLengthDays);
     return `sprint_${completedSprints}`;
-  }, [leagueConfig]);
+  }, [startTimestamp]);
 
   // sprintStats — přímo ze sdíleného calculateLeagueStats (playerStats.sprint), bez duplicitní logiky
   const sprintStats = playerStats.sprint;
@@ -836,15 +920,32 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     );
   }
 
-  const activeStats = (leaderboardMode === 'sprint' ? playerStats.sprint : playerStats.maraton)[activePlayer || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
-  const unlockedBadges = BADGES.filter(b => b.check(activeStats));
+  const activeStats = (() => {
+    if (leaderboardMode === 'previous') {
+      const prevUser = leagueConfig?.previousState?.users?.find((u: any) => u.name === activePlayer);
+      if (prevUser) {
+        return {
+          totalIdeas: prevUser.totalIdeas || 0,
+          realized: prevUser.realized || 0,
+          freeActivities: 0,
+          withDetails: 0,
+          totalZB: prevUser.maratonZB || 0,
+          sprintZB: prevUser.sprintZB || 0,
+          maratonZB: prevUser.maratonZB || 0
+        };
+      }
+    }
+    return (leaderboardMode === 'sprint' ? playerStats.sprint : playerStats.maraton)[activePlayer || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+  })();
+
+  const unlockedBadges = leaderboardMode === 'previous' ? [] : BADGES.filter(b => b.check(activeStats));
   const activeBadgeBonus = unlockedBadges.reduce((sum, b) => sum + b.bonusZB, 0);
-  const activeTotalXP = activeStats.totalZB + activeBadgeBonus; // Skutečné celkové XP
+  const activeTotalXP = leaderboardMode === 'previous' ? activeStats.totalZB : activeStats.totalZB + activeBadgeBonus; // Skutečné celkové XP
   const activePendingXP = leaderboardData.find(p => p.name === activePlayer)?.pendingZB || 0;
 
   const activeMaratonStats = playerStats.maraton[activePlayer || ""] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
   const activeMaratonBadgeBonus = BADGES.filter(b => b.check(activeMaratonStats)).reduce((sum, b) => sum + b.bonusZB, 0);
-  const activeMaratonTotalXP = activeMaratonStats.totalZB + activeMaratonBadgeBonus;
+  const activeMaratonTotalXP = leaderboardMode === 'previous' ? activeStats.totalZB : activeMaratonStats.totalZB + activeMaratonBadgeBonus;
 
 
 
@@ -890,6 +991,31 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
   const remainingLimit = useMemo(() => {
     return Math.max(0, maxWishLimitCZK - totalApprovedKč);
   }, [maxWishLimitCZK, totalApprovedKč]);
+
+  const currentUserWishlist = useMemo(() => {
+    return wishlists.filter(w => {
+      const wName = (w.childName || "").toLowerCase() === "zefran3" || (w.childName || "").toLowerCase() === "táta" ? "Táta" : w.childName || "";
+      return (wName || "").toLowerCase() === (normalizedCurrentUserName || "").toLowerCase();
+    });
+  }, [wishlists, normalizedCurrentUserName]);
+
+  const currentUserApprovedCount = useMemo(() => {
+    return currentUserWishlist.filter(w => w.status === 'approved').length;
+  }, [currentUserWishlist]);
+
+  const currentUserPendingCount = useMemo(() => {
+    return currentUserWishlist.filter(w => w.status === 'pending').length;
+  }, [currentUserWishlist]);
+
+  const currentUserTotalApprovedKč = useMemo(() => {
+    return currentUserWishlist
+      .filter(w => w.status === 'approved')
+      .reduce((sum, w) => sum + (w.valueKč || Math.round((w.targetZB || 0) * ratio)), 0);
+  }, [currentUserWishlist, ratio]);
+
+  const currentUserRemainingLimit = useMemo(() => {
+    return Math.max(0, maxWishLimitCZK - currentUserTotalApprovedKč);
+  }, [maxWishLimitCZK, currentUserTotalApprovedKč]);
   const activeQuests = quests.filter(q => q.active);
 
   const handleSpravSave = async () => {
@@ -916,11 +1042,46 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
           sprintStartDate: serverTimestamp()
         });
       } else if (type === 'reset_league') {
+        const resetAt = new Date();
+        const childrenNames = Object.entries(userProfiles)
+          .filter(([uid, p]) => p.role === 'child' && !p.isBlocked)
+          .map(([uid, p]) => {
+            let name = p.adminAlias || p.displayName || p.email?.split('@')[0] || "Neznámý";
+            if (name.toLowerCase() === "zefran3" || name.toLowerCase() === "táta") {
+              name = "Táta";
+            }
+            return name;
+          });
+
+        const usersPoints = childrenNames.map(name => {
+          const sprintStats = playerStats.sprint[name] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+          const sprintBadgeBonus = BADGES.filter(b => b.check(sprintStats)).reduce((s, b) => s + b.bonusZB, 0);
+          const sprintTotalZB = sprintStats.totalZB + sprintBadgeBonus;
+
+          const maratonStats = playerStats.maraton[name] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+          const maratonBadgeBonus = BADGES.filter(b => b.check(maratonStats)).reduce((s, b) => s + b.bonusZB, 0);
+          const maratonTotalZB = maratonStats.totalZB + maratonBadgeBonus;
+
+          return {
+            name,
+            sprintZB: sprintTotalZB,
+            maratonZB: maratonTotalZB,
+            totalIdeas: maratonStats.totalIdeas,
+            realized: maratonStats.realized
+          };
+        }).sort((a, b) => b.maratonZB - a.maratonZB);
+
         await setDoc(doc(db, 'settings', 'league_config'), {
           status: 'running',
           leagueStartDate: serverTimestamp(),
           sprintStartDate: serverTimestamp(),
-          pausedAt: null
+          pausedAt: null,
+          previousState: {
+            resetAt: resetAt,
+            leagueStartDate: leagueConfig.leagueStartDate || null,
+            sprintStartDate: leagueConfig.sprintStartDate || null,
+            users: usersPoints
+          }
         });
       }
     } catch (err) {
@@ -1112,10 +1273,24 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   .filter(p => p.name !== "Táta")
                   .map(player => {
                     const name = player.name;
-                    const stats = (leaderboardMode === 'sprint' ? playerStats.sprint : playerStats.maraton)[name] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+                    let stats = { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+                    if (leaderboardMode === 'previous') {
+                      const prevUser = leagueConfig?.previousState?.users?.find((u: any) => u.name === name);
+                      if (prevUser) {
+                        stats = {
+                          totalIdeas: prevUser.totalIdeas || 0,
+                          realized: prevUser.realized || 0,
+                          freeActivities: 0,
+                          withDetails: 0,
+                          totalZB: prevUser.maratonZB || 0
+                        };
+                      }
+                    } else {
+                      stats = (leaderboardMode === 'sprint' ? playerStats.sprint : playerStats.maraton)[name] || { totalIdeas: 0, realized: 0, freeActivities: 0, withDetails: 0, totalZB: 0 };
+                    }
                     
-                    const unlockedB = BADGES.filter(b => b.check(stats));
-                    const badgeBonus = unlockedB.reduce((s, b) => s + b.bonusZB, 0);
+                    const unlockedB = leaderboardMode === 'previous' ? [] : BADGES.filter(b => b.check(stats));
+                    const badgeBonus = leaderboardMode === 'previous' ? 0 : unlockedB.reduce((s, b) => s + b.bonusZB, 0);
 
                     const childQuests = quests.filter(q => q.status === 'approved' && q.completedBy === name);
                     const questBaseXP = childQuests.reduce((s, q) => s + (parseFloat(q.bonusMultiplier as any) || 0), 0);
@@ -1257,7 +1432,26 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                       {suggestions
                         .filter(s => {
                           const sName = (s.childName || "Neznámý").toLowerCase() === "zefran3" || (s.childName || "Neznámý").toLowerCase() === "táta" ? "Táta" : (s.childName || "Neznámý");
-                          return s.type !== "ride" && sName === activePlayer && s.status !== "cancelled";
+                          if (s.type === "ride" || sName !== activePlayer || s.status === "cancelled") return false;
+
+                          const createdTime = s.createdAt 
+                            ? (typeof s.createdAt === 'number' ? s.createdAt : ((s.createdAt as any).toMillis ? (s.createdAt as any).toMillis() : new Date(s.createdAt as any).getTime()))
+                            : 0;
+
+                          if (leaderboardMode === 'sprint') {
+                            return createdTime >= currentSprintStartDate;
+                          } else if (leaderboardMode === 'liga') {
+                            return createdTime >= startTimestamp;
+                          } else if (leaderboardMode === 'previous') {
+                            const prevStart = leagueConfig?.previousState?.leagueStartDate
+                              ? (leagueConfig.previousState.leagueStartDate.toMillis ? leagueConfig.previousState.leagueStartDate.toMillis() : new Date(leagueConfig.previousState.leagueStartDate).getTime())
+                              : 0;
+                            const prevReset = leagueConfig?.previousState?.resetAt
+                              ? (leagueConfig.previousState.resetAt.toMillis ? leagueConfig.previousState.resetAt.toMillis() : new Date(leagueConfig.previousState.resetAt).getTime())
+                              : 0;
+                            return createdTime >= prevStart && createdTime < prevReset;
+                          }
+                          return true;
                         })
                         .map(s => {
                            const now = new Date();
@@ -1279,6 +1473,50 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                             </div>
                           );
                         })}
+
+                      {/* Completed Quests */}
+                      {quests
+                        .filter(q => {
+                          if (q.status !== 'approved') return false;
+                          const qName = getDynamicName(q.completedBy || "", userProfiles);
+                          if (qName !== activePlayer) return false;
+
+                          const createdTime = q.createdAt 
+                            ? (typeof q.createdAt === 'number' ? q.createdAt : ((q.createdAt as any).toMillis ? (q.createdAt as any).toMillis() : new Date(q.createdAt as any).getTime()))
+                            : 0;
+
+                          if (leaderboardMode === 'sprint') {
+                            return createdTime >= currentSprintStartDate;
+                          } else if (leaderboardMode === 'liga') {
+                            return createdTime >= startTimestamp;
+                          } else if (leaderboardMode === 'previous') {
+                            const prevStart = leagueConfig?.previousState?.leagueStartDate
+                              ? (leagueConfig.previousState.leagueStartDate.toMillis ? leagueConfig.previousState.leagueStartDate.toMillis() : new Date(leagueConfig.previousState.leagueStartDate).getTime())
+                              : 0;
+                            const prevReset = leagueConfig?.previousState?.resetAt
+                              ? (leagueConfig.previousState.resetAt.toMillis ? leagueConfig.previousState.resetAt.toMillis() : new Date(leagueConfig.previousState.resetAt).getTime())
+                              : 0;
+                            return createdTime >= prevStart && createdTime < prevReset;
+                          }
+                          return true;
+                        })
+                        .map(q => {
+                          const baseXP = parseFloat(q.bonusMultiplier as any) || 0;
+                          const bonusXP = parseFloat(q.appliedBonusXP as any) || 0;
+                          const totalQP = baseXP + bonusXP;
+                          return (
+                            <div key={q.id} className="flex items-center justify-between bg-indigo-500/5 rounded-lg px-3 py-1.5">
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xs text-indigo-300 font-medium truncate block">🔮 Tajná mise: {q.title}</span>
+                                <span className="text-[9px] text-zinc-500">
+                                  Základní: {baseXP} XP{bonusXP > 0 ? ` + bonus ${bonusXP} XP` : ""}
+                                </span>
+                              </div>
+                              <span className="text-xs font-black text-indigo-400 ml-2">+{totalQP}</span>
+                            </div>
+                          );
+                        })}
+
                       {/* Badge bonuses */}
                       {BADGES.filter(b => b.check(activeStats)).map(b => (
                         <div key={b.id} className="flex items-center justify-between bg-cyan-500/5 rounded-lg px-3 py-1.5">
@@ -1339,6 +1577,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                   </div>
                   <div className="flex bg-zinc-800/80 rounded-lg p-0.5 border border-white/5">
                     <button
+                      type="button"
                       onClick={() => setLeaderboardMode("sprint")}
                       className={cn("px-3 py-1.5 rounded-md text-xs font-bold transition-all",
                         leaderboardMode === "sprint" ? "bg-violet-500 text-white shadow-lg shadow-violet-500/30" : "text-zinc-400 hover:text-white"
@@ -1347,6 +1586,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                       Sprint (2 měs.)
                     </button>
                     <button
+                      type="button"
                       onClick={() => setLeaderboardMode("liga")}
                       className={cn("px-3 py-1.5 rounded-md text-xs font-bold transition-all",
                         leaderboardMode === "liga" ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/30" : "text-zinc-400 hover:text-white"
@@ -1354,8 +1594,36 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                     >
                       Maraton (6 měs.)
                     </button>
+                    {leagueConfig?.previousState && currentUserRole === 'admin' && (
+                      <button
+                        type="button"
+                        onClick={() => setLeaderboardMode("previous")}
+                        className={cn("px-3 py-1.5 rounded-md text-xs font-bold transition-all",
+                          leaderboardMode === "previous" ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "text-zinc-400 hover:text-white"
+                        )}
+                      >
+                        Předchozí stav
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {leaderboardMode === "previous" && leagueConfig?.previousState && (
+                  <div className="text-center py-2.5 px-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-200 text-[10px] font-medium leading-relaxed mb-3">
+                    📅 Předchozí liga trvala od{" "}
+                    <span className="font-bold text-white">
+                      {leagueConfig.previousState.leagueStartDate
+                        ? new Date(leagueConfig.previousState.leagueStartDate.toMillis ? leagueConfig.previousState.leagueStartDate.toMillis() : leagueConfig.previousState.leagueStartDate).toLocaleDateString('cs-CZ')
+                        : 'Neznámý začátek'}
+                    </span>{" "}
+                    do{" "}
+                    <span className="font-bold text-white">
+                      {leagueConfig.previousState.resetAt
+                        ? new Date(leagueConfig.previousState.resetAt.toMillis ? leagueConfig.previousState.resetAt.toMillis() : leagueConfig.previousState.resetAt).toLocaleDateString('cs-CZ')
+                        : 'Neznámý konec'}
+                    </span>.
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   {leaderboardData.map((player, idx) => (
@@ -1376,10 +1644,18 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                           : "cursor-default"
                       )}
                     >
-                      <div className={cn("w-7 text-center font-black text-sm",
-                        idx === 0 ? "text-amber-400" : idx === 1 ? "text-zinc-400" : idx === 2 ? "text-amber-700" : "text-zinc-600"
+                      <div className={cn("w-9 text-center font-black text-xs sm:text-sm",
+                        player.totalZB === 0
+                          ? "text-zinc-600"
+                          : (playerRanks[player.name] === "👑" || playerRanks[player.name]?.startsWith("1."))
+                            ? "text-amber-400"
+                            : playerRanks[player.name]?.startsWith("2.")
+                              ? "text-zinc-400"
+                              : playerRanks[player.name]?.startsWith("3.")
+                                ? "text-amber-700"
+                                : "text-zinc-600"
                       )}>
-                        {idx === 0 ? "👑" : `${idx + 1}.`}
+                        {player.totalZB === 0 ? "" : playerRanks[player.name]}
                       </div>
                       <div className="w-9 h-9 rounded-xl overflow-hidden bg-zinc-700 border border-white/10 flex items-center justify-center flex-shrink-0">
                         {player.avatar.startsWith('http') || player.avatar.startsWith('data:')
@@ -1393,18 +1669,24 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                           {getTitle(player.totalZB).title}
                         </span>
                       </div>
-                      <div className="flex flex-col items-end justify-center min-w-[50px]">
+                      <div className="flex flex-col items-end justify-center min-w-[65px]">
                         <div className="flex items-center gap-1">
                           <Zap size={12} className="text-amber-400 flex-shrink-0" />
-                          <span className="text-sm font-black text-amber-400 leading-none">{player.totalZB}</span>
+                          <span className="text-sm font-black text-amber-400 leading-none">{player.totalZB} ZB</span>
                         </div>
-                        {player.pendingZB > 0 && (
-                          <span 
-                            className="text-[9px] font-black text-amber-400 bg-amber-950/40 border border-amber-800/30 px-1 py-0.5 rounded mt-1 leading-none shadow-sm"
-                            title={`Čeká na absolvování: ${player.pendingZB} XP`}
-                          >
-                            +{player.pendingZB} XP
+                        {leaderboardMode === 'previous' ? (
+                          <span className="text-[9px] font-semibold text-zinc-400 mt-1">
+                            Sprint: {player.sprintZB} ZB
                           </span>
+                        ) : (
+                          player.pendingZB > 0 && (
+                            <span 
+                              className="text-[9px] font-black text-amber-400 bg-amber-950/40 border border-amber-800/30 px-1 py-0.5 rounded mt-1 leading-none shadow-sm"
+                              title={`Čeká na absolvování: ${player.pendingZB} XP`}
+                            >
+                              +{player.pendingZB} XP
+                            </span>
+                          )
                         )}
                       </div>
                     </button>
@@ -1657,7 +1939,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                 <Gift size={16} className="text-rose-400" />
                 <h3 className="text-sm font-bold text-rose-300 uppercase tracking-wider">Přání (Maraton (6 měs.))</h3>
               </div>
-              {localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && pendingCount === 0 && approvedCount < 2 && (approvedCount !== 1 || totalApprovedKč < maxWishLimitCZK) && (
+              {localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && currentUserPendingCount === 0 && currentUserApprovedCount < 2 && (currentUserApprovedCount !== 1 || currentUserTotalApprovedKč < maxWishLimitCZK) && (
                 <button onClick={() => { setShowWishForm(!showWishForm); setWishError(null); }}
                   className="flex items-center gap-1 text-xs font-bold text-rose-400 hover:text-rose-300 transition-colors bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20"
                 >
@@ -1669,17 +1951,17 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             {/* Notices for child when they cannot add a wish */}
             {localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && (
               <div className="mb-3">
-                {pendingCount > 0 && (
+                {currentUserPendingCount > 0 && (
                   <div className="text-xs text-amber-400 bg-amber-500/5 border border-amber-500/10 px-3 py-2.5 rounded-xl">
                     ⏳ Máš jedno přání čekající na schválení. Jakmile ho rodič schválí, uvidíš, zda ti zbývá limit na případné druhé přání.
                   </div>
                 )}
-                {approvedCount >= 2 && (
+                {currentUserApprovedCount >= 2 && (
                   <div className="text-xs text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-3 py-2.5 rounded-xl">
                     🎉 Dosáhl(a) jsi maximálního počtu 2 schválených přání pro tento maraton.
                   </div>
                 )}
-                {approvedCount === 1 && totalApprovedKč >= maxWishLimitCZK && (
+                {currentUserApprovedCount === 1 && currentUserTotalApprovedKč >= maxWishLimitCZK && (
                   <div className="text-xs text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-3 py-2.5 rounded-xl">
                     🎉 Tvoje schválené přání vyčerpalo celý limit {maxWishLimitCZK} Kč.
                   </div>
@@ -1689,7 +1971,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
 
             {/* Wish form */}
             <AnimatePresence>
-              {showWishForm && localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && pendingCount === 0 && approvedCount < 2 && (approvedCount !== 1 || totalApprovedKč < maxWishLimitCZK) && (
+              {showWishForm && localView === "child" && currentUserRole !== "parent" && currentUserRole !== "admin" && leaderboardMode === "liga" && currentUserPendingCount === 0 && currentUserApprovedCount < 2 && (currentUserApprovedCount !== 1 || currentUserTotalApprovedKč < maxWishLimitCZK) && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-3">
                   <div className="bg-zinc-800/50 border border-rose-500/10 rounded-xl p-4 space-y-3">
                     <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Přání od: {normalizedCurrentUserName}</div>
@@ -1706,9 +1988,9 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                         </button>
                       </div>
                       
-                      {approvedCount === 1 ? (
+                      {currentUserApprovedCount === 1 ? (
                         <div className="text-[11px] text-amber-400 border-t border-white/5 pt-2 mt-1">
-                          ℹ️ Tvoje první přání mělo hodnotu <strong>{totalApprovedKč} Kč</strong>. Na druhé přání ti zbývá limit <strong>{remainingLimit} Kč</strong>.
+                          ℹ️ Tvoje první přání mělo hodnotu <strong>{currentUserTotalApprovedKč} Kč</strong>. Na druhé přání ti zbývá limit <strong>{currentUserRemainingLimit} Kč</strong>.
                         </div>
                       ) : (
                         <div className="text-[11px] text-zinc-500 border-t border-white/5 pt-2 mt-1">
@@ -1717,8 +1999,40 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                       )}
                     </div>
 
-                    <input value={wishName} onChange={e => { setWishName(e.target.value); setWishError(null); }} placeholder="Co si přeješ? (např. Steam kredit)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
-                    <input value={wishUrl} onChange={e => { setWishUrl(e.target.value); setWishError(null); }} placeholder="Odkaz na produkt nebo cena v Kč (povinné)" className="w-full bg-zinc-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30" />
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Název přání</label>
+                        <input
+                          value={wishName}
+                          onChange={e => { setWishName(e.target.value); setWishError(null); }}
+                          placeholder="Co si přeješ? (např. Lego Star Wars)"
+                          className="w-full bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Cena v Kč (povinné)</label>
+                          <input
+                            value={wishPrice}
+                            onChange={e => { setWishPrice(e.target.value); setWishError(null); }}
+                            placeholder="Zadej cenu (např. 1500)"
+                            type="number"
+                            className="w-full bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30"
+                          />
+                        </div>
+                        
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Odkaz na produkt (nepovinné)</label>
+                          <input
+                            value={wishUrl}
+                            onChange={e => { setWishUrl(e.target.value); setWishError(null); }}
+                            placeholder="Vlož odkaz (https://...)"
+                            className="w-full bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-zinc-600 outline-none focus:border-rose-500/30"
+                          />
+                        </div>
+                      </div>
+                    </div>
                     
                     {wishError && (
                       <div className="text-[11px] text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg font-medium leading-relaxed">
@@ -1726,7 +2040,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                       </div>
                     )}
                     
-                    <button onClick={handleAddWish} disabled={!wishName.trim() || !wishUrl.trim()} className="w-full bg-rose-500 text-white font-bold text-xs py-2.5 rounded-lg hover:bg-rose-400 transition-colors disabled:opacity-30">Odeslat ke schválení</button>
+                    <button onClick={handleAddWish} disabled={!wishName.trim() || !wishPrice.trim()} className="w-full bg-rose-500 text-white font-bold text-xs py-2.5 rounded-lg hover:bg-rose-400 transition-colors disabled:opacity-30">Odeslat ke schválení</button>
                   </div>
                 </motion.div>
               )}
@@ -1741,10 +2055,35 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                     <div>
                       <span className="text-sm font-bold text-white">{w.name}</span>
                       <span className="text-xs text-zinc-500 ml-2">od {w.childName?.toLowerCase() === "zefran3" || w.childName?.toLowerCase() === "táta" ? "Táta" : w.childName}</span>
-                      {w.url && <a href={w.url} target="_blank" rel="noopener" className="text-[10px] text-cyan-400 ml-2 hover:underline">🔗</a>}
+                      {w.url && (w.url.startsWith("http://") || w.url.startsWith("https://") || w.url.startsWith("www.") || w.url.includes(".cz") || w.url.includes(".com") || w.url.includes("/")) ? (
+                        <a href={w.url.startsWith("www.") ? `https://${w.url}` : w.url} target="_blank" rel="noopener" className="text-[10px] text-cyan-400 ml-2 hover:underline">🔗 Odkaz</a>
+                      ) : (
+                        <span className="text-[10px] text-zinc-500 ml-2 select-none" title="Dítě zadalo cenu nebo text místo odkazu">(bez odkazu)</span>
+                      )}
                     </div>
                     <div className="flex gap-1.5">
-                      <button onClick={() => { setApprovingWish(w); setApproveZB(maxWishXP.toString()); setApproveKč(Math.round(maxWishXP * ratio).toString()); setLockRatio(true); }} className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"><Check size={14} /></button>
+                      <button
+                        onClick={() => {
+                          setApprovingWish(w);
+                          const cleanUrl = (w.url || "").trim();
+                          const isLink = cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://") || cleanUrl.startsWith("www.") || cleanUrl.includes(".cz") || cleanUrl.includes(".com") || cleanUrl.includes("/");
+                          let prefillKč = Math.round(maxWishXP * ratio);
+                          let prefillZB = maxWishXP;
+                          if (!isLink && cleanUrl) {
+                            const parsedKč = parseFloat(cleanUrl.replace(/[^\d]/g, ''));
+                            if (!isNaN(parsedKč) && parsedKč > 0) {
+                              prefillKč = Math.round(parsedKč);
+                              prefillZB = Math.round(parsedKč / ratio);
+                            }
+                          }
+                          setApproveZB(prefillZB.toString());
+                          setApproveKč(prefillKč.toString());
+                          setLockRatio(true);
+                        }}
+                        className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"
+                      >
+                        <Check size={14} />
+                      </button>
                       <button onClick={() => { setRejectingWish(w); setRejectReason(""); }} className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30"><X size={14} /></button>
                     </div>
                   </div>
@@ -2040,7 +2379,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
                     <span className="font-bold text-rose-400 block mb-0.5">Maximálně 2 přání:</span>
                     <span>V rámci jednoho maratonu můžeš mít nejvýše 2 schválená přání, jejichž společná hodnota nepřekročí celkový limit.</span>
                     <span className="block text-zinc-400 text-[11px] mt-1 bg-zinc-900/50 p-2 rounded border border-white/5">
-                      💡 <strong>Příklad:</strong> Pokud si přeješ hru za 1500 Kč, zbývá ti limit 1000 Kč, za který si můžeš přidat jedno další přání. Pokud tvé první přání vyčerpá celý limit (např. 2500 Kč), druhé přání už přidat nemůžeš.
+                      💡 <strong>Příklad:</strong> Pokud si přeješ hru za {Math.round(maxWishLimitCZK * 0.6)} Kč, zbývá ti limit {maxWishLimitCZK - Math.round(maxWishLimitCZK * 0.6)} Kč, za který si můžeš přidat jedno další přání. Pokud tvé první přání vyčerpá celý limit (např. {maxWishLimitCZK} Kč), druhé přání už přidat nemůžeš.
                     </span>
                   </div>
 
@@ -2548,6 +2887,45 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
             </motion.div>
           );
         })()}
+      </AnimatePresence>
+      {/* ═══ WISHLIST LIMIT MODAL ═══ */}
+      <AnimatePresence>
+        {showWishLimitModal?.open && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowWishLimitModal(null)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[130]"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-zinc-900 border border-white/10 rounded-2xl p-6 z-[130] flex flex-col gap-4 text-center shadow-2xl"
+            >
+              <div className="w-12 h-12 mx-auto rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center text-xl shadow-lg">
+                ⚠️
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-sm font-black uppercase text-red-400 tracking-wider">Překročen limit přání</h4>
+                <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+                  Zadaná hodnota přání <strong className="text-white">{showWishLimitModal.entered} Kč</strong> je vyšší než tvůj zbývající limit <strong className="text-white">{showWishLimitModal.limit} Kč</strong> pro tento maraton.
+                </p>
+                <p className="text-[10px] text-zinc-500 leading-relaxed">
+                  Uprav prosím cenu přání nebo si vyber věc, která se do limitu vejde. Maximální celková hodnota všech přání je {maxWishLimitCZK} Kč.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowWishLimitModal(null)}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-black text-xs transition-all cursor-pointer active:scale-95 shadow-lg shadow-red-600/10"
+              >
+                Rozumím
+              </button>
+            </motion.div>
+          </>
+        )}
       </AnimatePresence>
     </motion.div>
   );
