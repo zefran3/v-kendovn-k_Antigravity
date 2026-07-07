@@ -553,7 +553,9 @@ async function startServer() {
     const kudyString        = enrichedKudy.length > 0 ? JSON.stringify(enrichedKudy, null, 2) : 'ŽÁDNÁ DATA';
     const jizniMoravaString = enrichedJizni.length > 0 ? JSON.stringify(enrichedJizni, null, 2) : 'ŽÁDNÁ DATA';
 
-
+    const knownLocationsListString = knownLocations.map(loc => 
+      `- ${loc.name} (Adresa: ${loc.exactLocation || 'Neznámá'}, Vyškov: ${loc.isVyskov ? 'Ano' : 'Ne'})`
+    ).join('\n');
 
     const prompt = `Jsi organizátor rodinných aktivit Víkendovník. 📅 DNEŠNÍ DATUM: ${todayStr}, 🗓️ VÍKEND: ${weekendStr}.
 Lokalita rodiny: ${userLocation || 'Vyškov, Jihomoravský kraj'}.
@@ -565,6 +567,10 @@ Lokalita rodiny: ${userLocation || 'Vyškov, Jihomoravský kraj'}.
 [Kudy z nudy – JM kraj]: ${kudyString}
 [Jižní Morava – Akce]: ${jizniMoravaString}
 ━━━ KONEC DAT ━━━
+
+━━━ SEZNAM DOVOLENÝCH STATICKÝCH MÍST (pro případný fallback) ━━━
+${knownLocationsListString}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Celkem scraped položek pro tento výběr: ${totalScraped}
 
@@ -581,12 +587,16 @@ Každý tip musí mít hodnotu target:
 - "pro_syna"    → tip je ideální hlavně pro syna (hokej, armáda, tech)
 - "pro_vsechny" → tip je vhodný pro celou rodinu (kino, ZOO, festival, výlet, muzeum)
 Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny".
+⚠️ DŮLEŽITÉ: Pokud pro_syna nebo pro_dceru nemáš k dispozici žádná relevantní data z internetu ani vhodné statické místo ze seznamu povolených míst, raději sniž počet těchto tipů (např. na 1 nebo 2) nebo je vynechej a zařaď více tipů "pro_vsechny". NIKDY si nevymýšlej fiktivní akce či místa jen proto, abys naplnil kvótu 3 tipů pro danou osobu.
 
 ━━━ ABSOLUTNÍ PRAVIDLA ━━━
 
 1. ⛔ Data scraperů výše jsou tvůj primární zdroj. Pro aktivity s konkrétním datem, časem a cenou čerpej VÝHRADNĚ z těchto dat — nevymýšlej detaily pro akce které v datech nejsou.
 
-2. ⛔ Navrhuj POUZE místa která jsou buď (a) přímo ve scraped datech výše, nebo (b) reálně existující místa o jejichž existenci jsi zcela jistý ze svých znalostí (Aquapark Vyškov, ZOO Lešná apod. jsou reálná místa). NIKDY nevymýšlej neexistující zařízení — typické příklady halucinací: „Herna PlayStation Vyškov", „Minigolf park Vyškov centrum". Pokud si nejsi jistý existencí konkrétního místa, NENAPIŠ HO.
+2. ⛔ Navrhuj POUZE místa která jsou buď:
+    (a) přímo ve scraped datech výše, nebo
+    (b) v sekci "SEZNAM DOVOLENÝCH STATICKÝCH MÍST" výše.
+    NIKDY ze svých obecných znalostí nevymýšlej žádná jiná místa ani neexistující zařízení (typické příklady halucinací: „Hokejové tréninkové centrum Vyškov“, „Herna PlayStation Vyškov"). Pokud místo není v jednom z těchto dvou zdrojů, NENAPIŠ HO.
 
 3. ✅ Pokud scraper vrátil "ŽÁDNÁ DATA" — zcela ho ignoruj. Přejdi na scraper který data má. NEČERPEJ z prázdného scraperu vůbec nic.
 
@@ -787,24 +797,53 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
 
     const isUrlSafe = (urlStr: string) => {
       if (!urlStr || urlStr.trim() === '') return true;
-      const trimmed = urlStr.trim();
-      if (scrapedUrls.has(trimmed)) return true;
-      
-      const targetDomain = trimmed.replace(/^(?:https?:\/\/)?(?:www\.)?/i, "").split('/')[0].toLowerCase();
-      
-      // 1. Kontrola proti seznamu důvěryhodných domén
-      const isTrusted = TRUSTED_DOMAINS.some(domain => {
-        return targetDomain === domain || targetDomain.endsWith('.' + domain);
-      });
-      if (isTrusted) return true;
-      
-      // 2. Kontrola proti známým registrovaným místům ve Firestore
-      const matchedKnown = knownLocations.some(loc => {
-        if (!loc.exactUrl) return false;
-        const knownDomain = loc.exactUrl.replace(/^(?:https?:\/\/)?(?:www\.)?/i, "").split('/')[0].toLowerCase();
-        return knownDomain && targetDomain && (knownDomain === targetDomain || targetDomain.endsWith('.' + knownDomain));
-      });
-      return matchedKnown;
+      const trimmed = urlStr.trim().toLowerCase();
+
+      // Kontrola, zda je URL platná
+      try {
+        new URL(trimmed.startsWith('http') ? trimmed : 'https://' + trimmed);
+      } catch (e) {
+        return false;
+      }
+
+      const hostOrPath = trimmed.replace(/^(?:https?:\/\/)?(?:www\.)?/i, "");
+
+      // 1. Zkontrolujeme přítomnost nevhodných podřetězců (částečná shoda pro klíčová slova)
+      const blacklistedSubstrings = [
+        'porn', 'erot', 'xxx', 'adult', 'nude', 'strip', 
+        'casino', 'kasino', 'hazard', 'poker', 'slots', 
+        'gamble', 'bwin'
+      ];
+
+      if (blacklistedSubstrings.some(word => hostOrPath.includes(word))) {
+        return false;
+      }
+
+      // 2. Specifická kontrola pro slovo "sex" (aby se zabránilo falešným pozitivům jako "essex", "sektor" apod.)
+      // Detekuje: "sex", "sexy", "sexuální" (sexu*), "sexshop", "sex-*"
+      const sexRegex = /\b(sex|sexy|sexu\w*|sexshop)\b/i;
+      if (sexRegex.test(hostOrPath)) {
+        return false;
+      }
+
+      // 3. Zakázané konkrétní sázkové domény (aby slovo "chance" v cestě nezpůsobilo falešnou detekci)
+      const domain = hostOrPath.split('/')[0];
+      const blacklistedDomains = [
+        'tipsport.cz',
+        'fortuna.cz',
+        'chance.cz',
+        'synottip.cz',
+        'betano.cz',
+        'sazka.cz',
+        'betano.com',
+        'fortunagames.cz'
+      ];
+
+      if (blacklistedDomains.some(d => domain === d || domain.endsWith('.' + d))) {
+        return false;
+      }
+
+      return true;
     };
 
     suggestions = suggestions.map((s: any) => {
@@ -828,10 +867,13 @@ Distribuce: ideálně 3 tipy "pro_dceru", 3 tipy "pro_syna", zbytek "pro_vsechny
         if (matchedLocation.exactLocation) {
           s.location = matchedLocation.exactLocation;
         }
-        // Pokud AI nevygenerovala specifickou cestu na detail (má jen prázdný řetězec nebo holou doménu),
-        // použijeme oficiální domovskou URL ze známých míst.
+        // Použijeme oficiální domovskou URL ze známých míst v případě, že:
+        // 1. AI nevygenerovala specifickou cestu na detail (má jen prázdný řetězec nebo holou doménu)
+        // 2. Odkaz vede na turistický portál (Kudy z nudy, Jižní Morava), ale my máme k dispozici přímý web místa
         const isBareUrl = !s.url || s.url.trim() === '' || BARE_DOMAINS.some(domain => s.url === domain || s.url === domain + '/');
-        if (matchedLocation.exactUrl && isBareUrl) {
+        const isPortalUrl = s.url && (s.url.includes('kudyznudy.cz') || s.url.includes('jizni-morava.cz'));
+        
+        if (matchedLocation.exactUrl && (isBareUrl || isPortalUrl)) {
           s.url = matchedLocation.exactUrl;
         }
         if (matchedLocation.isVyskov !== undefined) {

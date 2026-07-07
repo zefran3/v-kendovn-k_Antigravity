@@ -51,7 +51,7 @@ async function run() {
     {
       title: "Výlet: Punkevní jeskyně a plavba lodí",
       location: "Vavřinec",
-      url: "https://www.caves.cz",
+      url: "https://www.kudyznudy.cz/aktivity/propast-macocha-v-moravskem-krasu",
       is_vyskov: false
     }
   ];
@@ -79,7 +79,9 @@ async function run() {
         s.location = matchedLocation.exactLocation;
       }
       const isBareUrl = !s.url || s.url.trim() === '' || BARE_DOMAINS.some(domain => s.url === domain || s.url === domain + '/');
-      if (matchedLocation.exactUrl && isBareUrl) {
+      const isPortalUrl = s.url && (s.url.includes('kudyznudy.cz') || s.url.includes('jizni-morava.cz'));
+
+      if (matchedLocation.exactUrl && (isBareUrl || isPortalUrl)) {
         s.url = matchedLocation.exactUrl;
       }
       if (matchedLocation.isVyskov !== undefined) {

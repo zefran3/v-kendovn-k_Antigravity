@@ -3682,7 +3682,15 @@ export default function App() {
                           setShowVyskovOnly(false);
                         } 
                         else { 
-                          setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); 
+                          setTimeout(() => {
+                            const el = inspirationsRef.current;
+                            if (el) {
+                              const isMobile = window.innerWidth < 768;
+                              const offset = isLandscape ? 0 : (isMobile ? 56 : 80);
+                              const y = el.getBoundingClientRect().top + window.scrollY - offset;
+                              window.scrollTo({ top: y, behavior: 'smooth' });
+                            }
+                          }, 100);
                           setShowSportsView(false);
                         }
                         setShowInspirationsView(!showInspirationsView); 
@@ -3765,7 +3773,15 @@ export default function App() {
                           setShowVyskovOnly(false);
                         } 
                         else { 
-                          setTimeout(() => inspirationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+                          setTimeout(() => {
+                            const el = inspirationsRef.current;
+                            if (el) {
+                              const isMobile = window.innerWidth < 768;
+                              const offset = isLandscape ? 0 : (isMobile ? 56 : 80);
+                              const y = el.getBoundingClientRect().top + window.scrollY - offset;
+                              window.scrollTo({ top: y, behavior: 'smooth' });
+                            }
+                          }, 100);
                           setShowSportsView(false);
                         }
                         setShowInspirationsView(!showInspirationsView); 
@@ -4545,22 +4561,25 @@ export default function App() {
                 className={cn(
                   "sticky z-40 bg-white/85 backdrop-blur-xl",
                   isLandscape 
-                    ? "top-0 mx-0 px-2 py-1.5 flex flex-col gap-1.5 rounded-xl" 
-                    : "shadow-sm border-b border-stone-200/50 mb-2 top-[56px] md:top-[80px] -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
+                    ? "top-0 mx-0 px-2 py-1.5 flex flex-col gap-1.5 rounded-xl mb-4" 
+                    : "shadow-sm border-b border-stone-200/50 mb-4 top-[56px] md:top-[80px] -mx-6 px-6 md:-mx-2 md:px-4 md:rounded-2xl py-4 flex flex-col gap-3 md:border"
                 )}
               >
-                {!isLandscape && (
-                  <div className="text-[13px] uppercase tracking-widest text-indigo-500 font-bold flex items-center justify-center md:justify-start gap-2 drop-shadow-sm">
-                    <span>{showVyskovOnly ? "🏰" : "✨"}</span> {showVyskovOnly ? "Akce ve Vyškově" : "Inspirace na víkend z AI"}
-                  </div>
-                )}
-                
-                <div className={cn("flex gap-2 w-full", isLandscape ? "items-center justify-between" : "flex-wrap justify-between")}>
+                <div className={cn("flex w-full gap-3", isLandscape ? "items-center justify-between flex-row" : "flex-col sm:flex-row sm:items-center sm:justify-between")}>
+                  {!isLandscape && (
+                    <div className="text-[13px] uppercase tracking-widest text-indigo-500 font-bold flex items-center justify-center sm:justify-start gap-2 drop-shadow-sm">
+                      <span>{showVyskovOnly ? "🏰" : "✨"}</span> {showVyskovOnly ? "Akce ve Vyškově" : "Inspirace na víkend z AI"}
+                    </div>
+                  )}
+                  
                   {view === "parent" && (
                     <button 
                       onClick={handleGenerateInspirations}
                       disabled={isGeneratingInspiration}
-                      className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs shadow-sm hover:bg-indigo-600 hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ml-auto"
+                      className={cn(
+                        "px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs shadow-sm hover:bg-indigo-600 hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2",
+                        isLandscape ? "ml-auto" : "self-center sm:self-auto"
+                      )}
                     >
                       {isGeneratingInspiration ? "AI hledá na internetu..." : "Vyhledat nové tipy"}
                     </button>

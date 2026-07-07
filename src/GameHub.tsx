@@ -492,6 +492,15 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
     return () => { unsubW(); unsubQ(); unsubL(); unsubBP(); unsubClaims(); };
   }, []);
 
+  useEffect(() => {
+    // Schovat posuvník body na pozadí, když je Game Hub otevřený
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalOverflow || "unset";
+    };
+  }, []);
+
   // ─── Handlers ────────────────────────────────────────
   const handleConfirmClaimBattlePass = async () => {
     if (!claimingMilestone || isClaiming) return;
@@ -1110,7 +1119,7 @@ export default function GameHub({ suggestions, userProfiles, currentUserName, cu
       }} />
 
       {/* Content */}
-      <div className="relative z-10 flex flex-col h-full overflow-y-auto">
+      <div className="relative z-10 flex flex-col h-full overflow-y-auto no-scrollbar">
 
         {/* ═══ HEADER ═══ */}
         <header className="sticky top-0 z-20 backdrop-blur-xl bg-slate-950/80 border-b border-white/5 px-4 py-3 flex items-center justify-between">

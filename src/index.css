@@ -35,3 +35,14 @@ input[type=number] {
   scrollbar-width: thin;
   scrollbar-color: #c7d2fe transparent;
 }
+
+/* Skrytí scrollbaru pro specifické kontejnery (např. GameHub) */
+.no-scrollbar::-webkit-scrollbar,
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar,
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
